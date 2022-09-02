@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <string>
 #include "utils.hpp"
 #include <variant>
@@ -181,6 +181,19 @@ namespace ZJSON {
 				return false;	
 		}
 
+		bool addSubitem(string name, std::vector<Json> items){
+			if (this->type == Type::Object){
+				Json arr(Type::Array);
+				for (Json item : items)
+				{
+					arr.addSubitem(item);
+				}
+				return this->addSubitem(name, arr);
+			}else{
+				return false;
+			}
+		}
+
 		string toString() {
 			if (this->type == Type::Error){
 				return "";
@@ -273,6 +286,7 @@ namespace ZJSON {
 					this->extendItem(cur);
 					cur = cur->brother;
 				}
+				return true;
 			}else{
 				return false;
 			}
@@ -412,11 +426,13 @@ namespace ZJSON {
 					dd = std::any_cast<double>(data);
 				node->data = dd;
 			}
-			else if (Utils::stringStartWith(typeStr, "char const") || Utils::stringContain(typeStr, "::basic_string<")) {
+			else if (Utils::stringStartWith(typeStr, "char *") || Utils::stringStartWith(typeStr, "char const") || Utils::stringContain(typeStr, "::basic_string<")) {
 				node->type = Type::String;
 				string v;
 				if (Utils::stringStartWith(typeStr, "char const"))
 					v = std::any_cast<char const*>(data);
+				else if(Utils::stringStartWith(typeStr, "char *"))
+					v = std::any_cast<char *>(data);
 				else
 					v = std::any_cast<string>(data);
 				node->data = v;

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+﻿cmake_minimum_required(VERSION 3.8)
 
 project(main)
 
@@ -23,15 +23,20 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
 
-add_definitions(-DDEBUG)
+include_directories(./thirds/sqlit3)
+include_directories(./zorm/include)
+include_directories(./thirds/zjson)
+include_directories(./thirds/MySQL-C-Api-6.1/include)
 
-FILE(GLOB_RECURSE SRC_FILES "./src/*.cc") 
-FILE(GLOB_RECURSE HEAD_FILES "./src/*.h") 
+link_directories(./thirds/MySQL-C-Api-6.1/lib)
+
+FILE(GLOB_RECURSE SRC_FILES "./src/*.cc" "./thirds/sqlit3/*.c") 
+FILE(GLOB_RECURSE HEAD_FILES "./src/*.h" "./thirds/sqlit3/*.h") 
 
 source_group("Head Files" FILES ${HEAD_FILES} )
 
 add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEAD_FILES} )
-target_link_libraries(${PROJECT_NAME} zorm)
+target_link_libraries(${PROJECT_NAME} zorm )
 
 add_subdirectory(zorm)
 set_target_properties(zorm PROPERTIES LINKER_LANGUAGE CXX)

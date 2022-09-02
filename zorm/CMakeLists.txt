@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+﻿cmake_minimum_required(VERSION 3.8)
 file(READ "version" ver)
 string(REGEX MATCH "VERSION_MAJOR ([0-9]*)" _ ${ver})
 set(ver_major ${CMAKE_MATCH_1})
@@ -30,15 +30,20 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
 
-add_definitions(-DDEBUG)
+add_definitions(-D__MSVC__)
+add_definitions(-DZORM_LIB)
 
+include_directories(../thirds/sqlit3)
 include_directories(../thirds/MySQL-C-Api-6.1/include)
+include_directories(../thirds/zjson)
+
 link_directories(../thirds/MySQL-C-Api-6.1/lib)
 
-FILE(GLOB_RECURSE SRC_FILES "./src/*.cc") 
-FILE(GLOB_RECURSE HEAD_FILES "./include/*.h") 
 
-source_group("Head Files" FILES ${HEAD_FILES} )
+FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c") 
+FILE(GLOB_RECURSE HEAD_FILES "./include/*.h" "../thirds/sqlit3/*.h") 
+
+# source_group("Head Files" FILES ${HEAD_FILES} )
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES} )
 target_link_libraries(${PROJECT_NAME} libmysql.dll)
