@@ -33,8 +33,6 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
 
-add_definitions(-DZORM_LIB)
-
 include_directories(../thirds/sqlit3)
 include_directories(../thirds/MySQL-C-Api-6.1/include)
 include_directories(../thirds/zjson)
@@ -45,4 +43,6 @@ FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c")
 FILE(GLOB_RECURSE HEAD_FILES "./*.h" "../thirds/sqlit3/*.h") 
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES} )
-target_link_libraries(${PROJECT_NAME} pthread)
+if(UNIX)
+    target_link_libraries(${PROJECT_NAME} pthread)
+endif()
