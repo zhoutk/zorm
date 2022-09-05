@@ -1,8 +1,9 @@
 ﻿#pragma once
 #include <string>
-#include "utils.hpp"
 #include <variant>
 #include <any>
+#include <iostream>
+#include "utils.hpp"
 
 namespace ZJSON {
 
@@ -426,12 +427,12 @@ namespace ZJSON {
 					dd = std::any_cast<double>(data);
 				node->data = dd;
 			}
-			else if (Utils::stringStartWith(typeStr, "char *") || Utils::stringStartWith(typeStr, "char const") || Utils::stringContain(typeStr, "::basic_string<")) {
+			else if (Utils::stringStartWith(typeStr, "char*") || Utils::stringStartWith(typeStr, "char *") || Utils::stringStartWith(typeStr, "char const") || Utils::stringContain(typeStr, "::basic_string<")) {
 				node->type = Type::String;
 				string v;
 				if (Utils::stringStartWith(typeStr, "char const"))
 					v = std::any_cast<char const*>(data);
-				else if(Utils::stringStartWith(typeStr, "char *"))
+				else if(Utils::stringStartWith(typeStr, "char*") || Utils::stringStartWith(typeStr, "char *"))
 					v = std::any_cast<char *>(data);
 				else
 					v = std::any_cast<string>(data);

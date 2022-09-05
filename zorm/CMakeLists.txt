@@ -17,12 +17,15 @@ set(CMAKE_BUILD_TYPE Debug)  # Use `cmake -DCMAKE_BUILD_TYPE=Debug` more better
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 if(MSVC)
+    add_definitions(-D__MSVC__)
 	string(APPEND CMAKE_CXX_FLAGS " /Zc:__cplusplus")
 	add_compile_options(/wd26451 /wd26812)
 
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MTd")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 elseif(UNIX)
+    add_definitions(-D__LINUX__)
+    find_package(Threads REQUIRED)
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
 
@@ -30,7 +33,6 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
 
-add_definitions(-D__MSVC__)
 add_definitions(-DZORM_LIB)
 
 include_directories(../thirds/sqlit3)
@@ -43,4 +45,4 @@ FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c")
 FILE(GLOB_RECURSE HEAD_FILES "./*.h" "../thirds/sqlit3/*.h") 
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES} )
-target_link_libraries(${PROJECT_NAME} libmysql.dll)
+target_link_libraries(${PROJECT_NAME} pthread)

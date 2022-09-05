@@ -1,5 +1,4 @@
 ﻿#pragma once
-#include <windows.h>
 #include "zjson.hpp"
 #include <sstream>
 #include <time.h>
@@ -93,16 +92,6 @@ public:
 			rs.push_back(temp);
 		}
 		return rs;
-	}
-
-	static string GetLocalNowTime() {
-		time_t timep;
-		time(&timep);
-		char tmp[64];
-		struct tm nowTime;
-		localtime_s(&nowTime, &timep);
-		strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", &nowTime);
-		return std::string(tmp);
 	}
 
 	static string IntTransToString(int val) {

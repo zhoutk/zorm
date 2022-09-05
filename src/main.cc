@@ -6,7 +6,7 @@
 
 int main()
 {
-	DbBase* db = new DbBase("C:\\temp\\db.db");
+	DbBase* db = new DbBase("./db.db");
 	Json qObj;
 	qObj.addSubitem("username", "张三");
 
