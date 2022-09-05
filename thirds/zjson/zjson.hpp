@@ -157,9 +157,8 @@ namespace ZJSON {
 					rs.push_back(cur->name);
 					cur = cur->brother;
 				}
-			}else{
-				return rs;
 			}
+			return rs;
 		}
 
 		bool addSubitem(std::initializer_list<Json> values){

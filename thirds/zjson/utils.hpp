@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <string>
 #include <vector>
 #if defined(__GNUC__)
 #include <memory>       // std::unique_ptr
