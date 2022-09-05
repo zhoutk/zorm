@@ -1,12 +1,11 @@
-﻿#pragma once
+#pragma once
+#include "utils.hpp"
 #include <string>
 #include <variant>
 #include <any>
 #include <iostream>
-#include "utils.hpp"
 
 namespace ZJSON {
-
 	static const int max_depth = 100;
 
     using std::string;
@@ -77,7 +76,7 @@ namespace ZJSON {
 			this->type = origin.type;
 			if(origin.type == Type::Array || origin.type == Type::Object){
 				this->name = origin.name;
-				addSubJson(this, origin.child->name, origin.child);
+				addSubJson(this, origin.child ? origin.child->name : "", origin.child);
 			}else{
 				this->name = origin.name;
 				this->data = origin.data;
@@ -140,6 +139,29 @@ namespace ZJSON {
 				return rs;
 		}
 
+		bool contains(const string& key){
+			return !((*this)[key].type == Type::Error);
+		}
+
+		Json getAndRemove(const string& key){
+			Json rs = (*this)[key];
+			this->remove(key);
+			return rs;
+		}
+
+		std::vector<std::string> getAllKeys(){
+			std::vector<std::string> rs;
+			if(this->type == Type::Object){
+				Json* cur = this->child;
+				while (cur){
+					rs.push_back(cur->name);
+					cur = cur->brother;
+				}
+			}else{
+				return rs;
+			}
+		}
+
 		bool addSubitem(std::initializer_list<Json> values){
 			if (this->type == Type::Array)
 				for (auto al : values)
@@ -183,6 +205,8 @@ namespace ZJSON {
 		}
 
 		bool addSubitem(string name, std::vector<Json> items){
+			if(items.empty())
+				return true;
 			if (this->type == Type::Object){
 				Json arr(Type::Array);
 				for (Json item : items)
@@ -237,6 +261,10 @@ namespace ZJSON {
 			return this->type == Type::False;
 		}
 
+		bool isString(){
+			return this->type == Type::String;
+		}
+
 		float toFloat(){
 			return (float)this->toDouble();
 		}
@@ -284,6 +312,7 @@ namespace ZJSON {
 			if(this->type == Type::Object && value.type == Type::Object){
 				Json* cur = value.child;
 				while(cur) {
+					this->remove(cur->name);
 					this->extendItem(cur);
 					cur = cur->brother;
 				}
@@ -432,7 +461,7 @@ namespace ZJSON {
 				string v;
 				if (Utils::stringStartWith(typeStr, "char const"))
 					v = std::any_cast<char const*>(data);
-				else if(Utils::stringStartWith(typeStr, "char*") || Utils::stringStartWith(typeStr, "char *"))
+				else if (Utils::stringStartWith(typeStr, "char*") || Utils::stringStartWith(typeStr, "char *"))
 					v = std::any_cast<char *>(data);
 				else
 					v = std::any_cast<string>(data);

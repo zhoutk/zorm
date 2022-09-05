@@ -6,7 +6,7 @@ int main()
 {
 	DbBase* db = new DbBase("./db.db");
 	Json qObj;
-	qObj.addSubitem("id", 1);
+	qObj.addSubitem("id", 16);
 	Json rs = db->select("users", qObj/*, Utils::MakeVectorInitFromString("username")*/);
 	std::cout << rs.toString();
 

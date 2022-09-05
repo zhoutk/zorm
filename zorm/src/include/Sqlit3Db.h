@@ -266,144 +266,140 @@ namespace Sqlit3 {
 					fieldsJoinStr = DbUtils::GetVectorJoinStr(fields);
 				}
 
-				// string fuzzy = params.GetStringValueAndRemove("fuzzy");
-				// string sort = params.GetStringValueAndRemove("sort");
-				// int page = atoi(params.GetStringValueAndRemove("page").c_str());
-				// int size = atoi(params.GetStringValueAndRemove("size").c_str());
-				// string sum = params.GetStringValueAndRemove("sum");
-				// string count = params.GetStringValueAndRemove("count");
-				// string group = params.GetStringValueAndRemove("group");
+				string fuzzy = params.getAndRemove("fuzzy").toString();
+				string sort = params.getAndRemove("sort").toString();
+				int page = params.getAndRemove("page").toInt();
+				int size = params.getAndRemove("size").toInt();
+				string sum = params.getAndRemove("sum").toString();
+				string count = params.getAndRemove("count").toString();
+				string group = params.getAndRemove("group").toString();
 
-				// vector<string> allKeys = params.GetAllKeys();
-				// size_t len = allKeys.size();
-				// for (size_t i = 0; i < len; i++) {
-				// 	string k = allKeys[i];
-				// 	string v;
-				// 	int vType;
-				// 	params.GetValueAndTypeByKey(k, &v, &vType);
-				// 	if (where.length() > 0) {
-				// 		where.append(AndJoinStr);
-				// 	}
+				vector<string> allKeys = params.getAllKeys();
+				size_t len = allKeys.size();
+				for (size_t i = 0; i < len; i++) {
+					string k = allKeys[i];
+					Json v = params[k];
+					if (where.length() > 0) {
+						where.append(AndJoinStr);
+					}
 
-				// 	if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
-				// 		string whereExtra = "";
-				// 		vector<string> ele = DbUtils::MakeVectorInitFromString(params[k]);
-				// 		if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
-				// 			return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, k + " is wrong.");
-				// 		}
-				// 		else {
-				// 			if (k.compare("ins") == 0) {
-				// 				string c = ele.at(0);
-				// 				vector<string>(ele.begin() + 1, ele.end()).swap(ele);
-				// 				whereExtra.append(c).append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
-				// 			}
-				// 			else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
-				// 				whereExtra.append(" ( ");
-				// 				for (size_t j = 0; j < ele.size(); j += 2) {
-				// 					if (j > 0) {
-				// 						whereExtra.append(" or ");
-				// 					}
-				// 					whereExtra.append(ele.at(j)).append(" ");
-				// 					string eqStr = k.compare("lks") == 0 ? " like '" : " = '";
-				// 					string vsStr = ele.at(j + 1);
-				// 					if (k.compare("lks") == 0) {
-				// 						vsStr.insert(0, "%");
-				// 						vsStr.append("%");
-				// 					}
-				// 					vsStr.append("'");
-				// 					whereExtra.append(eqStr).append(vsStr);
-				// 				}
-				// 				whereExtra.append(" ) ");
-				// 			}
-				// 		}
-				// 		where.append(whereExtra);
-				// 	}
-				// 	else {				// process value
-				// 		if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, (char*)v.c_str())) {
-				// 			vector<string> vls = DbUtils::MakeVectorInitFromString(v);
-				// 			if (vls.size() == 2) {
-				// 				where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
-				// 			}
-				// 			else if (vls.size() == 4) {
-				// 				where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
-				// 				where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
-				// 			}
-				// 			else {
-				// 				return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "not equal value is wrong.");
-				// 			}
-				// 		}
-				// 		else if (!fuzzy.empty() && vType == QJsonValue::String) {
-				// 			where.append(k).append(" like '%").append(v).append("%'");
-				// 		}
-				// 		else {
-				// 			if (vType == QJsonValue::Double)
-				// 				where.append(k).append(" = ").append(v);
-				// 			else
-				// 				where.append(k).append(" = '").append(v).append("'");
-				// 		}
-				// 	}
-				// }
+					if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
+						string whereExtra = "";
+						vector<string> ele = DbUtils::MakeVectorInitFromString(params[k].toString());
+						if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
+							return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, k + " is wrong.");
+						}
+						else {
+							if (k.compare("ins") == 0) {
+								string c = ele.at(0);
+								vector<string>(ele.begin() + 1, ele.end()).swap(ele);
+								whereExtra.append(c).append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
+							}
+							else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
+								whereExtra.append(" ( ");
+								for (size_t j = 0; j < ele.size(); j += 2) {
+									if (j > 0) {
+										whereExtra.append(" or ");
+									}
+									whereExtra.append(ele.at(j)).append(" ");
+									string eqStr = k.compare("lks") == 0 ? " like '" : " = '";
+									string vsStr = ele.at(j + 1);
+									if (k.compare("lks") == 0) {
+										vsStr.insert(0, "%");
+										vsStr.append("%");
+									}
+									vsStr.append("'");
+									whereExtra.append(eqStr).append(vsStr);
+								}
+								whereExtra.append(" ) ");
+							}
+						}
+						where.append(whereExtra);
+					}
+					else {				// process value
+						if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v.toString())) {
+							vector<string> vls = DbUtils::MakeVectorInitFromString(v.toString());
+							if (vls.size() == 2) {
+								where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
+							}
+							else if (vls.size() == 4) {
+								where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
+								where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
+							}
+							else {
+								return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "not equal value is wrong.");
+							}
+						}
+						else if (!fuzzy.empty() && v.isString()) {
+							where.append(k).append(" like '%").append(v.toString()).append("%'");
+						}
+						else {
+							if (v.isString())
+								where.append(k).append(" = '").append(v.toString()).append("'");
+							else
+								where.append(k).append(" = ").append(v.toString());
+						}
+					}
+				}
 
-				// string extra = "";
-				// if (!sum.empty()) {
-				// 	vector<string> ele = DbUtils::MakeVectorInitFromString(sum);
-				// 	if (ele.empty() || ele.size() % 2 == 1)
-				// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "sum is wrong.");
-				// 	else {
-				// 		for (size_t i = 0; i < ele.size(); i += 2) {
-				// 			extra.append(",sum(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
-				// 		}
-				// 	}
-				// }
-				// if (!count.empty()) {
-				// 	vector<string> ele = DbUtils::MakeVectorInitFromString(count);
-				// 	if (ele.empty() || ele.size() % 2 == 1)
-				// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "count is wrong.");
-				// 	else {
-				// 		for (size_t i = 0; i < ele.size(); i += 2) {
-				// 			extra.append(",count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
-				// 		}
-				// 	}
-				// }
+				string extra = "";
+				if (!sum.empty()) {
+					vector<string> ele = DbUtils::MakeVectorInitFromString(sum);
+					if (ele.empty() || ele.size() % 2 == 1)
+						return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "sum is wrong.");
+					else {
+						for (size_t i = 0; i < ele.size(); i += 2) {
+							extra.append(",sum(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
+						}
+					}
+				}
+				if (!count.empty()) {
+					vector<string> ele = DbUtils::MakeVectorInitFromString(count);
+					if (ele.empty() || ele.size() % 2 == 1)
+						return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "count is wrong.");
+					else {
+						for (size_t i = 0; i < ele.size(); i += 2) {
+							extra.append(",count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
+						}
+					}
+				}
 
-				// if (queryType == 1) {
-				// 	querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
-				// 	if (where.length() > 0)
-				// 		querySql.append(" where ").append(where);
-				// }
-				// else {
-				// 	querySql.append(tablename);
-				// 	if (!fields.empty()) {
-				// 		size_t starIndex = querySql.find('*');
-				// 		if (starIndex < 10) {
-				// 			querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
-				// 		}
-				// 	}
-				// 	if (where.length() > 0) {
-				// 		size_t whereIndex = querySql.find("where");
-				// 		if (whereIndex == querySql.npos) {
-				// 			querySql.append(" where ").append(where);
-				// 		}
-				// 		else {
-				// 			querySql.append(" and ").append(where);
-				// 		}
-				// 	}
-				// }
+				if (queryType == 1) {
+					querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
+					if (where.length() > 0)
+						querySql.append(" where ").append(where);
+				}
+				else {
+					querySql.append(tablename);
+					if (!fields.empty()) {
+						size_t starIndex = querySql.find('*');
+						if (starIndex < 10) {
+							querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
+						}
+					}
+					if (where.length() > 0) {
+						size_t whereIndex = querySql.find("where");
+						if (whereIndex == querySql.npos) {
+							querySql.append(" where ").append(where);
+						}
+						else {
+							querySql.append(" and ").append(where);
+						}
+					}
+				}
 
-				// if (!group.empty()) {
-				// 	querySql.append(" group by ").append(group);
-				// }
+				if (!group.empty()) {
+					querySql.append(" group by ").append(group);
+				}
 
-				// if (!sort.empty()) {
-				// 	querySql.append(" order by ").append(sort);
-				// }
+				if (!sort.empty()) {
+					querySql.append(" order by ").append(sort);
+				}
 
-				// if (page > 0) {
-				// 	page--;
-				// 	querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
-				// }
-				querySql = "select * from users";
-
+				if (page > 0) {
+					page--;
+					querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
+				}
 				return ExecQuerySql(querySql, fields);
 			}
 			else {
