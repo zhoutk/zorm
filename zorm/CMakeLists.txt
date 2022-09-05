@@ -39,11 +39,8 @@ include_directories(../thirds/zjson)
 
 link_directories(../thirds/MySQL-C-Api-6.1/lib)
 
-
 FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c") 
-FILE(GLOB_RECURSE HEAD_FILES "./include/*.h" "../thirds/sqlit3/*.h") 
-
-# source_group("Head Files" FILES ${HEAD_FILES} )
+FILE(GLOB_RECURSE HEAD_FILES "./*.h" "../thirds/sqlit3/*.h") 
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES} )
 target_link_libraries(${PROJECT_NAME} libmysql.dll)

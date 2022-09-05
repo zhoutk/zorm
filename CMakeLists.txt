@@ -24,7 +24,7 @@ elseif(UNIX)
 endif()
 
 include_directories(./thirds/sqlit3)
-include_directories(./zorm/include)
+include_directories(./zorm/src/include)
 include_directories(./thirds/zjson)
 include_directories(./thirds/MySQL-C-Api-6.1/include)
 
@@ -32,8 +32,6 @@ link_directories(./thirds/MySQL-C-Api-6.1/lib)
 
 FILE(GLOB_RECURSE SRC_FILES "./src/*.cc" "./thirds/sqlit3/*.c") 
 FILE(GLOB_RECURSE HEAD_FILES "./src/*.h" "./thirds/sqlit3/*.h") 
-
-source_group("Head Files" FILES ${HEAD_FILES} )
 
 add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEAD_FILES} )
 target_link_libraries(${PROJECT_NAME} zorm )
