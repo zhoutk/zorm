@@ -46,3 +46,20 @@ endif()
 
 add_subdirectory(zorm)
 set_target_properties(zorm PROPERTIES LINKER_LANGUAGE CXX)
+
+##--------------------- Build unit tests -----------------------------------##
+option(CMAKE_ZJSON_ENABLE_TEST "Whether to enable unit tests" ON)
+if (CMAKE_ZJSON_ENABLE_TEST)
+    message(STATUS "Unit tests enabled")
+    enable_testing()
+    add_subdirectory(thirds/googletest-release-1.11.0 EXCLUDE_FROM_ALL)
+    include_directories(thirds/googletest-release-1.11.0/googletest/include)
+
+    add_executable(test_test tests/test_test.cpp "./thirds/sqlit3/sqlite3.h" "./thirds/sqlit3/sqlite3.c")
+    target_link_libraries(test_test gtest gtest_main dl)
+    if(MSVC)
+        add_test(NAME test_test COMMAND test_test)
+    elseif(UNIX)
+        add_test(NAME test_test COMMAND test_test dl)
+    endif()
+endif()
