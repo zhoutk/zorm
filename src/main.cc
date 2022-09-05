@@ -1,5 +1,3 @@
-#pragma once
-
 #include "Idb.h"
 #include "DbBase.h"
 #include "zjson.hpp"
