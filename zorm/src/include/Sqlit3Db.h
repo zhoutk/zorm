@@ -39,7 +39,7 @@ namespace Sqlit3 {
 		vector<string> QUERY_UNEQ_OPERS;
 
 	public:
-		Sqlit3Db(const char* apFilename,
+		Sqlit3Db(const char* apFilename, bool logFlag = false,
 			const int   aFlags = OPEN_READWRITE | OPEN_CREATE,
 			const int   aBusyTimeoutMs = 0,
 			const char* apVfs = nullptr) : mFilename(apFilename)
@@ -74,13 +74,14 @@ namespace Sqlit3 {
 					throw errmsg;
 				}
 			}
+			DbLogClose = logFlag;
 		};
 
-		Sqlit3Db(const std::string& aFilename,
+		Sqlit3Db(const std::string& aFilename, bool logFlag = false,
 			const int          aFlags = OPEN_READWRITE | OPEN_CREATE,
 			const int          aBusyTimeoutMs = 0,
 			const std::string& aVfs = "") {
-			new (this)Sqlit3Db(aFilename.c_str(), aFlags, aBusyTimeoutMs, aVfs.empty() ? nullptr : aVfs.c_str());
+			new (this)Sqlit3Db(aFilename.c_str(), logFlag, aFlags, aBusyTimeoutMs, aVfs.empty() ? nullptr : aVfs.c_str());
 		};
 
 		// Json remove(string tablename, Json& params)
@@ -482,7 +483,8 @@ namespace Sqlit3 {
 				rs.addSubitem("data", arr);
 			}
 			sqlite3_finalize(stmt);
-			std::cout << "SQL: " << aQuery << std::endl;
+			//if(!DbLogClose)
+			!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 			return rs;
 		}
 
@@ -504,6 +506,8 @@ namespace Sqlit3 {
 		// 	cout << "SQL: " << aQuery << endl;
 		// 	return rs;
 		// }
+
+		bool DbLogClose;
 
 	};
 }
