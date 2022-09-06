@@ -84,107 +84,101 @@ namespace Sqlit3 {
 			new (this)Sqlit3Db(aFilename.c_str(), logFlag, aFlags, aBusyTimeoutMs, aVfs.empty() ? nullptr : aVfs.c_str());
 		};
 
-		// Json remove(string tablename, Json& params)
-		// {
-		// 	if (params.IsObject()) {
-		// 		string execSql = "delete from ";
-		// 		execSql.append(tablename).append(" where id = ");
+		Json remove(string tablename, Json params)
+		{
+			if (!params.isError()) {
+				string execSql = "delete from ";
+				execSql.append(tablename).append(" where id = ");
 
-		// 		string v;
-		// 		int vType;
-		// 		params.GetValueAndTypeByKey("id", &v, &vType);
+				Json v = params["id"];
 
-		// 		if (vType == 6)
-		// 			execSql.append(v);
-		// 		else
-		// 			execSql.append("'").append(v).append("'");
+				if (v.isString())
+					execSql.append("'").append(v.toString()).append("'");
+				else
+					execSql.append(v.toString());
 
-		// 		return ExecNoneQuerySql(execSql);
-		// 	}
-		// 	else {
-		// 		return DbUtils::MakeJsonObject(STPARAMERR);
-		// 	}
-		// }
+				return ExecNoneQuerySql(execSql);
+			}
+			else {
+				return DbUtils::MakeJsonObject(STPARAMERR);
+			}
+		}
 
-		// Json update(string tablename, Json& params)
-		// {
-		// 	if (params.IsObject()) {
-		// 		string execSql = "update ";
-		// 		execSql.append(tablename).append(" set ");
+		Json update(string tablename, Json params)
+		{
+			if (!params.isError()) {
+				string execSql = "update ";
+				execSql.append(tablename).append(" set ");
 
-		// 		vector<string> allKeys = params.GetAllKeys();
+				vector<string> allKeys = params.getAllKeys();
 
-		// 		vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
-		// 		if (iter == allKeys.end()) {
-		// 			return DbUtils::MakeJsonObject(STPARAMERR);
-		// 		}
-		// 		else {
-		// 			size_t len = allKeys.size();
-		// 			size_t conditionLen = len - 2;
-		// 			string fields = "", where = " where id = ";
-		// 			for (size_t i = 0; i < len; i++) {
-		// 				string key = allKeys[i];
-		// 				string v;
-		// 				int vType;
-		// 				params.GetValueAndTypeByKey(key, &v, &vType);
-		// 				if (key.compare("id") == 0) {
-		// 					conditionLen++;
-		// 					if (vType == 6)
-		// 						where.append(v);
-		// 					else
-		// 						where.append("'").append(v).append("'");
-		// 				}
-		// 				else {
-		// 					fields.append(key).append(" = ");
-		// 					if (vType == 6)
-		// 						fields.append(v);
-		// 					else
-		// 						fields.append("'").append(v).append("'");
-		// 					if (i < conditionLen) {
-		// 						fields.append(",");
-		// 					}
-		// 				}
-		// 			}
-		// 			execSql.append(fields).append(where);
-		// 			return ExecNoneQuerySql(execSql);
-		// 		}
-		// 	}
-		// 	else {
-		// 		return DbUtils::MakeJsonObject(STPARAMERR);
-		// 	}
-		// }
+				vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
+				if (iter == allKeys.end()) {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
+				else {
+					size_t len = allKeys.size();
+					size_t conditionLen = len - 2;
+					string fields = "", where = " where id = ";
+					for (size_t i = 0; i < len; i++) {
+						string key = allKeys[i];
+						Json v = params[key];
+						if (key.compare("id") == 0) {
+							conditionLen++;
+							if (v.isString())
+								where.append("'").append(v.toString()).append("'");
+							else
+								where.append(v.toString());
+						}
+						else {
+							fields.append(key).append(" = ");
+							if (v.isString())
+								fields.append("'").append(v.toString()).append("'");
+							else
+								fields.append(v.toString());
+							if (i < conditionLen) {
+								fields.append(",");
+							}
+						}
+					}
+					execSql.append(fields).append(where);
+					return ExecNoneQuerySql(execSql);
+				}
+			}
+			else {
+				return DbUtils::MakeJsonObject(STPARAMERR);
+			}
+		}
 
-		// Json create(string tablename, Json& params)
-		// {
-		// 	if (params.IsObject()) {
-		// 		string execSql = "insert into ";
-		// 		execSql.append(tablename).append(" ");
+		Json create(string tablename, Json params)
+		{
+			if (!params.isError()) {
+				string execSql = "insert into ";
+				execSql.append(tablename).append(" ");
 
-		// 		vector<string> allKeys = params.GetAllKeys();
-		// 		size_t len = allKeys.size();
-		// 		string fields = "", vs = "";
-		// 		for (size_t i = 0; i < len; i++) {
-		// 			string key = allKeys[i];
-		// 			fields.append(key);
-		// 			string v;
-		// 			int vType;
-		// 			params.GetValueAndTypeByKey(key, &v, &vType);
-		// 			if (vType == 6)
-		// 				vs.append(v);
-		// 			else
-		// 				vs.append("'").append(v).append("'");
-		// 			if (i < len - 1) {
-		// 				fields.append(",");
-		// 				vs.append(",");
-		// 			}
-		// 		}
-		// 		execSql.append("(").append(fields).append(") values (").append(vs).append(")");
-		// 		return ExecNoneQuerySql(execSql);
-		// 	}
-		// 	else {
-		// 		return DbUtils::MakeJsonObject(STPARAMERR);
-		// 	}
-		// }
+				vector<string> allKeys = params.getAllKeys();
+				size_t len = allKeys.size();
+				string fields = "", vs = "";
+				for (size_t i = 0; i < len; i++) {
+					string key = allKeys[i];
+					fields.append(key);
+					Json v = params[key];
+					if (v.isString())
+						vs.append("'").append(v.toString()).append("'");
+					else
+						vs.append(v.toString());
+					if (i < len - 1) {
+						fields.append(",");
+						vs.append(",");
+					}
+				}
+				execSql.append("(").append(fields).append(") values (").append(vs).append(")");
+				return ExecNoneQuerySql(execSql);
+			}
+			else {
+				return DbUtils::MakeJsonObject(STPARAMERR);
+			}
+		}
 
 		// Json execSql(string sql) {
 		// 	return ExecNoneQuerySql(sql);
@@ -488,24 +482,23 @@ namespace Sqlit3 {
 			return rs;
 		}
 
-		// Json ExecNoneQuerySql(string aQuery) {
-		// 	Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-		// 	sqlite3_stmt* stmt = NULL;
-		// 	sqlite3* handle = getHandle();
-		// 	string u8Query = DbUtils::UnicodeToU8(aQuery);
-		// 	const int ret = sqlite3_prepare_v2(handle, u8Query.c_str(), static_cast<int>(u8Query.size()), &stmt, NULL);
-		// 	if (SQLITE_OK != ret)
-		// 	{
-		// 		string errmsg = sqlite3_errmsg(getHandle());
-		// 		rs.ExtendObject(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-		// 	}
-		// 	else {
-		// 		sqlite3_step(stmt);
-		// 	}
-		// 	sqlite3_finalize(stmt);
-		// 	cout << "SQL: " << aQuery << endl;
-		// 	return rs;
-		// }
+		Json ExecNoneQuerySql(string aQuery) {
+			Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+			sqlite3_stmt* stmt = NULL;
+			sqlite3* handle = getHandle();
+			const int ret = sqlite3_prepare_v2(handle, aQuery.c_str(), static_cast<int>(aQuery.size()), &stmt, NULL);
+			if (SQLITE_OK != ret)
+			{
+				string errmsg = sqlite3_errmsg(getHandle());
+				rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+			}
+			else {
+				sqlite3_step(stmt);
+			}
+			sqlite3_finalize(stmt);
+			!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+			return rs;
+		}
 
 		bool DbLogClose;
 

@@ -86,7 +86,7 @@ namespace Mysql {
 		// 		return ExecNoneQuerySql(execSql);
 		// 	}
 		// 	else {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// }
 
@@ -101,7 +101,7 @@ namespace Mysql {
 
 		// 		vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 		// 		if (iter == allKeys.end()) {
-		// 			return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 			return DbUtils::MakeJsonObject(STPARAMERR);
 		// 		}
 		// 		else {
 		// 			size_t len = allKeys.size();
@@ -135,7 +135,7 @@ namespace Mysql {
 		// 		}
 		// 	}
 		// 	else {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// }
 
@@ -158,12 +158,12 @@ namespace Mysql {
 		// 		return ExecNoneQuerySql(execSql);
 		// 	}
 		// 	else {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// }
 
 
-		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), int queryType = 1) override
+		Json select(string tablename, Json params, vector<string> fields = vector<string>(), int queryType = 1) override
 		{
 			if (!params.isError()) {
 				string querySql = "";
@@ -196,9 +196,9 @@ namespace Mysql {
 
 				// 	if (DbUtils::FindCharArray(QUERY_EXTRA_KEYS, (char*)k.c_str())) {   // process key
 				// 		string whereExtra = "";
-				// 		vector<string> ele = DbUtils::MakeVectorInitFromString(params[k]);
+				// 		vector<string> ele = DbUtils::MakeVector(params[k]);
 				// 		if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
-				// 			return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, k + " is wrong.");
+				// 			return DbUtils::MakeJsonObject(STPARAMERR, k + " is wrong.");
 				// 		}
 				// 		else {
 				// 			if (k.compare("ins") == 0) {
@@ -229,7 +229,7 @@ namespace Mysql {
 				// 	}
 				// 	else {				// process value
 				// 		if (DbUtils::FindStartsCharArray(QUERY_UNEQ_OPERS, (char*)v.c_str())) {
-				// 			vector<string> vls = DbUtils::MakeVectorInitFromString(v);
+				// 			vector<string> vls = DbUtils::MakeVector(v);
 				// 			if (vls.size() == 2) {
 				// 				where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
 				// 			}
@@ -238,7 +238,7 @@ namespace Mysql {
 				// 				where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
 				// 			}
 				// 			else {
-				// 				return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "not equal value is wrong.");
+				// 				return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
 				// 			}
 				// 		}
 				// 		else if (!fuzzy.empty() && vType == QJsonValue::String) {
@@ -255,9 +255,9 @@ namespace Mysql {
 
 				// string extra = "";
 				// if (!sum.empty()) {
-				// 	vector<string> ele = DbUtils::MakeVectorInitFromString(sum);
+				// 	vector<string> ele = DbUtils::MakeVector(sum);
 				// 	if (ele.empty() || ele.size() % 2 == 1)
-				// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "sum is wrong.");
+				// 		return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
 				// 	else {
 				// 		for (size_t i = 0; i < ele.size(); i += 2) {
 				// 			extra.append(",sum(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
@@ -265,9 +265,9 @@ namespace Mysql {
 				// 	}
 				// }
 				// if (!count.empty()) {
-				// 	vector<string> ele = DbUtils::MakeVectorInitFromString(count);
+				// 	vector<string> ele = DbUtils::MakeVector(count);
 				// 	if (ele.empty() || ele.size() % 2 == 1)
-				// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "count is wrong.");
+				// 		return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
 				// 	else {
 				// 		for (size_t i = 0; i < ele.size(); i += 2) {
 				// 			extra.append(",count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
@@ -317,7 +317,7 @@ namespace Mysql {
 				return ExecQuerySql(querySql, fields);
 			}
 			else {
-				return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+				return DbUtils::MakeJsonObject(STPARAMERR);
 			}
 		}
 
@@ -337,7 +337,7 @@ namespace Mysql {
 		// {
 		// 	string sql = "insert into ";
 		// 	if (elements.empty()) {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// 	else {
 		// 		string keyStr = " ( ";
@@ -371,14 +371,14 @@ namespace Mysql {
 		// Json transGo(vector<string> sqls, bool isAsync = false) override
 		// {
 		// 	if (sqls.empty()) {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// 	else {
 		// 		bool isExecSuccess = true;
 		// 		string errmsg = "Running transaction error: ";
 		// 		MYSQL* mysql = GetConnection();
 		// 		if (mysql == nullptr)
-		// 			return DbUtils::MakeJsonObjectForFuncReturn(STDBCONNECTERR);
+		// 			return DbUtils::MakeJsonObject(STDBCONNECTERR);
 
 		// 		mysql_query(mysql, "begin;");
 		// 		for (size_t i = 0; i < sqls.size(); i++) {
@@ -396,12 +396,12 @@ namespace Mysql {
 		// 		{
 		// 			mysql_query(mysql, "commit;");
 		// 			cout << "Transaction Success: run " << sqls.size() << " sqls." << endl;
-		// 			return DbUtils::MakeJsonObjectForFuncReturn(STSUCCESS, "Transaction success.");
+		// 			return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
 		// 		}
 		// 		else
 		// 		{
 		// 			mysql_query(mysql, "rollback;");
-		// 			return DbUtils::MakeJsonObjectForFuncReturn(STDBOPERATEERR, errmsg);
+		// 			return DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
 		// 		}
 		// 	}
 		// }
@@ -418,17 +418,17 @@ namespace Mysql {
 	private:
 
 		Json ExecQuerySql(string aQuery, vector<string> fields) {
-			Json rs = DbUtils::MakeJsonObjectForFuncReturn(STSUCCESS);
+			Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 			string u8Query = DbUtils::UnicodeToU8(aQuery);
 			MYSQL* mysql = GetConnection();
 			if (mysql == nullptr)
-				return DbUtils::MakeJsonObjectForFuncReturn(STDBCONNECTERR);
+				return DbUtils::MakeJsonObject(STDBCONNECTERR);
 			if (mysql_query(mysql, u8Query.c_str()))
 			{
 				string errmsg = "";
 				errmsg.append(DbUtils::U8ToUnicode((char*)mysql_error(mysql))).append(". error code: ");
 				errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-				return rs.extend(DbUtils::MakeJsonObjectForFuncReturn(STDBOPERATEERR, errmsg));
+				return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 			}
 			else
 			{
@@ -449,7 +449,7 @@ namespace Mysql {
 						arr.push_back(al);
 					}
 					if (arr.empty())
-						rs.extend(DbUtils::MakeJsonObjectForFuncReturn(STQUERYEMPTY));
+						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 					rs.addSubitem("data", arr);
 				}
 				mysql_free_result(result);
@@ -459,18 +459,18 @@ namespace Mysql {
 		}
 
 		// Json ExecNoneQuerySql(string aQuery) {
-		// 	Json rs = DbUtils::MakeJsonObjectForFuncReturn(STSUCCESS);
+		// 	Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 		// 	string u8Query = DbUtils::UnicodeToU8(aQuery);
 		// 	MYSQL* mysql = GetConnection();
 		// 	if (mysql == nullptr)
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STDBCONNECTERR);
+		// 		return DbUtils::MakeJsonObject(STDBCONNECTERR);
 
 		// 	if (mysql_query(mysql, u8Query.c_str()))
 		// 	{
 		// 		string errmsg = "";
 		// 		errmsg.append(DbUtils::U8ToUnicode((char*)mysql_error(mysql))).append(". error code: ");
 		// 		errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-		// 		return rs.ExtendObject(DbUtils::MakeJsonObjectForFuncReturn(STDBOPERATEERR, errmsg));
+		// 		return rs.ExtendObject(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 		// 	}
 		// 	else {
 		// 		int affected = (int)mysql_affected_rows(mysql);
