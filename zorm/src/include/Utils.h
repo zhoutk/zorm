@@ -83,7 +83,7 @@ public:
 		return false;
 	}
 
-	static vector<string> MakeVectorInitFromString(string str, char flag = ',') {
+	static vector<string> MakeVector(string str, char flag = ',') {
 		vector<string> rs;
 		std::istringstream iss(str);
 		string temp;
@@ -111,7 +111,7 @@ public:
 		return ss.str();
 	}
 
-	static Json MakeJsonObjectForFuncReturn(StatusCodes code, string info = "") {
+	static Json MakeJsonObject(StatusCodes code, string info = "") {
 		Json rs;
 		rs.addSubitem("status", (int)code);
 		if (!info.empty()) {

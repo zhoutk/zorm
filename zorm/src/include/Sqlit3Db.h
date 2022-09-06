@@ -44,7 +44,7 @@ namespace Sqlit3 {
 			const int   aBusyTimeoutMs = 0,
 			const char* apVfs = nullptr) : mFilename(apFilename)
 		{
-			QUERY_EXTRA_KEYS = DbUtils::MakeVectorInitFromString("ins,lks,ors");
+			QUERY_EXTRA_KEYS = DbUtils::MakeVector("ins,lks,ors");
 
 			QUERY_UNEQ_OPERS.push_back(">,");
 			QUERY_UNEQ_OPERS.push_back(">=,");
@@ -102,7 +102,7 @@ namespace Sqlit3 {
 		// 		return ExecNoneQuerySql(execSql);
 		// 	}
 		// 	else {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// }
 
@@ -116,7 +116,7 @@ namespace Sqlit3 {
 
 		// 		vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 		// 		if (iter == allKeys.end()) {
-		// 			return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 			return DbUtils::MakeJsonObject(STPARAMERR);
 		// 		}
 		// 		else {
 		// 			size_t len = allKeys.size();
@@ -150,7 +150,7 @@ namespace Sqlit3 {
 		// 		}
 		// 	}
 		// 	else {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// }
 
@@ -182,7 +182,7 @@ namespace Sqlit3 {
 		// 		return ExecNoneQuerySql(execSql);
 		// 	}
 		// 	else {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// }
 
@@ -197,7 +197,7 @@ namespace Sqlit3 {
 		// Json insertBatch(string tablename, vector<Json> elements, string constraint) {
 		// 	string sql = "insert into ";
 		// 	if (elements.empty()) {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// 	else {
 		// 		string keyStr = " (";
@@ -223,7 +223,7 @@ namespace Sqlit3 {
 
 		// Json transGo(vector<string> sqls, bool isAsync = false) {
 		// 	if (sqls.empty()) {
-		// 		return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+		// 		return DbUtils::MakeJsonObject(STPARAMERR);
 		// 	}
 		// 	else {
 		// 		char* zErrMsg = 0;
@@ -245,13 +245,13 @@ namespace Sqlit3 {
 		// 			sqlite3_exec(getHandle(), "commit;", 0, 0, 0);
 		// 			sqlite3_close(getHandle());
 		// 			cout << "Transaction Success: run " << sqls.size() << " sqls." << endl;
-		// 			return DbUtils::MakeJsonObjectForFuncReturn(STSUCCESS, "Transaction success.");
+		// 			return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
 		// 		}
 		// 		else
 		// 		{
 		// 			sqlite3_exec(getHandle(), "rollback;", 0, 0, 0);
 		// 			sqlite3_close(getHandle());
-		// 			return DbUtils::MakeJsonObjectForFuncReturn(STDBOPERATEERR, zErrMsg);
+		// 			return DbUtils::MakeJsonObject(STDBOPERATEERR, zErrMsg);
 		// 		}
 		// 	}
 		// }
@@ -286,9 +286,9 @@ namespace Sqlit3 {
 
 					if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
 						string whereExtra = "";
-						vector<string> ele = DbUtils::MakeVectorInitFromString(params[k].toString());
+						vector<string> ele = DbUtils::MakeVector(params[k].toString());
 						if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
-							return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, k + " is wrong.");
+							return DbUtils::MakeJsonObject(STPARAMERR, k + " is wrong.");
 						}
 						else {
 							if (k.compare("ins") == 0) {
@@ -319,7 +319,7 @@ namespace Sqlit3 {
 					}
 					else {				// process value
 						if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v.toString())) {
-							vector<string> vls = DbUtils::MakeVectorInitFromString(v.toString());
+							vector<string> vls = DbUtils::MakeVector(v.toString());
 							if (vls.size() == 2) {
 								where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
 							}
@@ -328,7 +328,7 @@ namespace Sqlit3 {
 								where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
 							}
 							else {
-								return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "not equal value is wrong.");
+								return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
 							}
 						}
 						else if (!fuzzy.empty() && v.isString()) {
@@ -345,9 +345,9 @@ namespace Sqlit3 {
 
 				string extra = "";
 				if (!sum.empty()) {
-					vector<string> ele = DbUtils::MakeVectorInitFromString(sum);
+					vector<string> ele = DbUtils::MakeVector(sum);
 					if (ele.empty() || ele.size() % 2 == 1)
-						return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "sum is wrong.");
+						return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
 					else {
 						for (size_t i = 0; i < ele.size(); i += 2) {
 							extra.append(",sum(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
@@ -355,9 +355,9 @@ namespace Sqlit3 {
 					}
 				}
 				if (!count.empty()) {
-					vector<string> ele = DbUtils::MakeVectorInitFromString(count);
+					vector<string> ele = DbUtils::MakeVector(count);
 					if (ele.empty() || ele.size() % 2 == 1)
-						return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR, "count is wrong.");
+						return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
 					else {
 						for (size_t i = 0; i < ele.size(); i += 2) {
 							extra.append(",count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
@@ -404,7 +404,7 @@ namespace Sqlit3 {
 				return ExecQuerySql(querySql, fields);
 			}
 			else {
-				return DbUtils::MakeJsonObjectForFuncReturn(STPARAMERR);
+				return DbUtils::MakeJsonObject(STPARAMERR);
 			}
 		};
 
@@ -415,14 +415,14 @@ namespace Sqlit3 {
 
 	private:
 		Json ExecQuerySql(string aQuery, vector<string> fields) {
-			Json rs = DbUtils::MakeJsonObjectForFuncReturn(STSUCCESS);
+			Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 			sqlite3_stmt* stmt = NULL;
 			sqlite3* handle = getHandle();
 			const int ret = sqlite3_prepare_v2(handle, aQuery.c_str(), static_cast<int>(aQuery.size()), &stmt, NULL);
 			if (SQLITE_OK != ret)
 			{
 				string errmsg = sqlite3_errmsg(getHandle());
-				rs.extend(DbUtils::MakeJsonObjectForFuncReturn(STDBOPERATEERR, errmsg));
+				rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 			}
 			else {
 				int insertPot = aQuery.find("where");
@@ -479,7 +479,7 @@ namespace Sqlit3 {
 					arr.push_back(al);
 				}
 				if (arr.empty())
-					rs.extend(DbUtils::MakeJsonObjectForFuncReturn(STQUERYEMPTY));
+					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 				rs.addSubitem("data", arr);
 			}
 			sqlite3_finalize(stmt);
@@ -489,7 +489,7 @@ namespace Sqlit3 {
 		}
 
 		// Json ExecNoneQuerySql(string aQuery) {
-		// 	Json rs = DbUtils::MakeJsonObjectForFuncReturn(STSUCCESS);
+		// 	Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 		// 	sqlite3_stmt* stmt = NULL;
 		// 	sqlite3* handle = getHandle();
 		// 	string u8Query = DbUtils::UnicodeToU8(aQuery);
@@ -497,7 +497,7 @@ namespace Sqlit3 {
 		// 	if (SQLITE_OK != ret)
 		// 	{
 		// 		string errmsg = sqlite3_errmsg(getHandle());
-		// 		rs.ExtendObject(DbUtils::MakeJsonObjectForFuncReturn(STDBOPERATEERR, errmsg));
+		// 		rs.ExtendObject(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 		// 	}
 		// 	else {
 		// 		sqlite3_step(stmt);
