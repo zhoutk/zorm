@@ -115,7 +115,7 @@ public:
 		Json rs;
 		rs.addSubitem("status", (int)code);
 		if (!info.empty()) {
-			info.insert(0, "\r\ndetails, ");
+			info.insert(0, " details, ");
 		}
 		info.insert(0, STCODEMESSAGES[(int)code]);
 		rs.addSubitem("msg", info);

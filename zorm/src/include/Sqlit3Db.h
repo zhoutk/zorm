@@ -189,9 +189,9 @@ namespace Sqlit3 {
 		// 	return ExecNoneQuerySql(sql);
 		// }
 
-		// Json querySql(string sql, Json& params = Json(), vector<string> filelds = vector<string>()) {
-		// 	return select(sql, params, filelds, 2);
-		// }
+		Json querySql(string sql, Json params = Json(), vector<string> filelds = vector<string>()) {
+			return select(sql, params, filelds, 2);
+		}
 
 		// Json insertBatch(string tablename, vector<Json> elements, string constraint) {
 		// 	string sql = "insert into ";
@@ -255,7 +255,7 @@ namespace Sqlit3 {
 		// 	}
 		// }
 
-		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), int queryType = 1) {
+		Json select(string tablename, Json params, vector<string> fields = vector<string>(), int queryType = 1) {
 			if (!params.isError()) {
 				string querySql = "";
 				string where = "";
@@ -417,8 +417,7 @@ namespace Sqlit3 {
 			Json rs = DbUtils::MakeJsonObjectForFuncReturn(STSUCCESS);
 			sqlite3_stmt* stmt = NULL;
 			sqlite3* handle = getHandle();
-			string u8Query = aQuery;
-			const int ret = sqlite3_prepare_v2(handle, u8Query.c_str(), static_cast<int>(u8Query.size()), &stmt, NULL);
+			const int ret = sqlite3_prepare_v2(handle, aQuery.c_str(), static_cast<int>(aQuery.size()), &stmt, NULL);
 			if (SQLITE_OK != ret)
 			{
 				string errmsg = sqlite3_errmsg(getHandle());
