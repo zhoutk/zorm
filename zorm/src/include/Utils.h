@@ -113,7 +113,7 @@ public:
 
 	static Json MakeJsonObjectForFuncReturn(StatusCodes code, string info = "") {
 		Json rs;
-		rs.addSubitem("code", (int)code);
+		rs.addSubitem("status", (int)code);
 		if (!info.empty()) {
 			info.insert(0, "\r\ndetails, ");
 		}

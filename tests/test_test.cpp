@@ -8,5 +8,5 @@ TEST(TestTest, test_test_1) {
 	Json qObj;
 	qObj.addSubitem("id", 1);
 	Json rs = db->select("users", qObj);
-	EXPECT_EQ(rs["code"].toString(), "200");
+	EXPECT_EQ(rs["status"].toString(), "200");
 }
