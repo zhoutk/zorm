@@ -7,6 +7,42 @@
 
 class DbUtils {
 public:
+	static std::string escape(std::string &str)
+	{
+		setlocale(LC_CTYPE, "");
+		wchar_t aa[1 << 10];
+		mbstowcs(aa, str.c_str(), str.size());
+		std::wstring wcs(aa);
+		str = "";
+		for (int i = 0; i < wcs.size(); i++)
+		{
+			if (wcs[i] > 0xff)
+			{
+				char tmp[5];
+				sprintf(tmp, "%x", wcs[i]);
+				str += "%u";
+				str += tmp;
+			}
+			else
+			{
+				if ((wcs[i] >= 'a' && wcs[i] <= 'z') || (wcs[i] >= 'A' && wcs[i] <= 'Z') || (wcs[i] >= '0' && wcs[i] <= '9'))
+				{
+					char tmp[2];
+					sprintf(tmp, "%c", wcs[i]);
+					str += tmp;
+				}
+				else
+				{
+					char tmp[3];
+					sprintf(tmp, "%02x", wcs[i]);
+					str += "%";
+					str += tmp;
+				}
+			}
+		}
+		return str;
+	}
+
 	static bool FindStartsStringFromVector(vector<string> strs, string value) {
 		bool rs = false;
 		size_t len = strs.size();
@@ -118,7 +154,7 @@ public:
 			info.insert(0, " details, ");
 		}
 		info.insert(0, STCODEMESSAGES[(int)code]);
-		rs.addSubitem("msg", info);
+		rs.addSubitem("message", info);
 		return rs;
 	}
 
