@@ -84,7 +84,7 @@ namespace Sqlit3 {
 			new (this)Sqlit3Db(aFilename.c_str(), logFlag, aFlags, aBusyTimeoutMs, aVfs.empty() ? nullptr : aVfs.c_str());
 		};
 
-		Json remove(string tablename, Json params)
+		Json remove(string tablename, Json& params)
 		{
 			if (!params.isError()) {
 				string execSql = "delete from ";
@@ -104,7 +104,7 @@ namespace Sqlit3 {
 			}
 		}
 
-		Json update(string tablename, Json params)
+		Json update(string tablename, Json& params)
 		{
 			if (!params.isError()) {
 				string execSql = "update ";
@@ -150,7 +150,7 @@ namespace Sqlit3 {
 			}
 		}
 
-		Json create(string tablename, Json params)
+		Json create(string tablename, Json& params)
 		{
 			if (!params.isError()) {
 				string execSql = "insert into ";
@@ -180,77 +180,78 @@ namespace Sqlit3 {
 			}
 		}
 
-		// Json execSql(string sql) {
-		// 	return ExecNoneQuerySql(sql);
-		// }
-
-		Json querySql(string sql, Json params = Json(), vector<string> filelds = vector<string>()) {
-			return select(sql, params, filelds, 2);
+		Json execSql(string sql) {
+			return ExecNoneQuerySql(sql);
 		}
 
-		// Json insertBatch(string tablename, vector<Json> elements, string constraint) {
-		// 	string sql = "insert into ";
-		// 	if (elements.empty()) {
-		// 		return DbUtils::MakeJsonObject(STPARAMERR);
-		// 	}
-		// 	else {
-		// 		string keyStr = " (";
-		// 		keyStr.append(DbUtils::GetVectorJoinStr(elements[0].GetAllKeys())).append(" ) ");
-		// 		for (size_t i = 0; i < elements.size(); i++) {
-		// 			vector<string> keys = elements[i].GetAllKeys();
-		// 			string valueStr = " select ";
-		// 			for (size_t j = 0; j < keys.size(); j++) {
-		// 				valueStr.append("'").append(elements[i][keys[j]]).append("'");
-		// 				if (j < keys.size() - 1) {
-		// 					valueStr.append(",");
-		// 				}
-		// 			}
-		// 			if (i < elements.size() - 1) {
-		// 				valueStr.append(" union all ");
-		// 			}
-		// 			keyStr.append(valueStr);
-		// 		}
-		// 		sql.append(tablename).append(keyStr);
-		// 	}
-		// 	return ExecNoneQuerySql(sql);
-		// }
+		Json querySql(string sql) {
+			Json params;
+			return select(sql, params, std::vector<std::string>(), 2);
+		}
 
-		// Json transGo(vector<string> sqls, bool isAsync = false) {
-		// 	if (sqls.empty()) {
-		// 		return DbUtils::MakeJsonObject(STPARAMERR);
-		// 	}
-		// 	else {
-		// 		char* zErrMsg = 0;
-		// 		bool isExecSuccess = true;
-		// 		sqlite3_exec(getHandle(), "begin;", 0, 0, &zErrMsg);
-		// 		for (size_t i = 0; i < sqls.size(); i++) {
-		// 			string u8Query = DbUtils::UnicodeToU8(sqls[i]);
-		// 			int rc = sqlite3_exec(getHandle(), u8Query.c_str(), 0, 0, &zErrMsg);
-		// 			if (rc != SQLITE_OK)
-		// 			{
-		// 				isExecSuccess = false;
-		// 				cout << "Transaction Fail, sql " << i + 1 << " is wrong. Error: " << zErrMsg << endl;
-		// 				sqlite3_free(zErrMsg);
-		// 				break;
-		// 			}
-		// 		}
-		// 		if (isExecSuccess)
-		// 		{
-		// 			sqlite3_exec(getHandle(), "commit;", 0, 0, 0);
-		// 			sqlite3_close(getHandle());
-		// 			cout << "Transaction Success: run " << sqls.size() << " sqls." << endl;
-		// 			return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
-		// 		}
-		// 		else
-		// 		{
-		// 			sqlite3_exec(getHandle(), "rollback;", 0, 0, 0);
-		// 			sqlite3_close(getHandle());
-		// 			return DbUtils::MakeJsonObject(STDBOPERATEERR, zErrMsg);
-		// 		}
-		// 	}
-		// }
+		Json insertBatch(string tablename, Json& elements, string constraint) {
+			string sql = "insert into ";
+			if (elements.size() < 1) {
+				return DbUtils::MakeJsonObject(STPARAMERR);
+			}
+			else {
+				string keyStr = " (";
+				keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) ");
+				for (size_t i = 0; i < elements.size(); i++) {
+					vector<string> keys = elements[i].getAllKeys();
+					string valueStr = " select ";
+					for (size_t j = 0; j < keys.size(); j++) {
+						valueStr.append("'").append(elements[i][keys[j]].toString()).append("'");
+						if (j < keys.size() - 1) {
+							valueStr.append(",");
+						}
+					}
+					if (i < elements.size() - 1) {
+						valueStr.append(" union all ");
+					}
+					keyStr.append(valueStr);
+				}
+				sql.append(tablename).append(keyStr);
+			}
+			return ExecNoneQuerySql(sql);
+		}
 
-		Json select(string tablename, Json params, vector<string> fields = vector<string>(), int queryType = 1) {
+		Json transGo(Json& sqls, bool isAsync = false) {
+			if (sqls.size() < 1) {
+				return DbUtils::MakeJsonObject(STPARAMERR);
+			}
+			else {
+				char* zErrMsg = 0;
+				bool isExecSuccess = true;
+				sqlite3_exec(getHandle(), "begin;", 0, 0, &zErrMsg);
+				for (size_t i = 0; i < sqls.size(); i++) {
+					string sql = sqls[i].toString();
+					int rc = sqlite3_exec(getHandle(), sql.c_str(), 0, 0, &zErrMsg);
+					if (rc != SQLITE_OK)
+					{
+						isExecSuccess = false;
+						std::cout << "Transaction Fail, sql " << i + 1 << " is wrong. Error: " << zErrMsg << std::endl;
+						sqlite3_free(zErrMsg);
+						break;
+					}
+				}
+				if (isExecSuccess)
+				{
+					sqlite3_exec(getHandle(), "commit;", 0, 0, 0);
+					sqlite3_close(getHandle());
+					!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
+					return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success, run " + DbUtils::IntTransToString(sqls.size()) + " sqls.");
+				}
+				else
+				{
+					sqlite3_exec(getHandle(), "rollback;", 0, 0, 0);
+					sqlite3_close(getHandle());
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, zErrMsg);
+				}
+			}
+		}
+
+		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), int queryType = 1) {
 			if (!params.isError()) {
 				string querySql = "";
 				string where = "";
