@@ -184,9 +184,8 @@ namespace Sqlit3 {
 			return ExecNoneQuerySql(sql);
 		}
 
-		Json querySql(string sql) {
-			Json params;
-			return select(sql, params, std::vector<std::string>(), 2);
+		Json querySql(string sql, Json& values, Json& params, vector<string> fields = vector<string>()) {
+			return select(sql, params, fields, values, 2);
 		}
 
 		Json insertBatch(string tablename, Json& elements, string constraint) {
@@ -251,7 +250,7 @@ namespace Sqlit3 {
 			}
 		}
 
-		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), int queryType = 1) {
+		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), Json values = Json(), int queryType = 1) {
 			if (!params.isError()) {
 				string querySql = "";
 				string where = "";
