@@ -250,7 +250,7 @@ namespace Sqlit3 {
 			}
 		}
 
-		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), Json values = Json(), int queryType = 1) {
+		Json select(string tableOrSql, Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) {
 			if (!params.isError()) {
 				string querySql = "";
 				string where = "";
@@ -273,7 +273,7 @@ namespace Sqlit3 {
 				size_t len = allKeys.size();
 				for (size_t i = 0; i < len; i++) {
 					string k = allKeys[i];
-					Json v = params[k];
+					string v = params[k].toString();
 					if (where.length() > 0) {
 						where.append(AndJoinStr);
 					}
@@ -288,7 +288,8 @@ namespace Sqlit3 {
 							if (k.compare("ins") == 0) {
 								string c = ele.at(0);
 								vector<string>(ele.begin() + 1, ele.end()).swap(ele);
-								whereExtra.append(c).append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
+								whereExtra.append(c).append(" in ( ? )");
+								values.addSubitem(DbUtils::GetVectorJoinStr(ele));
 							}
 							else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
 								whereExtra.append(" ( ");
@@ -297,14 +298,14 @@ namespace Sqlit3 {
 										whereExtra.append(" or ");
 									}
 									whereExtra.append(ele.at(j)).append(" ");
-									string eqStr = k.compare("lks") == 0 ? " like '" : " = '";
+									string eqStr = k.compare("lks") == 0 ? " like ?" : " = ?";
 									string vsStr = ele.at(j + 1);
 									if (k.compare("lks") == 0) {
 										vsStr.insert(0, "%");
 										vsStr.append("%");
 									}
-									vsStr.append("'");
-									whereExtra.append(eqStr).append(vsStr);
+									whereExtra.append(eqStr);
+									values.addSubitem(vsStr);
 								}
 								whereExtra.append(" ) ");
 							}
@@ -312,27 +313,29 @@ namespace Sqlit3 {
 						where.append(whereExtra);
 					}
 					else {				// process value
-						if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v.toString())) {
-							vector<string> vls = DbUtils::MakeVector(v.toString());
+						if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v)) {
+							vector<string> vls = DbUtils::MakeVector(v);
 							if (vls.size() == 2) {
-								where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
+								where.append(k).append(vls.at(0)).append(" ? ");
+								values.addSubitem(vls.at(1));
 							}
 							else if (vls.size() == 4) {
-								where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
-								where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
+								where.append(k).append(vls.at(0)).append(" ? ").append("and ");
+								where.append(k).append(vls.at(2)).append("? ");
+								values.addSubitem(vls.at(1));
+								values.addSubitem(vls.at(3));
 							}
 							else {
 								return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
 							}
 						}
-						else if (!fuzzy.empty() && v.isString()) {
-							where.append(k).append(" like '%").append(v.toString()).append("%'");
+						else if (fuzzy == "1") {
+							where.append(k).append(" like ? ");
+							values.addSubitem(v.insert(0, "%").append("%"));
 						}
 						else {
-							if (v.isString())
-								where.append(k).append(" = '").append(v.toString()).append("'");
-							else
-								where.append(k).append(" = ").append(v.toString());
+								where.append(k).append(" = ? ");
+								values.addSubitem(v);
 						}
 					}
 				}
@@ -360,12 +363,12 @@ namespace Sqlit3 {
 				}
 
 				if (queryType == 1) {
-					querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
+					querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tableOrSql);
 					if (where.length() > 0)
 						querySql.append(" where ").append(where);
 				}
 				else {
-					querySql.append(tablename);
+					querySql.append(tableOrSql);
 					if (!fields.empty()) {
 						size_t starIndex = querySql.find('*');
 						if (starIndex < 10) {
@@ -395,7 +398,7 @@ namespace Sqlit3 {
 					page--;
 					querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
 				}
-				return ExecQuerySql(querySql, fields);
+				return ExecQuerySql(querySql, fields, values);
 			}
 			else {
 				return DbUtils::MakeJsonObject(STPARAMERR);
@@ -408,7 +411,7 @@ namespace Sqlit3 {
 		}
 
 	private:
-		Json ExecQuerySql(string aQuery, vector<string> fields) {
+		Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 			Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 			sqlite3_stmt* stmt = NULL;
 			sqlite3* handle = getHandle();
@@ -443,6 +446,11 @@ namespace Sqlit3 {
 					sqlite3_free(pErr);
 				}
 				sqlite3_free_table(pRes);
+
+				for(int i = 0; i < values.size(); i++){
+					string ele = values[i].toString();
+					sqlite3_bind_text(stmt, i + 1, ele.c_str(), ele.length(), SQLITE_STATIC);
+				}
 
 				vector<Json> arr;
 				while (sqlite3_step(stmt) == SQLITE_ROW) {
