@@ -3,7 +3,7 @@
 #include "Sqlit3Db.h"
 #include <algorithm>
 
-class ZORM_API DbBase
+class ZORM_API DbBase : Idb
 {
 public:
 	DbBase(string connStr, string dbType = "sqlit3") : connStr(connStr) {
@@ -20,37 +20,37 @@ public:
 		}
 	};
 
-	Json select(string tablename, Json& params, vector<string> fields = vector<string>()) {
+	Json select(string tablename, Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) {
 		return db->select(tablename, params, fields);
 	};
 
-	// Json create(string tablename, Json& params) {
-	// 	return db->create(tablename, params);
-	// };
+	Json create(string tablename, Json& params) {
+		return db->create(tablename, params);
+	};
 
-	// Json update(string tablename, Json& params) {
-	// 	return db->update(tablename, params);
-	// };
+	Json update(string tablename, Json& params) {
+		return db->update(tablename, params);
+	};
 
-	// Json remove(string tablename, Json& params) {
-	// 	return db->remove(tablename, params);
-	// };
+	Json remove(string tablename, Json& params) {
+		return db->remove(tablename, params);
+	};
 
-	// Json querySql(string sql, Json& params = Json(), vector<string> filelds = vector<string>()) {
-	// 	return db->querySql(sql, params, filelds);
-	// }
+	Json querySql(string sql, Json& values, Json& params, vector<string> fields = vector<string>()) {
+		return db->querySql(sql, values, params, fields);
+	}
 
-	// Json execSql(string sql) {
-	// 	return db->execSql(sql);
-	// }
+	Json execSql(string sql, Json values = Json(JsonType::Array)) {
+		return db->execSql(sql, values);
+	}
 
-	// Json insertBatch(string tablename, vector<Json> elements, string constraint = "id") {
-	// 	return db->insertBatch(tablename, elements, constraint);
-	// }
+	Json insertBatch(string tablename, Json& elements, string constraint = "id") {
+		return db->insertBatch(tablename, elements, constraint);
+	}
 
-	// Json transGo(vector<string> sqls, bool isAsync = false) {
-	// 	return db->transGo(sqls);
-	// }
+	Json transGo(Json& sqls, bool isAsync = false) {
+		return db->transGo(sqls);
+	}
 
 private:
 	string connStr;

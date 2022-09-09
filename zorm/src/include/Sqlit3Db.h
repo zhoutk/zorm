@@ -180,8 +180,8 @@ namespace Sqlit3 {
 			}
 		}
 
-		Json execSql(string sql) {
-			return ExecNoneQuerySql(sql);
+		Json execSql(string sql, Json values = Json(JsonType::Array)) {
+			return ExecNoneQuerySql(sql, values);
 		}
 
 		Json querySql(string sql, Json& values, Json& params, vector<string> fields = vector<string>()) {
@@ -490,7 +490,7 @@ namespace Sqlit3 {
 			return rs;
 		}
 
-		Json ExecNoneQuerySql(string aQuery) {
+		Json ExecNoneQuerySql(string aQuery, Json values = Json(JsonType::Array)) {
 			int stepRet = SQLITE_OK;
 			std::string errStr = "Error Code : ";
 			Json rs = DbUtils::MakeJsonObject(STSUCCESS);
@@ -503,6 +503,10 @@ namespace Sqlit3 {
 				rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 			}
 			else {
+				for(int i = 0; i < values.size(); i++){
+					string ele = values[i].toString();
+					sqlite3_bind_text(stmt, i + 1, ele.c_str(), ele.length(), SQLITE_TRANSIENT);
+				}
 				stepRet = sqlite3_step(stmt);
 			}
 			sqlite3_finalize(stmt);
