@@ -449,7 +449,7 @@ namespace Sqlit3 {
 
 				for(int i = 0; i < values.size(); i++){
 					string ele = values[i].toString();
-					sqlite3_bind_text(stmt, i + 1, ele.c_str(), ele.length(), SQLITE_STATIC);
+					sqlite3_bind_text(stmt, i + 1, ele.c_str(), ele.length(), SQLITE_TRANSIENT);
 				}
 
 				vector<Json> arr;
