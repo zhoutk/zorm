@@ -16,7 +16,7 @@ public:
 	virtual Json update(string tablename, Json& params) = 0;
 	virtual Json remove(string tablename, Json& params) = 0;
 	virtual Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) = 0;
-	virtual Json execSql(string sql, Json values = Json(JsonType::Array)) = 0;
+	virtual Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) = 0;
 	virtual Json insertBatch(string tablename, Json& elements, string constraint = "id") = 0;
 	virtual Json transGo(Json& sqls, bool isAsync = false) = 0;
 };

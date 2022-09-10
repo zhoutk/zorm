@@ -180,8 +180,8 @@ namespace Sqlit3 {
 			}
 		}
 
-		Json execSql(string sql, Json values = Json(JsonType::Array)) {
-			return ExecNoneQuerySql(sql, values);
+		Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) {
+			return select(sql, params, vector<string>(), values, 3);
 		}
 
 		Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) {
@@ -369,7 +369,7 @@ namespace Sqlit3 {
 				}
 				else {
 					querySql.append(tableOrSql);
-					if (!fields.empty()) {
+					if (queryType == 2 && !fields.empty()) {
 						size_t starIndex = querySql.find('*');
 						if (starIndex < 10) {
 							querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
@@ -398,7 +398,7 @@ namespace Sqlit3 {
 					page--;
 					querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
 				}
-				return ExecQuerySql(querySql, fields, values);
+				return queryType == 3 ? ExecNoneQuerySql(querySql, values) : ExecQuerySql(querySql, fields, values);
 			}
 			else {
 				return DbUtils::MakeJsonObject(STPARAMERR);

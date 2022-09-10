@@ -92,7 +92,7 @@ TEST(TestTest, test_test_1) {
 	sql = "update table_for_test set name = ? where id = ? ";
 	arrObj = Json(JsonType::Array);
 	arrObj.addSubitem({"test999", "a5b6c7d8"});
-	rs = db->execSql(sql, arrObj);
+	rs = db->execSql(sql, Json(), arrObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
 	qObj = Json{{"id", "a5b6c7d8"}};

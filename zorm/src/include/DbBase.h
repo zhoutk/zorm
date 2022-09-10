@@ -21,7 +21,7 @@ public:
 	};
 
 	Json select(string tablename, Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) {
-		return db->select(tablename, params, fields);
+		return values.isArray() ? db->select(tablename, params, fields) : DbUtils::MakeJsonObject(STPARAMERR);
 	};
 
 	Json create(string tablename, Json& params) {
@@ -37,19 +37,19 @@ public:
 	};
 
 	Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) {
-		return db->querySql(sql, params, values, fields);
+		return params.isObject() && values.isArray() ? db->querySql(sql, params, values, fields) : DbUtils::MakeJsonObject(STPARAMERR);
 	}
 
-	Json execSql(string sql, Json values = Json(JsonType::Array)) {
-		return db->execSql(sql, values);
+	Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) {
+		return params.isObject() && values.isArray() ? db->execSql(sql, params, values) : DbUtils::MakeJsonObject(STPARAMERR);
 	}
 
 	Json insertBatch(string tablename, Json& elements, string constraint = "id") {
-		return db->insertBatch(tablename, elements, constraint);
+		return elements.isArray() ? db->insertBatch(tablename, elements, constraint) : DbUtils::MakeJsonObject(STPARAMERR);
 	}
 
 	Json transGo(Json& sqls, bool isAsync = false) {
-		return db->transGo(sqls);
+		return sqls.isArray() ? db->transGo(sqls) : DbUtils::MakeJsonObject(STPARAMERR);
 	}
 
 private:
