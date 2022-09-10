@@ -184,7 +184,7 @@ namespace Sqlit3 {
 			return ExecNoneQuerySql(sql, values);
 		}
 
-		Json querySql(string sql, Json& values, Json& params, vector<string> fields = vector<string>()) {
+		Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) {
 			return select(sql, params, fields, values, 2);
 		}
 
@@ -237,14 +237,14 @@ namespace Sqlit3 {
 				if (isExecSuccess)
 				{
 					sqlite3_exec(getHandle(), "commit;", 0, 0, 0);
-					sqlite3_close(getHandle());
+					//sqlite3_close(getHandle());
 					!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
 					return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success, run " + DbUtils::IntTransToString(sqls.size()) + " sqls.");
 				}
 				else
 				{
 					sqlite3_exec(getHandle(), "rollback;", 0, 0, 0);
-					sqlite3_close(getHandle());
+					//sqlite3_close(getHandle());
 					return DbUtils::MakeJsonObject(STDBOPERATEERR, zErrMsg);
 				}
 			}

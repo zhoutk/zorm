@@ -4,12 +4,8 @@
 
 int main()
 {
-	DbBase* db = new DbBase("./db.db");
-	Json qObj;
-	qObj.addSubitem("id", 1);
-	//qObj.addSubitem("age", 28);
-	Json rs = db->select("users", qObj/*, Utils::MakeVector("username")*/);
-	std::cout << rs.toString();
+	Json obj("   \r\n{\"id\":\"a2b3c4d5\",\"name\":\"test001\",\"age\":19,\"score\":69.15}");
+	std::cout << "type : " << obj.getValueType() << " ; content : " << obj.toString();
 
 	std::cout << "this is the last line.";
 

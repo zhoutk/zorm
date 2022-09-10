@@ -36,8 +36,8 @@ public:
 		return db->remove(tablename, params);
 	};
 
-	Json querySql(string sql, Json& values, Json& params, vector<string> fields = vector<string>()) {
-		return db->querySql(sql, values, params, fields);
+	Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) {
+		return db->querySql(sql, params, values, fields);
 	}
 
 	Json execSql(string sql, Json values = Json(JsonType::Array)) {
