@@ -190,7 +190,7 @@ namespace Sqlit3 {
 
 		Json insertBatch(string tablename, Json& elements, string constraint) {
 			string sql = "insert into ";
-			if (elements.size() < 1) {
+			if (elements.size() < 2) {
 				return DbUtils::MakeJsonObject(STPARAMERR);
 			}
 			else {
@@ -216,36 +216,35 @@ namespace Sqlit3 {
 		}
 
 		Json transGo(Json& sqls, bool isAsync = false) {
-			if (sqls.size() < 1) {
+			if (sqls.size() < 2) {
 				return DbUtils::MakeJsonObject(STPARAMERR);
 			}
 			else {
 				char* zErrMsg = 0;
+				string errmsg;
 				bool isExecSuccess = true;
+				//sqlite3_exec(getHandle(),"PRAGMA synchronous = FULL; ",0,0,0);
+				sqlite3_exec(getHandle(),"PRAGMA synchronous = OFF; ",0,0,0);
 				sqlite3_exec(getHandle(), "begin;", 0, 0, &zErrMsg);
 				for (size_t i = 0; i < sqls.size(); i++) {
-					string sql = sqls[i].toString();
-					int rc = sqlite3_exec(getHandle(), sql.c_str(), 0, 0, &zErrMsg);
-					if (rc != SQLITE_OK)
+					string sql = sqls[i]["text"].toString();
+					Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+					isExecSuccess = ExecSqlForTransGo(sql, values, &errmsg);
+					if (!isExecSuccess)
 					{
-						isExecSuccess = false;
-						std::cout << "Transaction Fail, sql " << i + 1 << " is wrong. Error: " << zErrMsg << std::endl;
-						sqlite3_free(zErrMsg);
 						break;
 					}
 				}
 				if (isExecSuccess)
 				{
 					sqlite3_exec(getHandle(), "commit;", 0, 0, 0);
-					//sqlite3_close(getHandle());
 					!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
 					return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success, run " + DbUtils::IntTransToString(sqls.size()) + " sqls.");
 				}
 				else
 				{
 					sqlite3_exec(getHandle(), "rollback;", 0, 0, 0);
-					//sqlite3_close(getHandle());
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, zErrMsg);
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
 				}
 			}
 		}
@@ -512,6 +511,26 @@ namespace Sqlit3 {
 			sqlite3_finalize(stmt);
 			!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 			return stepRet == SQLITE_DONE ? rs : DbUtils::MakeJsonObject(STDBOPERATEERR, errStr.append(DbUtils::IntTransToString(stepRet)));
+		}
+
+		bool ExecSqlForTransGo(string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
+			int stepRet = SQLITE_OK;
+			sqlite3_stmt* stmt = NULL;
+			sqlite3* handle = getHandle();
+			const int ret = sqlite3_prepare_v2(handle, aQuery.c_str(), static_cast<int>(aQuery.size()), &stmt, NULL);
+			if (SQLITE_OK == ret) {
+				for(int i = 0; i < values.size(); i++){
+					string ele = values[i].toString();
+					sqlite3_bind_text(stmt, i + 1, ele.c_str(), ele.length(), SQLITE_TRANSIENT);
+				}
+				stepRet = sqlite3_step(stmt);
+			}else{
+				if(out)
+					*out = sqlite3_errmsg(getHandle());
+			}
+			sqlite3_finalize(stmt);
+			!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+			return SQLITE_OK == ret && stepRet == SQLITE_DONE ? true : false;
 		}
 
 		bool DbLogClose;

@@ -30,9 +30,9 @@ TEST(TestTest, test_test_1) {
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
 	Json sqlArr(JsonType::Array);
-	sqlArr.addSubitem("insert into table_for_test (id,name,age,score) values ('a4b5c6d7','test003',21,78.48)");
-	sqlArr.addSubitem("insert into table_for_test (id,name,age,score) values ('a5b6c7d8','test004',22,23.27)");
-	sqlArr.addSubitem("insert into table_for_test (id,name,age,score) values ('a6b7c8d9','test005',23,43.93)");
+	sqlArr.addSubitem(Json("{\"text\":\"insert into table_for_test (id,name,age,score) values ('a4b5c6d7','test003',21,78.48)\"}"));
+	sqlArr.addSubitem(Json("{\"text\":\"insert into table_for_test (id,name,age,score) values ('a5b6c7d8','test004',22,23.27)\"}"));
+	sqlArr.addSubitem(Json("{\"text\":\"insert into table_for_test (id,name,age,score) values ('a6b7c8d9','test005',23,43.93)\"}"));
 	rs = db->transGo(sqlArr);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
