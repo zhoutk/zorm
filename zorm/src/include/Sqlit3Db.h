@@ -279,8 +279,16 @@ namespace Sqlit3 {
 							if (k.compare("ins") == 0) {
 								string c = ele.at(0);
 								vector<string>(ele.begin() + 1, ele.end()).swap(ele);
-								whereExtra.append(c).append(" in ( ? )");
-								values.addSubitem(DbUtils::GetVectorJoinStr(ele));
+								whereExtra.append(c).append(" in (");
+								int eleLen = ele.size();
+								for(int i = 0; i < eleLen; i++){
+									string el = ele[i];
+									whereExtra.append("?");
+									if(i < eleLen - 1)
+										whereExtra.append(",");
+									values.addSubitem(el);
+								}
+								whereExtra.append(")");
 							}
 							else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
 								whereExtra.append(" ( ");
