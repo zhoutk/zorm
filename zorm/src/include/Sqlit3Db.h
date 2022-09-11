@@ -88,16 +88,12 @@ namespace Sqlit3 {
 		{
 			if (!params.isError()) {
 				string execSql = "delete from ";
-				execSql.append(tablename).append(" where id = ");
+				execSql.append(tablename).append(" where id = ?");
 
-				Json v = params["id"];
+				Json values(JsonType::Array);
+				values.addSubitem(params["id"].toString());
 
-				if (v.isString())
-					execSql.append("'").append(v.toString()).append("'");
-				else
-					execSql.append(v.toString());
-
-				return ExecNoneQuerySql(execSql);
+				return ExecNoneQuerySql(execSql, values);
 			}
 			else {
 				return DbUtils::MakeJsonObject(STPARAMERR);
@@ -107,6 +103,7 @@ namespace Sqlit3 {
 		Json update(string tablename, Json& params)
 		{
 			if (!params.isError()) {
+				Json values(JsonType::Array);
 				string execSql = "update ";
 				execSql.append(tablename).append(" set ");
 
@@ -119,30 +116,26 @@ namespace Sqlit3 {
 				else {
 					size_t len = allKeys.size();
 					size_t conditionLen = len - 2;
-					string fields = "", where = " where id = ";
+					string fields = "", where = " where id = ?";
+					string idStr = "";
 					for (size_t i = 0; i < len; i++) {
 						string key = allKeys[i];
-						Json v = params[key];
+						string v = params[key].toString();
 						if (key.compare("id") == 0) {
 							conditionLen++;
-							if (v.isString())
-								where.append("'").append(v.toString()).append("'");
-							else
-								where.append(v.toString());
+							idStr = v;
 						}
 						else {
-							fields.append(key).append(" = ");
-							if (v.isString())
-								fields.append("'").append(v.toString()).append("'");
-							else
-								fields.append(v.toString());
+							fields.append(key).append(" = ?");
+							values.addSubitem(v);
 							if (i < conditionLen) {
 								fields.append(",");
 							}
 						}
 					}
+					values.addSubitem(idStr);
 					execSql.append(fields).append(where);
-					return ExecNoneQuerySql(execSql);
+					return ExecNoneQuerySql(execSql, values);
 				}
 			}
 			else {
@@ -153,6 +146,7 @@ namespace Sqlit3 {
 		Json create(string tablename, Json& params)
 		{
 			if (!params.isError()) {
+				Json values(JsonType::Array);
 				string execSql = "insert into ";
 				execSql.append(tablename).append(" ");
 
@@ -161,19 +155,17 @@ namespace Sqlit3 {
 				string fields = "", vs = "";
 				for (size_t i = 0; i < len; i++) {
 					string key = allKeys[i];
+					string v = params[key].toString();
 					fields.append(key);
-					Json v = params[key];
-					if (v.isString())
-						vs.append("'").append(v.toString()).append("'");
-					else
-						vs.append(v.toString());
+					vs.append("?");
+					values.addSubitem(v);
 					if (i < len - 1) {
 						fields.append(",");
 						vs.append(",");
 					}
 				}
 				execSql.append("(").append(fields).append(") values (").append(vs).append(")");
-				return ExecNoneQuerySql(execSql);
+				return ExecNoneQuerySql(execSql, values);
 			}
 			else {
 				return DbUtils::MakeJsonObject(STPARAMERR);
