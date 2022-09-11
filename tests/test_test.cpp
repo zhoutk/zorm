@@ -103,4 +103,35 @@ TEST(TestTest, test_test_1) {
 	rs = db->select("table_for_test", qObj);
 	EXPECT_EQ(rs["data"].size(), 3);
 
+	qObj = Json{{"lks", "name,001,age,23"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 2);
+
+	qObj = Json{{"ors", "age,19,age,23"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 2);
+
+	qObj = Json{{"page", 1}, {"size", 3}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 3);
+
+	qObj = Json{{"count", "1,total"}};
+	std::vector<string> vs{"id"};
+	rs = db->select("table_for_test", qObj, vs);
+	EXPECT_EQ(rs["data"][0]["total"].toInt(), 5);
+
+	qObj = Json{{"sum", "age,ageSum"}, {"age", "<=,20"}};
+	rs = db->select("table_for_test", qObj, vs);
+	EXPECT_EQ(rs["data"][0]["ageSum"].toInt(), 39);
+
+	qObj = Json{{"id", "a4b5c6d7"}};
+	qObj.addSubitem("age", 22);
+	rs = db->update("table_for_test", qObj);
+
+	qObj = Json{{"group", "age"}, {"count", "*,total"}, {"sort", "total desc"}};
+	vs.clear();
+	vs.push_back("age");
+	rs = db->select("table_for_test", qObj, vs);
+	EXPECT_EQ(rs["data"][0]["total"].toInt(), 2);
+
 }
