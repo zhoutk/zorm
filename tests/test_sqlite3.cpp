@@ -3,6 +3,8 @@
 #include "DbBase.h"
 #include "zjson.hpp"
 
+using namespace ZORM;
+
 TEST(TestTest, test_test_1) {
 	DbBase* db = new DbBase("./db.db");
 	Json rs = db->execSql("DROP TABLE IF EXISTS \"table_for_test\";");
