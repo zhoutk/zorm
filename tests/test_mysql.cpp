@@ -6,9 +6,7 @@
 using namespace ZORM;
 
 TEST(TestTest, test_test_1) {
-	Json options;
-	options.addSubitem("connString", "./db.db");
-	DbBase* db = new DbBase("sqlite3", options);
+	DbBase* db = new DbBase("");
 	Json rs = db->execSql("DROP TABLE IF EXISTS \"table_for_test\";");
 	EXPECT_EQ(rs["status"].toInt(), 200);
 	rs = db->execSql("CREATE TABLE \"table_for_test\" (\
