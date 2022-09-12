@@ -159,7 +159,7 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 
     生成sql：   SELECT * FROM users  WHERE age= 18  and username like '%john%'
     ```
-  
+ 具体使用方法，请参看uint test。 
 
 ## 项目地址
 ```
@@ -171,8 +171,8 @@ https://github.com/zhoutk/zorm
 ## 运行方法
 该项目在vs2019, gcc7.5, clang12.0下均编译运行正常。
 ```
-git clone https://github.com/zhoutk/zjson
-cd zjson
+git clone https://github.com/zhoutk/zorm
+cd zorm
 cmake -Bbuild .
 
 ---windows
@@ -181,7 +181,7 @@ cd build && cmake --build .
 ---linux & macos
 cd build && make
 
-run zjson or ctest
+run zorm or ctest
 ```
 
 ## 相关项目
