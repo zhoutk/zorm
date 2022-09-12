@@ -6,7 +6,7 @@
 class ZORM_API DbBase : Idb
 {
 public:
-	DbBase(string connStr, string dbType = "sqlit3") : connStr(connStr) {
+	DbBase(string connStr, string dbType = "sqlit3", Json options = Json()) : connStr(connStr) {
 		transform(dbType.begin(), dbType.end(), dbType.begin(), ::tolower);
 		if (dbType.compare("sqlit3") == 0)
 			db = new Sqlit3::Sqlit3Db(connStr);

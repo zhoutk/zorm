@@ -1,5 +1,6 @@
 #pragma once
 #include "utils.hpp"
+#include <array>
 #include <string>
 #include <variant>
 #include <any>
