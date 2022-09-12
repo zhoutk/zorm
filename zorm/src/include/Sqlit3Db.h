@@ -254,8 +254,8 @@ namespace Sqlit3 {
 
 				string fuzzy = params.getAndRemove("fuzzy").toString();
 				string sort = params.getAndRemove("sort").toString();
-				int page = params.getAndRemove("page").toInt();
-				int size = params.getAndRemove("size").toInt();
+				int page = atoi(params.getAndRemove("page").toString().c_str());
+				int size = atoi(params.getAndRemove("size").toString().c_str());
 				string sum = params.getAndRemove("sum").toString();
 				string count = params.getAndRemove("count").toString();
 				string group = params.getAndRemove("group").toString();

@@ -3,13 +3,14 @@
 #include "Sqlit3Db.h"
 #include <algorithm>
 
-class ZORM_API DbBase : Idb
+class ZORM_API DbBase : public Idb
 {
 public:
 	DbBase(string connStr, string dbType = "sqlit3", Json options = Json()) : connStr(connStr) {
 		transform(dbType.begin(), dbType.end(), dbType.begin(), ::tolower);
+		bool DbLogClose = options["DbLogClose"].toBool();
 		if (dbType.compare("sqlit3") == 0)
-			db = new Sqlit3::Sqlit3Db(connStr);
+			db = new Sqlit3::Sqlit3Db(connStr, DbLogClose);
 		else {
 			throw "Db Type error or not be supported. ";
 		}
