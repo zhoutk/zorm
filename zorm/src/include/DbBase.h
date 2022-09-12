@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "Idb.h"
 #include "Sqlit3Db.h"
+#include "MysqlDb.h"
 #include <algorithm>
 
 namespace ZORM
@@ -14,6 +15,16 @@ namespace ZORM
 			bool DbLogClose = options["DbLogClose"].toBool();
 			if (dbType.compare("sqlite3") == 0)
 				db = new Sqlit3::Sqlit3Db(options["connString"].toString(), DbLogClose);
+			else if(dbType.compare("mysql") == 0){
+				string dbhost = options["db_host"].toString();
+				string dbuser = options["db_user"].toString();
+				string dbpwd = options["db_pass"].toString();
+				string dbname = options["db_name"].toString();
+				int dbport = options["db_port"].toInt();
+				int maxConn = options["db_conn"].toInt();
+
+				db = new Mysql::MysqlDb(dbhost, dbuser, dbpwd, dbname, dbport, maxConn);
+			}
 			else {
 				throw "Db Type error or not be supported. ";
 			}

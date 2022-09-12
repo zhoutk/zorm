@@ -60,8 +60,8 @@ namespace ZORM {
 
 			}
 
-			// Json create(string tablename, Json& params) override
-			// {
+			Json create(string tablename, Json& params) override
+			{
 			// 	if (params.IsObject()) {
 			// 		string execSql = "insert into ";
 			// 		execSql.append(tablename).append(" ");
@@ -88,13 +88,13 @@ namespace ZORM {
 			// 		return ExecNoneQuerySql(execSql);
 			// 	}
 			// 	else {
-			// 		return DbUtils::MakeJsonObject(STPARAMERR);
+					return DbUtils::MakeJsonObject(STPARAMERR);
 			// 	}
-			// }
+			}
 
 
-			// Json update(string tablename, Json& params) override
-			// {
+			Json update(string tablename, Json& params) override
+			{
 			// 	if (params.IsObject()) {
 			// 		string execSql = "update ";
 			// 		execSql.append(tablename).append(" set ");
@@ -137,13 +137,13 @@ namespace ZORM {
 			// 		}
 			// 	}
 			// 	else {
-			// 		return DbUtils::MakeJsonObject(STPARAMERR);
+					return DbUtils::MakeJsonObject(STPARAMERR);
 			// 	}
-			// }
+			}
 
 
-			// Json remove(string tablename, Json& params) override
-			// {
+			Json remove(string tablename, Json& params) override
+			{
 			// 	if (params.IsObject()) {
 			// 		string execSql = "delete from ";
 			// 		execSql.append(tablename).append(" where id = ");
@@ -160,12 +160,12 @@ namespace ZORM {
 			// 		return ExecNoneQuerySql(execSql);
 			// 	}
 			// 	else {
-			// 		return DbUtils::MakeJsonObject(STPARAMERR);
+					return DbUtils::MakeJsonObject(STPARAMERR);
 			// 	}
-			// }
+			}
 
 
-			Json select(string tablename, Json params, vector<string> fields = vector<string>(), int queryType = 1) override
+			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) override
 			{
 				if (!params.isError()) {
 					string querySql = "";
@@ -323,23 +323,23 @@ namespace ZORM {
 				}
 			}
 
-			// Json querySql(string sql, Json& params = Json(), vector<string> filelds = vector<string>()) override
-			// {
-			// 	return select(sql, params, filelds, 2);
-			// }
+			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> filelds = vector<string>()) override
+			{
+				return select(sql, params, filelds, values, 2);
+			}
 
 
-			// Json execSql(string sql) override
-			// {
-			// 	return ExecNoneQuerySql(sql);
-			// }
+			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
+			{
+				return select(sql, params, vector<string>(), values, 3);
+			}
 
 
-			// Json insertBatch(string tablename, vector<Json> elements, string constraint) override
-			// {
+			Json insertBatch(string tablename, Json& elements, string constraint) override
+			{
 			// 	string sql = "insert into ";
 			// 	if (elements.empty()) {
-			// 		return DbUtils::MakeJsonObject(STPARAMERR);
+					return DbUtils::MakeJsonObject(STPARAMERR);
 			// 	}
 			// 	else {
 			// 		string keyStr = " ( ";
@@ -367,13 +367,13 @@ namespace ZORM {
 			// 		sql.append(tablename).append(keyStr).append(" on duplicate key update ").append(updateStr);
 			// 	}
 			// 	return ExecNoneQuerySql(sql);
-			// }
+			}
 
 
-			// Json transGo(vector<string> sqls, bool isAsync = false) override
-			// {
+			Json transGo(Json& sqls, bool isAsync = false) override
+			{
 			// 	if (sqls.empty()) {
-			// 		return DbUtils::MakeJsonObject(STPARAMERR);
+					return DbUtils::MakeJsonObject(STPARAMERR);
 			// 	}
 			// 	else {
 			// 		bool isExecSuccess = true;
@@ -406,7 +406,7 @@ namespace ZORM {
 			// 			return DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
 			// 		}
 			// 	}
-			// }
+			}
 
 			~MysqlDb()
 			{
