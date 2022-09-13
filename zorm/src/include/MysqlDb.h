@@ -5,6 +5,7 @@
 #include "GlobalConstants.h"
 #include "mysql.h"
 #include <algorithm>
+#include <cstring>
 
 namespace ZORM {
 
@@ -19,15 +20,15 @@ namespace ZORM {
 
 		private:
 			MYSQL* GetConnection() {
-				//srand((unsigned int)(time(NULL)));
+				//srand((unsigned int)(time(nullptr)));
 				size_t index = (rand() % maxConn) + 1;
 				if (index > pool.size()) {
 					MYSQL* pmysql;
-					pmysql = mysql_init((MYSQL*)NULL);
-					if (pmysql != NULL)
+					pmysql = mysql_init((MYSQL*)nullptr);
+					if (pmysql != nullptr)
 					{
 					 	!charsetName.empty() && mysql_options(pmysql, MYSQL_SET_CHARSET_NAME, charsetName.c_str());
-						if (mysql_real_connect(pmysql, dbhost.c_str(), dbuser.c_str(), dbpwd.c_str(), dbname.c_str(), dbport, NULL, 0))
+						if (mysql_real_connect(pmysql, dbhost.c_str(), dbuser.c_str(), dbpwd.c_str(), dbname.c_str(), dbport, nullptr, 0))
 						{
 							pool.push_back(pmysql);
 							return pmysql;
@@ -421,7 +422,8 @@ namespace ZORM {
 				MYSQL* mysql = GetConnection();
 				if (mysql == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR);
-				if (mysql_query(mysql, aQuery.c_str()))
+				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
+				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
 				{
 					string errmsg = "";
 					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
@@ -430,31 +432,87 @@ namespace ZORM {
 				}
 				else
 				{
-					MYSQL_RES* result = mysql_use_result(mysql);
-					if (result != NULL)
+					int vLen = values.size();
+					MYSQL_BIND bind[vLen];
+					if (vLen > 0)
+					{
+						for (int i = 0; i < vLen; i++)
+						{
+							string ele = values[i].toString();
+							bind[i].buffer_type = MYSQL_TYPE_STRING;
+							bind[i].buffer = (char *)ele.c_str();
+							bind[i].buffer_length = ele.length();
+							
+						}
+						if (mysql_stmt_bind_param(stmt, bind))
+						{
+							string errmsg = "";
+							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+							return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+						}
+					}
+					if (mysql_stmt_execute(stmt))
+					{
+						string errmsg = "";
+						errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+						return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+					}
+					MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
+					int num_fields;
+					MYSQL_FIELD* fields;
+					if (prepare_meta_result != nullptr)
 					{
 						MYSQL_ROW row;
-						int num_fields = mysql_num_fields(result);
-						MYSQL_FIELD* fields = mysql_fetch_fields(result);
-						vector<Json> arr;
-						while ((row = mysql_fetch_row(result)) && row != NULL)
+						num_fields = mysql_num_fields(prepare_meta_result);
+						fields = mysql_fetch_fields(prepare_meta_result);
+						MYSQL_BIND ps[num_fields];
+						std::memset(ps, 0, sizeof(ps));
+						for (int i = 0; i < num_fields; ++i)
 						{
-							Json al;
-							for (int i = 0; i < num_fields; ++i)
-							{
-								if(IS_NUM(fields[i].type))
-									al.addSubitem(fields[i].name, atof(row[i]));
-								else 
-									al.addSubitem(fields[i].name, row[i]);
+							if (IS_NUM(fields[i].type)){
+								ps[i].buffer_type = MYSQL_TYPE_LONG;
+								ps[i].length = 0;
 							}
-							arr.push_back(al);
+							else{
+								ps[i].buffer_type = MYSQL_TYPE_STRING;
+								ps[i].length = 0;
+							}
 						}
-						if (arr.empty())
-							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-						rs.addSubitem("data", arr);
+						int ret = mysql_stmt_bind_result(stmt, ps);
+						std::cout << mysql_stmt_error(stmt);
+						int d = ret;
 					}
-					mysql_free_result(result);
+					int result = mysql_stmt_store_result(stmt);
+					while (!mysql_stmt_fetch(stmt)){
+						int dd = 1;
+					}
+					// if (result != nullptr)
+					// {
+					// 	MYSQL_ROW row;
+					// 	int num_fields = mysql_num_fields(result);
+					// 	MYSQL_FIELD* fields = mysql_fetch_fields(result);
+					// 	vector<Json> arr;
+					// 	while ((row = mysql_fetch_row(result)) && row != nullptr)
+					// 	{
+					// 		Json al;
+					// 		for (int i = 0; i < num_fields; ++i)
+					// 		{
+					// 			if(IS_NUM(fields[i].type))
+					// 				al.addSubitem(fields[i].name, atof(row[i]));
+					// 			else 
+					// 				al.addSubitem(fields[i].name, row[i]);
+					// 		}
+					// 		arr.push_back(al);
+					// 	}
+					// 	if (arr.empty())
+					// 		rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+					// 	rs.addSubitem("data", arr);
+					// }
+					// mysql_free_result(result);
 				}
+				mysql_stmt_close(stmt);
 				cout << "SQL: " << aQuery << endl;
 				return rs;
 			}
