@@ -31,7 +31,10 @@ namespace ZORM {
 						{
 							pool.push_back(pmysql);
 							return pmysql;
+						}else{
+							std::cout << "Error message : " << mysql_error(pmysql);
 						}
+
 					}
 					return nullptr;
 				}
