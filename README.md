@@ -183,6 +183,8 @@ cd build && make
 
 run zorm or ctest
 ```
+注在linux下需要先行安装mysql开发库。  
+在ubuntu下的命令是： apt install libmysqlclient-dev
 
 ## 相关项目
 

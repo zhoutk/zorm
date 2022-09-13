@@ -12,9 +12,8 @@ namespace ZORM {
 
 	namespace Mysql {
 
-		const int MAXCONN = 2;
-		char* QUERY_EXTRA_KEYS[] = { "ins", "lks", "ors" };
-		char* QUERY_UNEQ_OPERS[] = { ">,", ">=,", "<,", "<=,", "<>,", "=," };
+		vector<string> QUERY_EXTRA_KEYS;
+		vector<string> QUERY_UNEQ_OPERS;
 
 		class ZORM_API MysqlDb : public Idb {
 
@@ -27,6 +26,7 @@ namespace ZORM {
 					pmysql = mysql_init((MYSQL*)NULL);
 					if (pmysql != NULL)
 					{
+					 	!charsetName.empty() && mysql_options(pmysql, MYSQL_SET_CHARSET_NAME, charsetName.c_str());
 						if (mysql_real_connect(pmysql, dbhost.c_str(), dbuser.c_str(), dbpwd.c_str(), dbname.c_str(), dbport, NULL, 0))
 						{
 							pool.push_back(pmysql);
@@ -43,56 +43,58 @@ namespace ZORM {
 				}
 			}
 
+			void init(){
+				QUERY_EXTRA_KEYS = DbUtils::MakeVector("ins,lks,ors");
+
+				QUERY_UNEQ_OPERS.push_back(">,");
+				QUERY_UNEQ_OPERS.push_back(">=,");
+				QUERY_UNEQ_OPERS.push_back("<,");
+				QUERY_UNEQ_OPERS.push_back("<=,");
+				QUERY_UNEQ_OPERS.push_back("<>,");
+				QUERY_UNEQ_OPERS.push_back("=,");
+			}
+
 		public:
 
-			MysqlDb(string dbhost, string dbuser, string dbpwd, string dbname) :
-				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(3306), maxConn(MAXCONN)
+			MysqlDb(string dbhost, string dbuser, string dbpwd, string dbname, int dbport = 3306, Json options = Json()) :
+				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport)
 			{
+				init();
 
-			}
-
-			MysqlDb(string dbhost, string dbuser, string dbpwd, string dbname, int dbport, int maxConn) :
-				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport), maxConn(maxConn)
-			{
-
-			}
-
-			MysqlDb(string dbhost, string dbuser, string dbpwd, string dbname, int dbport) :
-				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport), maxConn(MAXCONN)
-			{
-
+				if(!options["db_conn"].isError())
+					maxConn = options["db_conn"].toInt();
+				if(!options["db_char"].isError())
+					charsetName = options["db_char"].toString();
 			}
 
 			Json create(string tablename, Json& params) override
 			{
-			// 	if (params.IsObject()) {
-			// 		string execSql = "insert into ";
-			// 		execSql.append(tablename).append(" ");
+				if (!params.isError()) {
+					string execSql = "insert into ";
+					execSql.append(tablename).append(" ");
 
-			// 		vector<string> allKeys = params.GetAllKeys();
-			// 		size_t len = allKeys.size();
-			// 		string fields = "", vs = "";
-			// 		for (size_t i = 0; i < len; i++) {
-			// 			string key = allKeys[i];
-			// 			fields.append(key);
-			// 			string v;
-			// 			int vType;
-			// 			params.GetValueAndTypeByKey(key, &v, &vType);
-			// 			if (vType == 6)
-			// 				vs.append(v);
-			// 			else
-			// 				vs.append("'").append(v).append("'");
-			// 			if (i < len - 1) {
-			// 				fields.append(",");
-			// 				vs.append(",");
-			// 			}
-			// 		}
-			// 		execSql.append("(").append(fields).append(") values (").append(vs).append(")");
-			// 		return ExecNoneQuerySql(execSql);
-			// 	}
-			// 	else {
+					vector<string> allKeys = params.getAllKeys();
+					size_t len = allKeys.size();
+					string fields = "", vs = "";
+					for (size_t i = 0; i < len; i++) {
+						string key = allKeys[i];
+						fields.append(key);
+						Json v = params[key];
+						if (v.isString())
+							vs.append("'").append(v.toString()).append("'");
+						else
+							vs.append(v.toString());
+						if (i < len - 1) {
+							fields.append(",");
+							vs.append(",");
+						}
+					}
+					execSql.append("(").append(fields).append(") values (").append(vs).append(")");
+					return ExecNoneQuerySql(execSql);
+				}
+				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-			// 	}
+				}
 			}
 
 
@@ -197,7 +199,7 @@ namespace ZORM {
 							where.append(AndJoinStr);
 						}
 
-						if (DbUtils::FindCharArray(QUERY_EXTRA_KEYS, (char*)k.c_str())) {   // process key
+						if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
 							string whereExtra = "";
 							vector<string> ele = DbUtils::MakeVector(params[k].toString());
 							if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
@@ -231,7 +233,7 @@ namespace ZORM {
 							where.append(whereExtra);
 						}
 						else {				// process value
-							if (DbUtils::FindStartsCharArray(QUERY_UNEQ_OPERS, (char*)v.c_str())) {
+							if (DbUtils::FindStringFromVector(QUERY_UNEQ_OPERS, v)) {
 								vector<string> vls = DbUtils::MakeVector(v);
 								if (vls.size() == 2) {
 									where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
@@ -485,6 +487,7 @@ namespace ZORM {
 			string dbpwd;
 			string dbname;
 			int dbport;
+			string charsetName;
 		};
 
 	}

@@ -16,14 +16,13 @@ namespace ZORM
 			if (dbType.compare("sqlite3") == 0)
 				db = new Sqlit3::Sqlit3Db(options["connString"].toString(), DbLogClose);
 			else if(dbType.compare("mysql") == 0){
-				string dbhost = options["db_host"].toString();
-				string dbuser = options["db_user"].toString();
-				string dbpwd = options["db_pass"].toString();
-				string dbname = options["db_name"].toString();
-				int dbport = options["db_port"].toInt();
-				int maxConn = options["db_conn"].toInt();
+				string dbhost = options.getAndRemove("db_host").toString();
+				string dbuser = options.getAndRemove("db_user").toString();
+				string dbpwd = options.getAndRemove("db_pass").toString();
+				string dbname = options.getAndRemove("db_name").toString();
+				int dbport = options.getAndRemove("db_port").toInt();
 
-				db = new Mysql::MysqlDb(dbhost, dbuser, dbpwd, dbname, dbport, maxConn);
+				db = new Mysql::MysqlDb(dbhost, dbuser, dbpwd, dbname, dbport, options);
 			}
 			else {
 				throw "Db Type error or not be supported. ";
