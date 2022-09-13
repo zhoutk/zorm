@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-set(CMAKE_BUILD_TYPE Debug)  # Use `cmake -DCMAKE_BUILD_TYPE=Debug` more better
+# set(CMAKE_BUILD_TYPE Debug)  # Use `cmake -DCMAKE_BUILD_TYPE=Debug` more better
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 if(MSVC)
@@ -23,6 +23,8 @@ if(MSVC)
 
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MTd")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
+
+    set(MysqlDll libmysql.dll)
 elseif(UNIX)
     add_definitions(-D__LINUX__)
     find_package(Threads REQUIRED)
@@ -31,6 +33,9 @@ elseif(UNIX)
 
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+
+    set(MysqlDll mysqlclient)
+    set(pthread pthread)
 endif()
 
 include_directories(../thirds/sqlit3)
@@ -42,7 +47,5 @@ link_directories(../thirds/MySQL-C-Api-6.1/lib)
 FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c") 
 FILE(GLOB_RECURSE HEAD_FILES "./*.h" "../thirds/sqlit3/*.h") 
 
-ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES} )
-if(UNIX)
-    target_link_libraries(${PROJECT_NAME} pthread)
-endif()
+ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES})
+target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll})

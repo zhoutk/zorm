@@ -15,14 +15,15 @@ TEST(TestTest, test_test_1) {
 	options.addSubitem("db_char", "utf8mb4");
 	options.addSubitem("db_conn", 5);
 	DbBase* db = new DbBase("mysql", options);
-	Json rs = db->execSql("DROP TABLE IF EXISTS \"table_for_test\";");
+	Json rs = db->execSql("DROP TABLE IF EXISTS `table_for_test`;");
 	EXPECT_EQ(rs["status"].toInt(), 200);
-	rs = db->execSql("CREATE TABLE \"table_for_test\" (\
-		\"id\" char(64) NOT NULL,\
-		\"name\" TEXT DEFAULT '',\
-		\"age\" integer DEFAULT 0,\
-		\"score\" real DEFAULT 0.0,\
-		PRIMARY KEY (\"id\"));");
+	rs = db->execSql("CREATE TABLE `table_for_test` (\
+		`id` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,\
+		`name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT '',\
+		`age` int(0) NULL DEFAULT 0,\
+		`score` double NULL DEFAULT 0,\
+		PRIMARY KEY (`id`) USING BTREE\
+		) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;");
 	EXPECT_EQ(rs["status"].toInt(), 200);
 	Json cObj{
 		{"id", "a1b2c3d4"},
