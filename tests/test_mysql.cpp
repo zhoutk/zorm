@@ -47,12 +47,13 @@ TEST(TestTest, test_test_1) {
 	// rs = db->transGo(sqlArr);
 	// EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// Json qObj;
-	// qObj.addSubitem("id", "a1b2c3d4");
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
-	// EXPECT_EQ(rs["data"][0]["age"].toInt(), 18);
-	// EXPECT_EQ(rs["data"][0]["score"].toDouble(), 99.99);
+	Json qObj;
+	qObj.addSubitem("id", "a1b2c3d4");
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
+	EXPECT_EQ(rs["data"][0]["name"].toString(), "Kevin 凯文");
+	EXPECT_EQ(rs["data"][0]["age"].toInt(), 18);
+	EXPECT_EQ(rs["data"][0]["score"].toDouble(), 99.99);
 
 	// qObj.addSubitem("age", 18);
 	// rs = db->select("table_for_test", qObj);

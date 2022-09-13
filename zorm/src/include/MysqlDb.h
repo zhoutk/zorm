@@ -313,7 +313,7 @@ namespace ZORM {
 						page--;
 						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
 					}
-					return queryType == 3 ? ExecNoneQuerySql(querySql) : ExecQuerySql(querySql, fields);
+					return queryType == 3 ? ExecNoneQuerySql(querySql, values) : ExecQuerySql(querySql, fields, values);
 				}
 				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
@@ -416,7 +416,7 @@ namespace ZORM {
 
 		private:
 
-			Json ExecQuerySql(string aQuery, vector<string> fields) {
+			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 				MYSQL* mysql = GetConnection();
 				if (mysql == nullptr)
@@ -442,7 +442,10 @@ namespace ZORM {
 							Json al;
 							for (int i = 0; i < num_fields; ++i)
 							{
-								al.addSubitem(fields[i].name, row[i]);
+								if(IS_NUM(fields[i].type))
+									al.addSubitem(fields[i].name, atof(row[i]));
+								else 
+									al.addSubitem(fields[i].name, row[i]);
 							}
 							arr.push_back(al);
 						}
@@ -456,7 +459,7 @@ namespace ZORM {
 				return rs;
 			}
 
-			Json ExecNoneQuerySql(string aQuery) {
+			Json ExecNoneQuerySql(string aQuery, Json values = Json(JsonType::Array)) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 				MYSQL* mysql = GetConnection();
 				if (mysql == nullptr)
