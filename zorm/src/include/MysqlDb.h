@@ -12,6 +12,8 @@ namespace ZORM {
 	using namespace std;
 
 	namespace Mysql {
+		#define MAX_RES_FIELDS 50
+		#define MAX_FIELD_DATA_SIZE 255
 
 		vector<string> QUERY_EXTRA_KEYS;
 		vector<string> QUERY_UNEQ_OPERS;
@@ -452,6 +454,7 @@ namespace ZORM {
 							return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 						}
 					}
+
 					if (mysql_stmt_execute(stmt))
 					{
 						string errmsg = "";
@@ -459,35 +462,47 @@ namespace ZORM {
 						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 						return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 					}
-					MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
-					int num_fields;
-					MYSQL_FIELD* fields;
-					if (prepare_meta_result != nullptr)
-					{
-						MYSQL_ROW row;
-						num_fields = mysql_num_fields(prepare_meta_result);
-						fields = mysql_fetch_fields(prepare_meta_result);
-						MYSQL_BIND ps[num_fields];
-						std::memset(ps, 0, sizeof(ps));
-						for (int i = 0; i < num_fields; ++i)
-						{
-							if (IS_NUM(fields[i].type)){
-								ps[i].buffer_type = MYSQL_TYPE_LONG;
-								ps[i].length = 0;
-							}
-							else{
-								ps[i].buffer_type = MYSQL_TYPE_STRING;
-								ps[i].length = 0;
-							}
-						}
-						int ret = mysql_stmt_bind_result(stmt, ps);
-						std::cout << mysql_stmt_error(stmt);
-						int d = ret;
-					}
-					int result = mysql_stmt_store_result(stmt);
-					while (!mysql_stmt_fetch(stmt)){
-						int dd = 1;
-					}
+
+					rs.addSubitem("data", my_process_stmt_result(stmt));
+					
+					// // MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
+					// // int num_fields;
+					// // MYSQL_FIELD* fields;
+					// // if (prepare_meta_result != nullptr)
+					// // {
+					// // 	MYSQL_ROW row;
+					// // 	num_fields = mysql_num_fields(prepare_meta_result);
+					// // 	fields = mysql_fetch_fields(prepare_meta_result);
+					// // 	MYSQL_BIND ps[num_fields];
+					// // 	std::memset(ps, 0, sizeof(ps));
+					// // 	for (int i = 0; i < num_fields; ++i)
+					// // 	{
+					// // 		auto p = allocate_buffer_for_field(fields[i]);
+					// // 		ps[i].buffer_type = p.type;
+					// // 		ps[i].buffer = p.buffer;
+					// // 		ps[i].length = 0;
+					// // 	}
+					// // 	int ret = mysql_stmt_bind_result(stmt, ps);
+					// // 	std::cout << mysql_stmt_error(stmt);
+					// // 	int d = ret;
+
+					// // 	int result = mysql_stmt_store_result(stmt);
+					// // 	vector<Json> arr;
+					// // 	while (mysql_stmt_fetch(stmt) != MYSQL_NO_DATA)
+					// // 	{
+					// // 		Json al;
+					// // 		for (int i = 0; i < num_fields; ++i)
+					// // 		{
+					// // 			if (fields[i].type == MYSQL_TYPE_LONG)
+					// // 				al.addSubitem(fields[i].name, (long)*((int *) ps[i].buffer));
+					// // 			else if (fields[i].type == MYSQL_TYPE_DOUBLE)
+					// // 				al.addSubitem(fields[i].name, *((double *)ps[i].buffer));
+					// // 			else
+					// // 				al.addSubitem(fields[i].name, (char*)ps[i].buffer);
+					// // 		}
+					// // 		arr.push_back(al);
+					// // 	}
+					// // }
 					// if (result != nullptr)
 					// {
 					// 	MYSQL_ROW row;
@@ -538,6 +553,141 @@ namespace ZORM {
 				}
 				cout << "SQL: " << aQuery << endl;
 				return rs;
+			}
+
+			struct st_buffer_size_type
+			{
+				char *buffer;
+				size_t size;
+				enum_field_types type;
+				st_buffer_size_type(char *b, size_t s, enum_field_types t) : buffer(b), size(s), type(t) {}
+			};
+
+			
+			st_buffer_size_type allocate_buffer_for_field(const MYSQL_FIELD field)
+			{
+				switch (field.type)
+				{
+				case MYSQL_TYPE_NULL:
+					return st_buffer_size_type(NULL, 0, field.type);
+				case MYSQL_TYPE_TINY:
+					return st_buffer_size_type(new char[1], 1, field.type);
+				case MYSQL_TYPE_SHORT:
+					return st_buffer_size_type(new char[2], 2, field.type);
+				case MYSQL_TYPE_INT24:
+				case MYSQL_TYPE_LONG:
+				case MYSQL_TYPE_FLOAT:
+					return st_buffer_size_type(new char[4], 4, field.type);
+				case MYSQL_TYPE_DOUBLE:
+				case MYSQL_TYPE_LONGLONG:
+					return st_buffer_size_type(new char[8], 8, field.type);
+				case MYSQL_TYPE_YEAR:
+					return st_buffer_size_type(new char[2], 2, MYSQL_TYPE_SHORT);
+				case MYSQL_TYPE_TIMESTAMP:
+				case MYSQL_TYPE_DATE:
+				case MYSQL_TYPE_TIME:
+				case MYSQL_TYPE_DATETIME:
+					return st_buffer_size_type(new char[sizeof(MYSQL_TIME)], sizeof(MYSQL_TIME), field.type);
+
+				case MYSQL_TYPE_TINY_BLOB:
+				case MYSQL_TYPE_MEDIUM_BLOB:
+				case MYSQL_TYPE_LONG_BLOB:
+				case MYSQL_TYPE_BLOB:
+				case MYSQL_TYPE_STRING:
+				case MYSQL_TYPE_VAR_STRING:
+				case MYSQL_TYPE_JSON:{
+					char* tmp = new char[field.length + 1];
+					memset(tmp, 0, field.length + 1);
+					return st_buffer_size_type(tmp, field.length + 1, field.type);
+				}
+				case MYSQL_TYPE_DECIMAL:
+				case MYSQL_TYPE_NEWDECIMAL:
+					return st_buffer_size_type(new char[64], 64, field.type);
+#if A1
+				case MYSQL_TYPE_TIMESTAMP:
+				case MYSQL_TYPE_YEAR:
+					return st_buffer_size_type(new char[10], 10, field.type);
+#endif
+#if A0
+				case MYSQL_TYPE_ENUM:
+				case MYSQL_TYPE_SET:
+#endif
+				case MYSQL_TYPE_BIT:
+					return st_buffer_size_type(new char[8], 8, MYSQL_TYPE_BIT);
+				case MYSQL_TYPE_GEOMETRY:
+					return st_buffer_size_type(new char[field.max_length], field.max_length, MYSQL_TYPE_BIT);
+				default:
+					return st_buffer_size_type(new char[field.max_length + 1], field.max_length + 1, field.type);
+				}
+			};
+
+			vector<Json> my_process_stmt_result(MYSQL_STMT *stmt)
+			{
+				vector<Json> arr;
+
+				int field_count;
+				int row_count = 0;
+				MYSQL_BIND buffer[MAX_RES_FIELDS];
+				MYSQL_FIELD *field;
+				MYSQL_RES *result;
+				char data[MAX_RES_FIELDS][MAX_FIELD_DATA_SIZE];
+				ulong length[MAX_RES_FIELDS];
+				my_bool is_null[MAX_RES_FIELDS];
+				int rc, i;
+
+				if (!(result = mysql_stmt_result_metadata(stmt))) /* No meta info */
+				{
+					while (!mysql_stmt_fetch(stmt))
+						row_count++;
+					return arr;
+				}
+
+				field_count = std::min((int)mysql_num_fields(result), MAX_RES_FIELDS);
+
+				memset(buffer, 0, sizeof(buffer));
+				memset(length, 0, sizeof(length));
+				memset(is_null, 0, sizeof(is_null));
+
+				for (i = 0; i < field_count; i++)
+				{
+					buffer[i].buffer_type = MYSQL_TYPE_STRING;
+					buffer[i].buffer_length = MAX_FIELD_DATA_SIZE;
+					buffer[i].length = &length[i];
+					buffer[i].buffer = (void *)data[i];
+					buffer[i].is_null = &is_null[i];
+				}
+
+				rc = mysql_stmt_bind_result(stmt, buffer);
+				// rc = 1;
+				// mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void *)&rc);
+				rc = mysql_stmt_store_result(stmt);
+
+				mysql_field_seek(result, 0);
+				while ((rc = mysql_stmt_fetch(stmt)) == 0)
+				{
+					mysql_field_seek(result, 0);
+					Json al;
+					for (i = 0; i < field_count; i++)
+					{
+						field = mysql_fetch_field(result);
+						if (is_null[i])
+							al.addSubitem(field->name, nullptr);
+						else if (length[i] == 0)
+						{
+							data[i][0] = '\0'; /* unmodified buffer */
+							fprintf(stdout, " %*s |", (int)field->max_length, data[i]);
+						}
+						else if (IS_NUM(field->type))
+							al.addSubitem(field->name, atof(data[i]));
+							//fprintf(stdout, " %*s |", (int)field->max_length, data[i]);
+						else
+							al.addSubitem(field->name, data[i]);
+							//fprintf(stdout, " %-*s |", (int)field->max_length, data[i]);
+					}
+					arr.push_back(al);
+				}
+				mysql_free_result(result);
+				return arr;
 			}
 
 		private:
