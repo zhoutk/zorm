@@ -14,6 +14,7 @@ TEST(TestTest, test_test_1) {
 	options.addSubitem("db_pass", "123456");
 	options.addSubitem("db_char", "utf8mb4");
 	options.addSubitem("db_conn", 5);
+	options.addSubitem("query_parameter", true);
 	DbBase* db = new DbBase("mysql", options);
 	Json rs = db->execSql("DROP TABLE IF EXISTS `table_for_test`;");
 	EXPECT_EQ(rs["status"].toInt(), 200);
@@ -28,8 +29,8 @@ TEST(TestTest, test_test_1) {
 	Json cObj{
 		{"id", "a1b2c3d4"},
 		{"name", "Kevin 凯文"},
-		{"age", "18"},
-		{"score", "99.99"}
+		{"age", 18},
+		{"score", 99.99}
 	};
 	rs = db->create("table_for_test", cObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);

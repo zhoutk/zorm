@@ -60,7 +60,7 @@ namespace ZORM {
 		public:
 
 			MysqlDb(string dbhost, string dbuser, string dbpwd, string dbname, int dbport = 3306, Json options = Json()) :
-				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport)
+				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport), queryByParameter(false)
 			{
 				init();
 
@@ -68,6 +68,8 @@ namespace ZORM {
 					maxConn = options["db_conn"].toInt();
 				if(!options["db_char"].isError())
 					charsetName = options["db_char"].toString();
+				if(!options["query_parameter"].isError())
+					queryByParameter = options["query_parameter"].toBool();
 			}
 
 			Json create(string tablename, Json& params) override
@@ -177,7 +179,9 @@ namespace ZORM {
 			{
 				if (!params.isError()) {
 					string querySql = "";
+					string querySqlByParameter = "";
 					string where = "";
+					string whereByParameter = "";
 					const string AndJoinStr = " and ";
 					string fieldsJoinStr = "*";
 
@@ -197,13 +201,14 @@ namespace ZORM {
 					size_t len = allKeys.size();
 					for (size_t i = 0; i < len; i++) {
 						string k = allKeys[i];
-						string v = params[k].toString();
+						Json v = params[k];
 						if (where.length() > 0) {
 							where.append(AndJoinStr);
 						}
 
 						if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
 							string whereExtra = "";
+							string whereExtraByParameter = "";
 							vector<string> ele = DbUtils::MakeVector(params[k].toString());
 							if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
 								return DbUtils::MakeJsonObject(STPARAMERR, k + " is wrong.");
@@ -213,15 +218,29 @@ namespace ZORM {
 									string c = ele.at(0);
 									vector<string>(ele.begin() + 1, ele.end()).swap(ele);
 									whereExtra.append(c).append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
+
+									whereExtraByParameter.append(c).append(" in (");
+									int eleLen = ele.size();
+									for(int i = 0; i < eleLen; i++){
+										string el = ele[i];
+										whereExtraByParameter.append("?");
+										if(i < eleLen - 1)
+											whereExtraByParameter.append(",");
+										values.addSubitem(el);
+									}
+									whereExtraByParameter.append(")");
 								}
 								else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
 									whereExtra.append(" ( ");
 									for (size_t j = 0; j < ele.size(); j += 2) {
 										if (j > 0) {
 											whereExtra.append(" or ");
+											whereExtraByParameter.append(" or ");
 										}
 										whereExtra.append(ele.at(j)).append(" ");
+										whereExtraByParameter.append(ele.at(j)).append(" ");
 										string eqStr = k.compare("lks") == 0 ? " like '" : " = '";
+										string eqStrByParameter = k.compare("lks") == 0 ? " like ?" : " = ?";
 										string vsStr = ele.at(j + 1);
 										if (k.compare("lks") == 0) {
 											vsStr.insert(0, "%");
@@ -229,31 +248,49 @@ namespace ZORM {
 										}
 										vsStr.append("'");
 										whereExtra.append(eqStr).append(vsStr);
+										whereExtraByParameter.append(eqStrByParameter);
+										values.addSubitem(vsStr);
 									}
 									whereExtra.append(" ) ");
+									whereExtraByParameter.append(" ) ");
 								}
 							}
 							where.append(whereExtra);
+							whereByParameter.append(whereExtraByParameter);
 						}
 						else {				// process value
-							if (DbUtils::FindStringFromVector(QUERY_UNEQ_OPERS, v)) {
-								vector<string> vls = DbUtils::MakeVector(v);
+							if (DbUtils::FindStringFromVector(QUERY_UNEQ_OPERS, v.toString())) {
+								vector<string> vls = DbUtils::MakeVector(v.toString());
 								if (vls.size() == 2) {
 									where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
+									whereByParameter.append(k).append(vls.at(0)).append(" ? ");
+									values.addSubitem(vls.at(1));
 								}
 								else if (vls.size() == 4) {
 									where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
 									where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
+									whereByParameter.append(k).append(vls.at(0)).append(" ? ").append("and ");
+									whereByParameter.append(k).append(vls.at(2)).append("? ");
+									values.addSubitem(vls.at(1));
+									values.addSubitem(vls.at(3));
 								}
 								else {
 									return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
 								}
 							}
 							else if (fuzzy == "1") {
-								where.append(k).append(" like '%").append(v).append("%'");
+								where.append(k).append(" like '%").append(v.toString()).append("%'");
+								whereByParameter.append(k).append(" like ? ");
+								values.addSubitem(v.toString().insert(0, "%").append("%"));
 							}
 							else {
-								where.append(k).append(" = '").append(v).append("'");
+								if(v.isString())
+									where.append(k).append(" = '").append(v.toString()).append("'");
+								else
+									where.append(k).append(" = ").append(v.toString());
+
+								whereByParameter.append(k).append(" = ? ");
+								values.addSubitem(v);
 							}
 						}
 					}
@@ -282,8 +319,11 @@ namespace ZORM {
 
 					if (queryType == 1) {
 						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
-						if (where.length() > 0)
+						querySqlByParameter = querySql;
+						if (where.length() > 0){
 							querySql.append(" where ").append(where);
+							querySqlByParameter.append(" where ").append(whereByParameter);
+						}
 					}
 					else {
 						querySql.append(tablename);
@@ -293,30 +333,39 @@ namespace ZORM {
 								querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
 							}
 						}
+						querySqlByParameter = querySql;
 						if (where.length() > 0) {
 							size_t whereIndex = querySql.find("where");
 							if (whereIndex == querySql.npos) {
 								querySql.append(" where ").append(where);
+								querySqlByParameter.append(" where ").append(whereByParameter);
 							}
 							else {
 								querySql.append(" and ").append(where);
+								querySqlByParameter.append(" and ").append(whereByParameter);
 							}
 						}
 					}
 
 					if (!group.empty()) {
 						querySql.append(" group by ").append(group);
+						querySqlByParameter.append(" group by ").append(group);
 					}
 
 					if (!sort.empty()) {
 						querySql.append(" order by ").append(sort);
+						querySqlByParameter.append(" order by ").append(sort);
 					}
 
 					if (page > 0) {
 						page--;
 						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
+						querySqlByParameter.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
 					}
-					return queryType == 3 ? ExecNoneQuerySql(querySql, values) : ExecQuerySql(querySql, fields, values);
+					if(queryByParameter)
+						return queryType == 3 ? ExecNoneQuerySql(querySqlByParameter, values) : ExecQuerySql(querySqlByParameter, fields, values);
+					else
+						return queryType == 3 ? ExecNoneQuerySql(querySql) : ExecQuerySql(querySql, fields);
 				}
 				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
@@ -418,6 +467,46 @@ namespace ZORM {
 			}
 
 		private:
+			Json ExecQuerySql(string aQuery, vector<string> fields)
+			{
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				MYSQL *mysql = GetConnection();
+				if (mysql == nullptr)
+					return DbUtils::MakeJsonObject(STDBCONNECTERR);
+				if (mysql_query(mysql, aQuery.c_str()))
+				{
+					string errmsg = "";
+					errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+					return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+				}
+				else
+				{
+					MYSQL_RES *result = mysql_use_result(mysql);
+					if (result != NULL)
+					{
+						MYSQL_ROW row;
+						int num_fields = mysql_num_fields(result);
+						MYSQL_FIELD *fields = mysql_fetch_fields(result);
+						vector<Json> arr;
+						while ((row = mysql_fetch_row(result)) && row != NULL)
+						{
+							Json al;
+							for (int i = 0; i < num_fields; ++i)
+							{
+								al.addSubitem(fields[i].name, row[i]);
+							}
+							arr.push_back(al);
+						}
+						if (arr.empty())
+							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+						rs.addSubitem("data", arr);
+					}
+					mysql_free_result(result);
+				}
+				cout << "SQL: " << aQuery << endl;
+				return rs;
+			}
 
 			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
@@ -436,14 +525,15 @@ namespace ZORM {
 				{
 					int vLen = values.size();
 					MYSQL_BIND bind[vLen];
+					std::memset(bind, 0, sizeof(bind));
 					if (vLen > 0)
 					{
 						for (int i = 0; i < vLen; i++)
 						{
-							string ele = values[i].toString();
+							char* ele = (char*)values[i].toString().c_str();
 							bind[i].buffer_type = MYSQL_TYPE_STRING;
-							bind[i].buffer = (char *)ele.c_str();
-							bind[i].buffer_length = ele.length();
+							bind[i].buffer = (char *)ele;
+							bind[i].buffer_length = std::strlen(ele);
 							
 						}
 						if (mysql_stmt_bind_param(stmt, bind))
@@ -515,7 +605,30 @@ namespace ZORM {
 				return rs;
 			}
 
-			Json ExecNoneQuerySql(string aQuery, Json values = Json(JsonType::Array)) {
+			Json ExecNoneQuerySql(string aQuery) {
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				MYSQL* mysql = GetConnection();
+				if (mysql == nullptr)
+					return DbUtils::MakeJsonObject(STDBCONNECTERR);
+
+				if (mysql_query(mysql, aQuery.c_str()))
+				{
+					string errmsg = "";
+					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
+					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+					return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+				}
+				else {
+					int affected = (int)mysql_affected_rows(mysql);
+					int newId = (int)mysql_insert_id(mysql);
+					rs.addSubitem("affected", affected);
+					rs.addSubitem("newId", newId);
+				}
+				cout << "SQL: " << aQuery << endl;
+				return rs;
+			}
+
+			Json ExecNoneQuerySql(string aQuery, Json values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 				MYSQL* mysql = GetConnection();
 				if (mysql == nullptr)
@@ -680,6 +793,7 @@ namespace ZORM {
 			string dbname;
 			int dbport;
 			string charsetName;
+			bool queryByParameter;
 		};
 
 	}
