@@ -455,77 +455,60 @@ namespace ZORM {
 						}
 					}
 
-					if (mysql_stmt_execute(stmt))
+					MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
+					MYSQL_FIELD* fields;
+					if (prepare_meta_result != nullptr)
 					{
-						string errmsg = "";
-						errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-						return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+						int ret = 1;
+						mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void *)&ret);
+						if (mysql_stmt_execute(stmt))
+						{
+							string errmsg = "";
+							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+							return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+						}
+						ret = mysql_stmt_store_result(stmt);
+						MYSQL_ROW row;
+						 int num_fields = mysql_num_fields(prepare_meta_result);
+						fields = mysql_fetch_fields(prepare_meta_result);
+						MYSQL_BIND ps[num_fields];
+						std::memset(ps, 0, sizeof(ps));
+						std::vector<char *> data(num_fields);
+						char is_null[num_fields];
+						memset(is_null, 0, sizeof(is_null));
+						for (int i = 0; i < num_fields; ++i)
+						{
+							auto p = allocate_buffer_for_field(fields[i]);
+							data[i] = new char[p.size];
+							memset(data[i], 0, p.size);
+							ps[i].buffer_type = p.type;
+							ps[i].buffer = (void *)data[i];
+							ps[i].buffer_length = p.size;
+							ps[i].is_null = &is_null[i];
+						}
+						ret = mysql_stmt_bind_result(stmt, ps);
+						vector<Json> arr;
+						while (mysql_stmt_fetch(stmt) != MYSQL_NO_DATA)
+						{
+							Json al;
+							for (int i = 0; i < num_fields; ++i)
+							{
+								if (is_null[i])
+									al.addSubitem(fields[i].name, nullptr);
+								else if (fields[i].type == MYSQL_TYPE_LONG)
+									al.addSubitem(fields[i].name, (long)*((int *)data[i]));
+								else if (fields[i].type == MYSQL_TYPE_DOUBLE)
+									al.addSubitem(fields[i].name, *((double *)data[i]));
+								else
+									al.addSubitem(fields[i].name, data[i]);
+							}
+							arr.push_back(al);
+						}
+						rs.addSubitem("data", arr);
+						for(auto el : data)
+							delete [] el;
 					}
-
-					rs.addSubitem("data", my_process_stmt_result(stmt));
-					
-					// // MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
-					// // int num_fields;
-					// // MYSQL_FIELD* fields;
-					// // if (prepare_meta_result != nullptr)
-					// // {
-					// // 	MYSQL_ROW row;
-					// // 	num_fields = mysql_num_fields(prepare_meta_result);
-					// // 	fields = mysql_fetch_fields(prepare_meta_result);
-					// // 	MYSQL_BIND ps[num_fields];
-					// // 	std::memset(ps, 0, sizeof(ps));
-					// // 	for (int i = 0; i < num_fields; ++i)
-					// // 	{
-					// // 		auto p = allocate_buffer_for_field(fields[i]);
-					// // 		ps[i].buffer_type = p.type;
-					// // 		ps[i].buffer = p.buffer;
-					// // 		ps[i].length = 0;
-					// // 	}
-					// // 	int ret = mysql_stmt_bind_result(stmt, ps);
-					// // 	std::cout << mysql_stmt_error(stmt);
-					// // 	int d = ret;
-
-					// // 	int result = mysql_stmt_store_result(stmt);
-					// // 	vector<Json> arr;
-					// // 	while (mysql_stmt_fetch(stmt) != MYSQL_NO_DATA)
-					// // 	{
-					// // 		Json al;
-					// // 		for (int i = 0; i < num_fields; ++i)
-					// // 		{
-					// // 			if (fields[i].type == MYSQL_TYPE_LONG)
-					// // 				al.addSubitem(fields[i].name, (long)*((int *) ps[i].buffer));
-					// // 			else if (fields[i].type == MYSQL_TYPE_DOUBLE)
-					// // 				al.addSubitem(fields[i].name, *((double *)ps[i].buffer));
-					// // 			else
-					// // 				al.addSubitem(fields[i].name, (char*)ps[i].buffer);
-					// // 		}
-					// // 		arr.push_back(al);
-					// // 	}
-					// // }
-					// if (result != nullptr)
-					// {
-					// 	MYSQL_ROW row;
-					// 	int num_fields = mysql_num_fields(result);
-					// 	MYSQL_FIELD* fields = mysql_fetch_fields(result);
-					// 	vector<Json> arr;
-					// 	while ((row = mysql_fetch_row(result)) && row != nullptr)
-					// 	{
-					// 		Json al;
-					// 		for (int i = 0; i < num_fields; ++i)
-					// 		{
-					// 			if(IS_NUM(fields[i].type))
-					// 				al.addSubitem(fields[i].name, atof(row[i]));
-					// 			else 
-					// 				al.addSubitem(fields[i].name, row[i]);
-					// 		}
-					// 		arr.push_back(al);
-					// 	}
-					// 	if (arr.empty())
-					// 		rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-					// 	rs.addSubitem("data", arr);
-					// }
-					// mysql_free_result(result);
 				}
 				mysql_stmt_close(stmt);
 				cout << "SQL: " << aQuery << endl;
@@ -557,10 +540,9 @@ namespace ZORM {
 
 			struct st_buffer_size_type
 			{
-				char *buffer;
 				size_t size;
 				enum_field_types type;
-				st_buffer_size_type(char *b, size_t s, enum_field_types t) : buffer(b), size(s), type(t) {}
+				st_buffer_size_type(size_t s, enum_field_types t) : size(s + 1), type(t) {}
 			};
 
 			
@@ -569,25 +551,25 @@ namespace ZORM {
 				switch (field.type)
 				{
 				case MYSQL_TYPE_NULL:
-					return st_buffer_size_type(NULL, 0, field.type);
+					return st_buffer_size_type(0, field.type);
 				case MYSQL_TYPE_TINY:
-					return st_buffer_size_type(new char[1], 1, field.type);
+					return st_buffer_size_type(1, field.type);
 				case MYSQL_TYPE_SHORT:
-					return st_buffer_size_type(new char[2], 2, field.type);
+					return st_buffer_size_type(2, field.type);
 				case MYSQL_TYPE_INT24:
 				case MYSQL_TYPE_LONG:
 				case MYSQL_TYPE_FLOAT:
-					return st_buffer_size_type(new char[4], 4, field.type);
+					return st_buffer_size_type(4, field.type);
 				case MYSQL_TYPE_DOUBLE:
 				case MYSQL_TYPE_LONGLONG:
-					return st_buffer_size_type(new char[8], 8, field.type);
+					return st_buffer_size_type(8, field.type);
 				case MYSQL_TYPE_YEAR:
-					return st_buffer_size_type(new char[2], 2, MYSQL_TYPE_SHORT);
+					return st_buffer_size_type(2, MYSQL_TYPE_SHORT);
 				case MYSQL_TYPE_TIMESTAMP:
 				case MYSQL_TYPE_DATE:
 				case MYSQL_TYPE_TIME:
 				case MYSQL_TYPE_DATETIME:
-					return st_buffer_size_type(new char[sizeof(MYSQL_TIME)], sizeof(MYSQL_TIME), field.type);
+					return st_buffer_size_type(sizeof(MYSQL_TIME), field.type);
 
 				case MYSQL_TYPE_TINY_BLOB:
 				case MYSQL_TYPE_MEDIUM_BLOB:
@@ -596,28 +578,26 @@ namespace ZORM {
 				case MYSQL_TYPE_STRING:
 				case MYSQL_TYPE_VAR_STRING:
 				case MYSQL_TYPE_JSON:{
-					char* tmp = new char[field.length + 1];
-					memset(tmp, 0, field.length + 1);
-					return st_buffer_size_type(tmp, field.length + 1, field.type);
+					return st_buffer_size_type(field.max_length, field.type);
 				}
 				case MYSQL_TYPE_DECIMAL:
 				case MYSQL_TYPE_NEWDECIMAL:
-					return st_buffer_size_type(new char[64], 64, field.type);
+					return st_buffer_size_type(64, field.type);
 #if A1
 				case MYSQL_TYPE_TIMESTAMP:
 				case MYSQL_TYPE_YEAR:
-					return st_buffer_size_type(new char[10], 10, field.type);
+					return st_buffer_size_type(10, field.type);
 #endif
 #if A0
 				case MYSQL_TYPE_ENUM:
 				case MYSQL_TYPE_SET:
 #endif
 				case MYSQL_TYPE_BIT:
-					return st_buffer_size_type(new char[8], 8, MYSQL_TYPE_BIT);
+					return st_buffer_size_type(8, MYSQL_TYPE_BIT);
 				case MYSQL_TYPE_GEOMETRY:
-					return st_buffer_size_type(new char[field.max_length], field.max_length, MYSQL_TYPE_BIT);
+					return st_buffer_size_type(field.max_length, MYSQL_TYPE_BIT);
 				default:
-					return st_buffer_size_type(new char[field.max_length + 1], field.max_length + 1, field.type);
+					return st_buffer_size_type(field.max_length, field.type);
 				}
 			};
 
@@ -641,6 +621,11 @@ namespace ZORM {
 						row_count++;
 					return arr;
 				}
+				rc = 1;
+				mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void *)&rc);
+				mysql_stmt_execute(stmt);
+				rc = mysql_stmt_store_result(stmt);
+				field = mysql_fetch_fields(result);
 
 				field_count = std::min((int)mysql_num_fields(result), MAX_RES_FIELDS);
 
@@ -658,10 +643,6 @@ namespace ZORM {
 				}
 
 				rc = mysql_stmt_bind_result(stmt, buffer);
-				// rc = 1;
-				// mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void *)&rc);
-				rc = mysql_stmt_store_result(stmt);
-
 				mysql_field_seek(result, 0);
 				while ((rc = mysql_stmt_fetch(stmt)) == 0)
 				{
