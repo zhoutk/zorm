@@ -14,7 +14,7 @@ TEST(TestTest, test_test_1) {
 	options.addSubitem("db_pass", "123456");
 	options.addSubitem("db_char", "utf8mb4");
 	options.addSubitem("db_conn", 5);
-	options.addSubitem("query_parameter", false);
+	options.addSubitem("query_parameter", true);
 	DbBase* db = new DbBase("mysql", options);
 	Json rs = db->execSql("DROP TABLE IF EXISTS `table_for_test`;");
 	EXPECT_EQ(rs["status"].toInt(), 200);
@@ -77,15 +77,15 @@ TEST(TestTest, test_test_1) {
 	rs = db->update("table_for_test", qObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// qObj = Json{{"id", "a1b2c3d4"}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"][0]["score"].toDouble(), 6.6);
+	qObj = Json{{"id", "a1b2c3d4"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"][0]["score"].toDouble(), 6.6);
 
-	// rs = db->remove("table_for_test", qObj);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	rs = db->remove("table_for_test", qObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["status"].toInt(), 202);
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["status"].toInt(), 202);
 
 	// qObj = Json{{"name", "test"}, {"fuzzy", 1}};
 	// rs = db->select("table_for_test", qObj);

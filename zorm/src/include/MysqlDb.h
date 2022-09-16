@@ -166,24 +166,28 @@ namespace ZORM {
 
 			Json remove(string tablename, Json& params) override
 			{
-			// 	if (params.IsObject()) {
-			// 		string execSql = "delete from ";
-			// 		execSql.append(tablename).append(" where id = ");
+				if (!params.isError()) {
+					Json values(JsonType::Array);
+					string execSql = "delete from ";
+					execSql.append(tablename).append(" where id = ");
 
-			// 		string v;
-			// 		int vType;
-			// 		params.GetValueAndTypeByKey("id", &v, &vType);
-
-			// 		if (vType == 6)
-			// 			execSql.append(v);
-			// 		else
-			// 			execSql.append("'").append(v).append("'");
-
-			// 		return ExecNoneQuerySql(execSql);
-			// 	}
-			// 	else {
+					string k = "id";
+					bool vIsString = params[k].isString();
+					string v = params[k].toString();
+					if(queryByParameter){
+						execSql.append(" ? ");
+						vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+					}else{
+						if (vIsString)
+							execSql.append("'").append(v).append("'");
+						else
+							execSql.append(v);
+					}
+					return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
+				}
+				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-			// 	}
+				}
 			}
 
 
