@@ -19,12 +19,12 @@ TEST(TestTest, test_test_1) {
 	Json rs = db->execSql("DROP TABLE IF EXISTS `table_for_test`;");
 	EXPECT_EQ(rs["status"].toInt(), 200);
 	rs = db->execSql("CREATE TABLE `table_for_test` (\
-		`id` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,\
-		`name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT '',\
+		`id` char(64) CHARACTER SET utf8mb4 NOT NULL,\
+		`name` varchar(128) CHARACTER SET utf8mb4 NULL DEFAULT '',\
 		`age` int(0) NULL DEFAULT 0,\
 		`score` double NULL DEFAULT 0,\
 		PRIMARY KEY (`id`) USING BTREE\
-		) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;");
+		) ENGINE = InnoDB CHARACTER SET = utf8mb4 ROW_FORMAT = Dynamic;");
 	EXPECT_EQ(rs["status"].toInt(), 200);
 	Json cObj{
 		{"id", "a1b2c3d4"},

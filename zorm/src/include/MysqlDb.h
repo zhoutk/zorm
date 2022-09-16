@@ -72,6 +72,7 @@ namespace ZORM {
 			Json create(string tablename, Json& params) override
 			{
 				if (!params.isError()) {
+					Json values(JsonType::Array);
 					string execSql = "insert into ";
 					execSql.append(tablename).append(" ");
 
@@ -79,20 +80,28 @@ namespace ZORM {
 					size_t len = allKeys.size();
 					string fields = "", vs = "";
 					for (size_t i = 0; i < len; i++) {
-						string key = allKeys[i];
-						fields.append(key);
-						Json v = params[key];
-						if (v.isString())
-							vs.append("'").append(v.toString()).append("'");
-						else
-							vs.append(v.toString());
+						string k = allKeys[i];
+						fields.append(k);
+						bool vIsString = params[k].isString();
+						string v = params[k].toString();
+						vIsString &&escapeString(v);
+						if(queryByParameter){
+							vs.append("?");
+							vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+						}else{
+							if (vIsString)
+								vs.append("'").append(v).append("'");
+							else
+								vs.append(v);
+						}
+						
 						if (i < len - 1) {
 							fields.append(",");
 							vs.append(",");
 						}
 					}
 					execSql.append("(").append(fields).append(") values (").append(vs).append(")");
-					return ExecNoneQuerySql(execSql);
+					return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
 				}
 				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
@@ -553,22 +562,21 @@ namespace ZORM {
 				else
 				{
 					int vLen = values.size();
-					MYSQL_BIND bind[vLen];
-					std::memset(bind, 0, sizeof(bind));
+					std::vector<char *> dataInputs;
 					if (vLen > 0)
 					{
+						MYSQL_BIND bind[vLen];
+						std::memset(bind, 0, sizeof(bind));
+						dataInputs.resize(vLen);
 						for (int i = 0; i < vLen; i++)
 						{
-							if(values[i].isString()){
-								char *ele = (char *)values[i].toString().c_str();
-								bind[i].buffer_type = MYSQL_TYPE_STRING;
-								bind[i].buffer = (char *)ele;
-								bind[i].buffer_length = std::strlen(ele);
-							}else{
-								double ele = values[i].toDouble();
-								bind[i].buffer_type = MYSQL_TYPE_DOUBLE;
-								bind[i].buffer = &ele;
-							}
+							string ele = values[i].toString();
+							dataInputs[i] = new char[ele.length()];
+							memset(dataInputs[i], 0, ele.length());
+							memcpy(dataInputs[i], ele.c_str(), ele.length());
+							bind[i].buffer_type = MYSQL_TYPE_STRING;
+							bind[i].buffer = (void *)dataInputs[i];
+							bind[i].buffer_length = ele.length();
 						}
 						if (mysql_stmt_bind_param(stmt, bind))
 						{
@@ -598,16 +606,16 @@ namespace ZORM {
 						fields = mysql_fetch_fields(prepare_meta_result);
 						MYSQL_BIND ps[num_fields];
 						std::memset(ps, 0, sizeof(ps));
-						std::vector<char *> data(num_fields);
+						std::vector<char *> dataOuts(num_fields);
 						char is_null[num_fields];
 						memset(is_null, 0, sizeof(is_null));
 						for (int i = 0; i < num_fields; ++i)
 						{
 							auto p = allocate_buffer_for_field(fields[i]);
-							data[i] = new char[p.size];
-							memset(data[i], 0, p.size);
+							dataOuts[i] = new char[p.size];
+							memset(dataOuts[i], 0, p.size);
 							ps[i].buffer_type = p.type;
-							ps[i].buffer = (void *)data[i];
+							ps[i].buffer = (void *)dataOuts[i];
 							ps[i].buffer_length = p.size;
 							ps[i].is_null = &is_null[i];
 						}
@@ -621,20 +629,22 @@ namespace ZORM {
 								if (is_null[i])
 									al.addSubitem(fields[i].name, nullptr);
 								else if (fields[i].type == MYSQL_TYPE_LONG)
-									al.addSubitem(fields[i].name, (long)*((int *)data[i]));
+									al.addSubitem(fields[i].name, (long)*((int *)dataOuts[i]));
 								else if (fields[i].type == MYSQL_TYPE_DOUBLE)
-									al.addSubitem(fields[i].name, *((double *)data[i]));
+									al.addSubitem(fields[i].name, *((double *)dataOuts[i]));
 								else
-									al.addSubitem(fields[i].name, data[i]);
+									al.addSubitem(fields[i].name, dataOuts[i]);
 							}
 							arr.push_back(al);
 						}
 						if (arr.empty())
 							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 						rs.addSubitem("data", arr);
-						for(auto el : data)
+						for(auto el : dataOuts)
 							delete [] el;
 					}
+					for (auto el : dataInputs)
+						delete[] el;
 				}
 				mysql_stmt_close(stmt);
 				cout << "SQL: " << aQuery << endl;
@@ -678,22 +688,21 @@ namespace ZORM {
 				}
 				else {
 					int vLen = values.size();
-					MYSQL_BIND bind[vLen];
-					std::memset(bind, 0, sizeof(bind));
+					std::vector<char *> dataInputs;
 					if (vLen > 0)
 					{
+						MYSQL_BIND bind[vLen];
+						std::memset(bind, 0, sizeof(bind));
+						dataInputs.resize(vLen);
 						for (int i = 0; i < vLen; i++)
 						{
-							if(values[i].isString()){
-								char *ele = (char *)values[i].toString().c_str();
-								bind[i].buffer_type = MYSQL_TYPE_STRING;
-								bind[i].buffer = (char *)ele;
-								bind[i].buffer_length = std::strlen(ele);
-							}else{
-								double ele = values[i].toDouble();
-								bind[i].buffer_type = MYSQL_TYPE_DOUBLE;
-								bind[i].buffer = &ele;
-							}
+							string ele = values[i].toString();
+							dataInputs[i] = new char[ele.length()];
+							memset(dataInputs[i], 0, ele.length());
+							memcpy(dataInputs[i], ele.c_str(), ele.length());
+							bind[i].buffer_type = MYSQL_TYPE_STRING;
+							bind[i].buffer = (void *)dataInputs[i];
+							bind[i].buffer_length = ele.length();
 						}
 						if (mysql_stmt_bind_param(stmt, bind))
 						{
@@ -712,6 +721,8 @@ namespace ZORM {
 					}
 					int affected = (int)mysql_affected_rows(mysql);
 					rs.addSubitem("affected", affected);
+					for (auto el : dataInputs)
+						delete[] el;
 				}
 				cout << "SQL: " << aQuery << endl;
 				return rs;
