@@ -9,7 +9,7 @@ namespace ZORM {
 
 	class DbUtils {
 	public:
-		static std::string escape(std::string &str)
+		static std::string escape(std::string str)
 		{
 			setlocale(LC_CTYPE, "");
 			wchar_t aa[1 << 10];
