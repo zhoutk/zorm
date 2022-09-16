@@ -121,7 +121,7 @@ namespace ZORM {
 							string k = allKeys[i];
 							bool vIsString = params[k].isString();
 							string v = params[k].toString();
-							vIsString &&escapeString(v);
+							!queryByParameter && vIsString &&escapeString(v);
 							if (k.compare("id") == 0) {
 								conditionLen++;
 								if(queryByParameter){
@@ -320,7 +320,7 @@ namespace ZORM {
 						string k = allKeys[i];
 						bool vIsString = params[k].isString();
 						string v = params[k].toString();
-						vIsString && escapeString(v);
+						!queryByParameter && vIsString && escapeString(v);
 						if (where.length() > 0) {
 							where.append(AndJoinStr);
 						}
@@ -652,9 +652,7 @@ namespace ZORM {
 				}
 				else {
 					int affected = (int)mysql_affected_rows(mysql);
-					int newId = (int)mysql_insert_id(mysql);
 					rs.addSubitem("affected", affected);
-					rs.addSubitem("newId", newId);
 				}
 				cout << "SQL: " << aQuery << endl;
 				return rs;
