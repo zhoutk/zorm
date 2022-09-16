@@ -99,53 +99,68 @@ namespace ZORM {
 				}
 			}
 
-
 			Json update(string tablename, Json& params) override
 			{
-			// 	if (params.IsObject()) {
-			// 		string execSql = "update ";
-			// 		execSql.append(tablename).append(" set ");
+				if (!params.isError()) {
+					Json values(JsonType::Array);
+					string execSql = "update ";
+					execSql.append(tablename).append(" set ");
 
-			// 		vector<string> allKeys = params.GetAllKeys();
+					vector<string> allKeys = params.getAllKeys();
 
-			// 		vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
-			// 		if (iter == allKeys.end()) {
-			// 			return DbUtils::MakeJsonObject(STPARAMERR);
-			// 		}
-			// 		else {
-			// 			size_t len = allKeys.size();
-			// 			size_t conditionLen = len - 2;
-			// 			string fields = "", where = " where id = ";
-			// 			for (size_t i = 0; i < len; i++) {
-			// 				string key = allKeys[i];
-			// 				string v;
-			// 				int vType;
-			// 				params.GetValueAndTypeByKey(key, &v, &vType);
-			// 				if (key.compare("id") == 0) {
-			// 					conditionLen++;
-			// 					if (vType == 6)
-			// 						where.append(v);
-			// 					else
-			// 						where.append("'").append(v).append("'");
-			// 				}
-			// 				else {
-			// 					fields.append(key).append(" = ");
-			// 					if (vType == 6)
-			// 						fields.append(v);
-			// 					else
-			// 						fields.append("'").append(v).append("'");
-			// 					if (i < conditionLen) {
-			// 						fields.append(",");
-			// 					}
-			// 				}
-			// 			}
-			// 			execSql.append(fields).append(where);
-			// 			return ExecNoneQuerySql(execSql);
-			// 		}
-			// 	}
-			// 	else {
+					vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
+					if (iter == allKeys.end()) {
+						return DbUtils::MakeJsonObject(STPARAMERR);
+					}
+					else {
+						size_t len = allKeys.size();
+						size_t conditionLen = len - 2;
+						string fields = "", where = " where id = ";
+						Json idJson;
+						for (size_t i = 0; i < len; i++) {
+							string k = allKeys[i];
+							bool vIsString = params[k].isString();
+							string v = params[k].toString();
+							vIsString &&escapeString(v);
+							if (k.compare("id") == 0) {
+								conditionLen++;
+								if(queryByParameter){
+									where.append(" ? ");
+									idJson = params[k];
+								}else{
+									if (vIsString)
+										where.append("'").append(v).append("'");
+									else
+										where.append(v);
+								}
+							}
+							else {
+								fields.append(k).append(" = ");
+								if (queryByParameter)
+								{
+									fields.append(" ? ");
+									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+								}
+								else
+								{
+									if (vIsString)
+										fields.append("'").append(v).append("'");
+									else
+										fields.append(v);
+								}
+								if (i < conditionLen) {
+									fields.append(",");
+								}
+							}
+						}
+						values.concat(idJson);
+						execSql.append(fields).append(where);
+						return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
+					}
+				}
+				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-			// 	}
+				}
 			}
 
 
@@ -651,7 +666,8 @@ namespace ZORM {
 				if (mysql == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR);
 
-				if (mysql_query(mysql, aQuery.c_str()))
+				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
+				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
 				{
 					string errmsg = "";
 					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
@@ -659,10 +675,41 @@ namespace ZORM {
 					return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 				}
 				else {
+					int vLen = values.size();
+					MYSQL_BIND bind[vLen];
+					std::memset(bind, 0, sizeof(bind));
+					if (vLen > 0)
+					{
+						for (int i = 0; i < vLen; i++)
+						{
+							if(values[i].isString()){
+								char *ele = (char *)values[i].toString().c_str();
+								bind[i].buffer_type = MYSQL_TYPE_STRING;
+								bind[i].buffer = (char *)ele;
+								bind[i].buffer_length = std::strlen(ele);
+							}else{
+								double ele = values[i].toDouble();
+								bind[i].buffer_type = MYSQL_TYPE_DOUBLE;
+								bind[i].buffer = &ele;
+							}
+						}
+						if (mysql_stmt_bind_param(stmt, bind))
+						{
+							string errmsg = "";
+							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+							return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+						}
+					}
+					if (mysql_stmt_execute(stmt))
+					{
+						string errmsg = "";
+						errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+						return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+					}
 					int affected = (int)mysql_affected_rows(mysql);
-					int newId = (int)mysql_insert_id(mysql);
 					rs.addSubitem("affected", affected);
-					rs.addSubitem("newId", newId);
 				}
 				cout << "SQL: " << aQuery << endl;
 				return rs;
