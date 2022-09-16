@@ -202,98 +202,107 @@ namespace ZORM {
 
 			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) override
 			{
-				Json rs = genSql(tablename, values, params, fields, queryType, queryByParameter);
+				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
 				if(rs["status"].toInt() == 200)
-					return queryType == 3 ? 
-						(queryByParameter ? ExecNoneQuerySql(tablename, values) : ExecNoneQuerySql(tablename)) : 
-						(queryByParameter ? ExecQuerySql(tablename, fields, values) : ExecQuerySql(tablename, fields));
+					return queryByParameter ? ExecQuerySql(tablename, fields, values) : ExecQuerySql(tablename, fields);
 				else
 					return rs;
 			}
 
-			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> filelds = vector<string>()) override
+			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
 			{
-				return select(sql, params, filelds, values, 2);
+				bool parameterized = sql.find("?") != sql.npos;
+				Json rs = genSql(sql, values, params, fields, 2, parameterized);
+				if(rs["status"].toInt() == 200)
+					return parameterized ? ExecQuerySql(sql, fields, values) : ExecQuerySql(sql, fields);
+				else
+					return rs;
 			}
 
 
 			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
 			{
-				return select(sql, params, vector<string>(), values, 3);
+				bool parameterized = sql.find("?") != sql.npos;
+				Json rs = genSql(sql, values, params, std::vector<string>(), 3, parameterized);
+				if(rs["status"].toInt() == 200)
+					return parameterized ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
+				else
+					return rs;
 			}
 
 
 			Json insertBatch(string tablename, Json& elements, string constraint) override
 			{
-			// 	string sql = "insert into ";
-			// 	if (elements.empty()) {
+				string sql = "insert into ";
+				if (elements.size() < 2) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-			// 	}
-			// 	else {
-			// 		string keyStr = " ( ";
-			// 		string updateStr = "";
-			// 		keyStr.append(DbUtils::GetVectorJoinStr(elements[0].GetAllKeys())).append(" ) values ");
-			// 		for (size_t i = 0; i < elements.size(); i++) {
-			// 			vector<string> keys = elements[i].GetAllKeys();
-			// 			string valueStr = " ( ";
-			// 			for (size_t j = 0; j < keys.size(); j++) {
-			// 				if(i == 0)
-			// 					updateStr.append(keys[j]).append(" = values(").append(keys[j]).append(")");
-			// 				valueStr.append("'").append(elements[i][keys[j]]).append("'");
-			// 				if (j < keys.size() - 1) {
-			// 					valueStr.append(",");
-			// 					if (i == 0)
-			// 						updateStr.append(",");
-			// 				}
-			// 			}
-			// 			valueStr.append(" )");
-			// 			if (i < elements.size() - 1) {
-			// 				valueStr.append(",");
-			// 			}
-			// 			keyStr.append(valueStr);
-			// 		}
-			// 		sql.append(tablename).append(keyStr).append(" on duplicate key update ").append(updateStr);
-			// 	}
-			// 	return ExecNoneQuerySql(sql);
+				}
+				else {
+					string keyStr = " ( ";
+					string updateStr = "";
+					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) values ");
+					for (size_t i = 0; i < elements.size(); i++) {
+						vector<string> keys = elements[i].getAllKeys();
+						string valueStr = " ( ";
+						for (size_t j = 0; j < keys.size(); j++) {
+							if(i == 0)
+								updateStr.append(keys[j]).append(" = values(").append(keys[j]).append(")");
+							valueStr.append("'").append(elements[i][keys[j]].toString()).append("'");
+							if (j < keys.size() - 1) {
+								valueStr.append(",");
+								if (i == 0)
+									updateStr.append(",");
+							}
+						}
+						valueStr.append(" )");
+						if (i < elements.size() - 1) {
+							valueStr.append(",");
+						}
+						keyStr.append(valueStr);
+					}
+					sql.append(tablename).append(keyStr).append(" on duplicate key update ").append(updateStr);
+				}
+				return ExecNoneQuerySql(sql);
 			}
 
 
 			Json transGo(Json& sqls, bool isAsync = false) override
 			{
-			// 	if (sqls.empty()) {
+				if (sqls.size() < 2) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-			// 	}
-			// 	else {
-			// 		bool isExecSuccess = true;
-			// 		string errmsg = "Running transaction error: ";
-			// 		MYSQL* mysql = GetConnection();
-			// 		if (mysql == nullptr)
-			// 			return DbUtils::MakeJsonObject(STDBCONNECTERR);
+				}
+				else {
+					bool isExecSuccess = true;
+					string errmsg = "Running transaction error: ";
+					MYSQL* mysql = GetConnection();
+					if (mysql == nullptr)
+						return DbUtils::MakeJsonObject(STDBCONNECTERR);
 
-			// 		mysql_query(mysql, "begin;");
-			// 		for (size_t i = 0; i < sqls.size(); i++) {
-			// 			string u8Query = DbUtils::UnicodeToU8(sqls[i]);
-			// 			if (mysql_query(mysql, u8Query.c_str()))
-			// 			{
-			// 				isExecSuccess = false;
-			// 				errmsg.append(DbUtils::U8ToUnicode((char*)mysql_error(mysql))).append(". error code: ");
-			// 				errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-			// 				cout << errmsg << endl;
-			// 				break;
-			// 			}
-			// 		}
-			// 		if (isExecSuccess)
-			// 		{
-			// 			mysql_query(mysql, "commit;");
-			// 			cout << "Transaction Success: run " << sqls.size() << " sqls." << endl;
-			// 			return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
-			// 		}
-			// 		else
-			// 		{
-			// 			mysql_query(mysql, "rollback;");
-			// 			return DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
-			// 		}
-			// 	}
+					mysql_query(mysql, "begin;");
+					for (size_t i = 0; i < sqls.size(); i++) {
+						string sql = sqls[i]["text"].toString();
+						//Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+						if (mysql_query(mysql, sql.c_str()))
+						{
+							isExecSuccess = false;
+							errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
+							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+							cout << errmsg << endl;
+							break;
+						}
+					}
+					if (isExecSuccess)
+					{
+						mysql_query(mysql, "commit;");
+						cout << "Transaction Success: run " << sqls.size() << " sqls." << endl;
+						return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
+					}
+					else
+					{
+						mysql_query(mysql, "rollback;");
+						return DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
+					}
+				}
 			}
 
 			~MysqlDb()
@@ -389,7 +398,7 @@ namespace ZORM {
 							where.append(whereExtra);
 						}
 						else {				// process value
-							if (DbUtils::FindStringFromVector(QUERY_UNEQ_OPERS, v)) {
+							if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v)) {
 								vector<string> vls = DbUtils::MakeVector(v);
 								if (vls.size() == 2) {
 									if(parameterized){
