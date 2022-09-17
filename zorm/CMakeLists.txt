@@ -25,6 +25,8 @@ if(MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 
     set(MysqlDll libmysql.dll)
+elseif(APPLE)
+    set(MysqlDll libmysqlclient.a)
 elseif(UNIX)
     add_definitions(-D__LINUX__)
     find_package(Threads REQUIRED)
