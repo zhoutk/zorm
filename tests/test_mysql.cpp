@@ -14,7 +14,7 @@ TEST(TestTest, test_test_1) {
 	options.addSubitem("db_pass", "123456");
 	options.addSubitem("db_char", "utf8mb4");
 	options.addSubitem("db_conn", 5);
-	options.addSubitem("query_parameter", false);
+	options.addSubitem("query_parameter", true);
 	DbBase* db = new DbBase("mysql", options);
 	Json rs = db->execSql("DROP TABLE IF EXISTS `table_for_test`;");
 	EXPECT_EQ(rs["status"].toInt(), 200);

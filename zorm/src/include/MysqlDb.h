@@ -389,12 +389,13 @@ namespace ZORM {
 											vsStr.insert(0, "%");
 											vsStr.append("%");
 										}
-										vsStr.append("'");
 										whereExtra.append(eqStr);
 										if(parameterized)
 											values.addSubitem(vsStr);
-										else
+										else{
+											vsStr.append("'");
 											whereExtra.append(vsStr);
+										}
 									}
 									whereExtra.append(" ) ");
 								}
@@ -456,7 +457,7 @@ namespace ZORM {
 							return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
 						else {
 							for (size_t i = 0; i < ele.size(); i += 2) {
-								extra.append(",sum(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
+								extra.append(",cast(sum(").append(ele.at(i)).append(") as double) as ").append(ele.at(i + 1)).append(" ");
 							}
 						}
 					}
@@ -584,12 +585,13 @@ namespace ZORM {
 						for (int i = 0; i < vLen; i++)
 						{
 							string ele = values[i].toString();
-							dataInputs[i] = new char[ele.length()];
-							memset(dataInputs[i], 0, ele.length());
-							memcpy(dataInputs[i], ele.c_str(), ele.length());
+							int eleLen = ele.length() + 1;
+							dataInputs[i] = new char[eleLen];
+							memset(dataInputs[i], 0, eleLen);
+							memcpy(dataInputs[i], ele.c_str(), eleLen);
 							bind[i].buffer_type = MYSQL_TYPE_STRING;
 							bind[i].buffer = (void *)dataInputs[i];
-							bind[i].buffer_length = ele.length();
+							bind[i].buffer_length = eleLen - 1;
 						}
 						if (mysql_stmt_bind_param(stmt, bind))
 						{
@@ -641,9 +643,9 @@ namespace ZORM {
 							{
 								if (is_null[i])
 									al.addSubitem(fields[i].name, nullptr);
-								else if (fields[i].type == MYSQL_TYPE_LONG)
+								else if (fields[i].type == MYSQL_TYPE_LONG || fields[i].type == MYSQL_TYPE_LONGLONG)  //count
 									al.addSubitem(fields[i].name, (long)*((int *)dataOuts[i]));
-								else if (fields[i].type == MYSQL_TYPE_DOUBLE)
+								else if (fields[i].type == MYSQL_TYPE_DOUBLE || fields[i].type == MYSQL_TYPE_NEWDECIMAL) //sum
 									al.addSubitem(fields[i].name, *((double *)dataOuts[i]));
 								else
 									al.addSubitem(fields[i].name, dataOuts[i]);
@@ -710,12 +712,13 @@ namespace ZORM {
 						for (int i = 0; i < vLen; i++)
 						{
 							string ele = values[i].toString();
-							dataInputs[i] = new char[ele.length()];
-							memset(dataInputs[i], 0, ele.length());
-							memcpy(dataInputs[i], ele.c_str(), ele.length());
+							int eleLen = ele.length() + 1;
+							dataInputs[i] = new char[eleLen];
+							memset(dataInputs[i], 0, eleLen);
+							memcpy(dataInputs[i], ele.c_str(), eleLen);
 							bind[i].buffer_type = MYSQL_TYPE_STRING;
 							bind[i].buffer = (void *)dataInputs[i];
-							bind[i].buffer_length = ele.length();
+							bind[i].buffer_length = eleLen - 1;
 						}
 						if (mysql_stmt_bind_param(stmt, bind))
 						{
@@ -833,12 +836,13 @@ namespace ZORM {
 						for (int i = 0; i < vLen; i++)
 						{
 							string ele = values[i].toString();
-							dataInputs[i] = new char[ele.length()];
-							memset(dataInputs[i], 0, ele.length());
-							memcpy(dataInputs[i], ele.c_str(), ele.length());
+							int eleLen = ele.length() + 1;
+							dataInputs[i] = new char[eleLen];
+							memset(dataInputs[i], 0, eleLen);
+							memcpy(dataInputs[i], ele.c_str(), eleLen);
 							bind[i].buffer_type = MYSQL_TYPE_STRING;
 							bind[i].buffer = (void *)dataInputs[i];
-							bind[i].buffer_length = ele.length();
+							bind[i].buffer_length = eleLen - 1;
 						}
 						if (mysql_stmt_bind_param(stmt, bind))
 						{
