@@ -239,6 +239,7 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 				else {
+					Json values = Json(JsonType::Array);
 					string keyStr = " ( ";
 					string updateStr = "";
 					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) values ");
@@ -248,7 +249,14 @@ namespace ZORM {
 						for (size_t j = 0; j < keys.size(); j++) {
 							if(i == 0)
 								updateStr.append(keys[j]).append(" = values(").append(keys[j]).append(")");
-							valueStr.append("'").append(elements[i][keys[j]].toString()).append("'");
+							string v = elements[i][keys[j]].toString();
+							!queryByParameter && elements[i][keys[j]].isString() && escapeString(v);
+							if(queryByParameter){
+								valueStr.append("?");
+								values.addSubitem(v);
+							}else{
+								valueStr.append("'").append(v).append("'");
+							}
 							if (j < keys.size() - 1) {
 								valueStr.append(",");
 								if (i == 0)
@@ -262,8 +270,8 @@ namespace ZORM {
 						keyStr.append(valueStr);
 					}
 					sql.append(tablename).append(keyStr).append(" on duplicate key update ").append(updateStr);
+					return queryByParameter ? ExecNoneQuerySql(sql,values) : ExecNoneQuerySql(sql);
 				}
-				return ExecNoneQuerySql(sql);
 			}
 
 
