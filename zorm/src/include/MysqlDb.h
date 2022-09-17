@@ -84,7 +84,7 @@ namespace ZORM {
 						fields.append(k);
 						bool vIsString = params[k].isString();
 						string v = params[k].toString();
-						vIsString &&escapeString(v);
+						!queryByParameter && vIsString &&escapeString(v);
 						if(queryByParameter){
 							vs.append("?");
 							vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
@@ -183,6 +183,7 @@ namespace ZORM {
 					string k = "id";
 					bool vIsString = params[k].isString();
 					string v = params[k].toString();
+					!queryByParameter && vIsString &&escapeString(v);
 					if(queryByParameter){
 						execSql.append(" ? ");
 						vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
@@ -281,15 +282,10 @@ namespace ZORM {
 					mysql_query(mysql, "begin;");
 					for (size_t i = 0; i < sqls.size(); i++) {
 						string sql = sqls[i]["text"].toString();
-						//Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
-						if (mysql_query(mysql, sql.c_str()))
-						{
-							isExecSuccess = false;
-							errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
-							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-							cout << errmsg << endl;
+						Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+						isExecSuccess = ExecSqlForTransGo(sql, values, &errmsg);
+						if (!isExecSuccess)
 							break;
-						}
 					}
 					if (isExecSuccess)
 					{
@@ -342,7 +338,7 @@ namespace ZORM {
 						string k = allKeys[i];
 						bool vIsString = params[k].isString();
 						string v = params[k].toString();
-						!queryByParameter && vIsString && escapeString(v);
+						!parameterized && vIsString && escapeString(v);
 						if (where.length() > 0) {
 							where.append(AndJoinStr);
 						}
@@ -799,6 +795,68 @@ namespace ZORM {
 					return st_buffer_size_type(field.max_length, field.type);
 				}
 			};
+
+			bool ExecSqlForTransGo(string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
+				MYSQL* mysql = GetConnection();
+				if (mysql == nullptr){
+					if(out)
+						*out += "can not connect the database.";
+					return false;
+				}
+
+				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
+				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
+				{
+					string errmsg = "";
+					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
+					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+					if(out)
+						*out += errmsg;
+					return false;
+				}
+				else {
+					int vLen = values.size();
+					std::vector<char *> dataInputs;
+					if (vLen > 0)
+					{
+						MYSQL_BIND bind[vLen];
+						std::memset(bind, 0, sizeof(bind));
+						dataInputs.resize(vLen);
+						for (int i = 0; i < vLen; i++)
+						{
+							string ele = values[i].toString();
+							dataInputs[i] = new char[ele.length()];
+							memset(dataInputs[i], 0, ele.length());
+							memcpy(dataInputs[i], ele.c_str(), ele.length());
+							bind[i].buffer_type = MYSQL_TYPE_STRING;
+							bind[i].buffer = (void *)dataInputs[i];
+							bind[i].buffer_length = ele.length();
+						}
+						if (mysql_stmt_bind_param(stmt, bind))
+						{
+							string errmsg = "";
+							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+							if (out)
+								*out += errmsg;
+							return false;
+						}
+					}
+					if (mysql_stmt_execute(stmt))
+					{
+						string errmsg = "";
+						errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+						if (out)
+							*out += errmsg;
+						return false;
+					}
+					for (auto el : dataInputs)
+						delete[] el;
+				}
+				cout << "SQL: " << aQuery << endl;
+				return true;
+			}
 
 			bool escapeString(string& pStr)
 			{

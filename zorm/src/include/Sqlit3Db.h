@@ -215,7 +215,7 @@ namespace ZORM {
 				}
 				else {
 					char* zErrMsg = 0;
-					string errmsg;
+					string errmsg = "Running transaction error: ";
 					bool isExecSuccess = true;
 					//sqlite3_exec(getHandle(),"PRAGMA synchronous = FULL; ",0,0,0);
 					sqlite3_exec(getHandle(),"PRAGMA synchronous = OFF; ",0,0,0);
@@ -225,9 +225,7 @@ namespace ZORM {
 						Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
 						isExecSuccess = ExecSqlForTransGo(sql, values, &errmsg);
 						if (!isExecSuccess)
-						{
 							break;
-						}
 					}
 					if (isExecSuccess)
 					{
@@ -528,7 +526,7 @@ namespace ZORM {
 					stepRet = sqlite3_step(stmt);
 				}else{
 					if(out)
-						*out = sqlite3_errmsg(getHandle());
+						*out += sqlite3_errmsg(getHandle());
 				}
 				sqlite3_finalize(stmt);
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
