@@ -32,6 +32,7 @@ namespace ZORM {
 							pool.push_back(pmysql);
 							return pmysql;
 						}else{
+							//string errMsg = mysql_error(pmysql);
 							std::cout << "Error message : " << mysql_error(pmysql);
 						}
 
@@ -575,12 +576,12 @@ namespace ZORM {
 				}
 				else
 				{
-					int vLen = values.size();
+					const int vLen = values.size();
 					std::vector<char *> dataInputs;
 					if (vLen > 0)
 					{
-						MYSQL_BIND bind[vLen];
-						std::memset(bind, 0, sizeof(bind));
+						MYSQL_BIND *bind = new MYSQL_BIND[vLen];
+						std::memset(bind, 0, sizeof(MYSQL_BIND) * vLen);
 						dataInputs.resize(vLen);
 						for (int i = 0; i < vLen; i++)
 						{
@@ -600,6 +601,7 @@ namespace ZORM {
 							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 							return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 						}
+						delete [] bind;
 					}
 
 					MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
@@ -616,14 +618,13 @@ namespace ZORM {
 							return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 						}
 						ret = mysql_stmt_store_result(stmt);
-						MYSQL_ROW row;
-						 int num_fields = mysql_num_fields(prepare_meta_result);
+						int num_fields = mysql_num_fields(prepare_meta_result);
 						fields = mysql_fetch_fields(prepare_meta_result);
-						MYSQL_BIND ps[num_fields];
-						std::memset(ps, 0, sizeof(ps));
+						MYSQL_BIND *ps = new MYSQL_BIND[num_fields];
+						std::memset(ps, 0, sizeof(MYSQL_BIND) * num_fields);
 						std::vector<char *> dataOuts(num_fields);
-						char is_null[num_fields];
-						memset(is_null, 0, sizeof(is_null));
+						char* is_null = new char[num_fields];
+						memset(is_null, 0, sizeof(char) * num_fields);
 						for (int i = 0; i < num_fields; ++i)
 						{
 							auto p = allocate_buffer_for_field(fields[i]);
@@ -655,6 +656,8 @@ namespace ZORM {
 						if (arr.empty())
 							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 						rs.addSubitem("data", arr);
+						delete [] ps;
+						delete [] is_null;
 						for(auto el : dataOuts)
 							delete [] el;
 					}
@@ -706,8 +709,8 @@ namespace ZORM {
 					std::vector<char *> dataInputs;
 					if (vLen > 0)
 					{
-						MYSQL_BIND bind[vLen];
-						std::memset(bind, 0, sizeof(bind));
+						MYSQL_BIND *bind = new MYSQL_BIND[vLen];
+						std::memset(bind, 0, sizeof(MYSQL_BIND) * vLen);
 						dataInputs.resize(vLen);
 						for (int i = 0; i < vLen; i++)
 						{
@@ -727,6 +730,7 @@ namespace ZORM {
 							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 							return rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
 						}
+						delete [] bind;
 					}
 					if (mysql_stmt_execute(stmt))
 					{
@@ -830,8 +834,8 @@ namespace ZORM {
 					std::vector<char *> dataInputs;
 					if (vLen > 0)
 					{
-						MYSQL_BIND bind[vLen];
-						std::memset(bind, 0, sizeof(bind));
+						MYSQL_BIND *bind = new MYSQL_BIND[vLen];
+						std::memset(bind, 0, sizeof(MYSQL_BIND) * vLen);
 						dataInputs.resize(vLen);
 						for (int i = 0; i < vLen; i++)
 						{
@@ -853,6 +857,7 @@ namespace ZORM {
 								*out += errmsg;
 							return false;
 						}
+						delete [] bind;
 					}
 					if (mysql_stmt_execute(stmt))
 					{
