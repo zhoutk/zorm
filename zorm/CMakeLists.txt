@@ -44,7 +44,9 @@ include_directories(../thirds/sqlit3)
 include_directories(../thirds/MySQL-C-Api-6.1/include)
 include_directories(../thirds/zjson)
 
-link_directories(../thirds/MySQL-C-Api-6.1/lib)
+if(NOT UNIX)
+    link_directories(../thirds/MySQL-C-Api-6.1/lib)
+endif()
 
 FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c") 
 FILE(GLOB_RECURSE HEAD_FILES "./*.h" "../thirds/sqlit3/*.h") 
