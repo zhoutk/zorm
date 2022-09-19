@@ -66,8 +66,8 @@ namespace ZORM {
 					maxConn = options["db_conn"].toInt();
 				if(!options["db_char"].isError())
 					charsetName = options["db_char"].toString();
-				if(!options["query_parameter"].isError())
-					queryByParameter = options["query_parameter"].toBool();
+				if(!options["query_parameterized"].isError())
+					queryByParameter = options["query_parameterized"].toBool();
 			}
 
 			Json create(string tablename, Json& params) override
@@ -202,7 +202,7 @@ namespace ZORM {
 			}
 
 
-			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) override
+			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
 			{
 				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
 				if(rs["status"].toInt() == 200)

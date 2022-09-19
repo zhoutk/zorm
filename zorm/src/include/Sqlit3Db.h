@@ -4,6 +4,7 @@
 #include "sqlite3.h"
 #include "Utils.h"
 #include "GlobalConstants.h"
+#include <regex>
 #include <algorithm>
 
 namespace ZORM {
@@ -41,7 +42,7 @@ namespace ZORM {
 			vector<string> QUERY_UNEQ_OPERS;
 
 		public:
-			Sqlit3Db(const char* apFilename, bool logFlag = false,
+			Sqlit3Db(const char* apFilename, bool logFlag = false, bool parameterized = false,
 				const int   aFlags = OPEN_READWRITE | OPEN_CREATE,
 				const int   aBusyTimeoutMs = 0,
 				const char* apVfs = nullptr) : mFilename(apFilename)
@@ -77,13 +78,14 @@ namespace ZORM {
 					}
 				}
 				DbLogClose = logFlag;
+				queryByParameter = parameterized;
 			};
 
-			Sqlit3Db(const std::string& aFilename, bool logFlag = false,
+			Sqlit3Db(const std::string& aFilename, bool logFlag = false, bool parameterized = false,
 				const int          aFlags = OPEN_READWRITE | OPEN_CREATE,
 				const int          aBusyTimeoutMs = 0,
 				const std::string& aVfs = "") {
-				new (this)Sqlit3Db(aFilename.c_str(), logFlag, aFlags, aBusyTimeoutMs, aVfs.empty() ? nullptr : aVfs.c_str());
+				new (this)Sqlit3Db(aFilename.c_str(), logFlag, parameterized, aFlags, aBusyTimeoutMs, aVfs.empty() ? nullptr : aVfs.c_str());
 			};
 
 			Json remove(string tablename, Json& params)
@@ -174,12 +176,33 @@ namespace ZORM {
 				}
 			}
 
-			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) {
-				return select(sql, params, vector<string>(), values, 3);
+			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
+			{
+				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
+				if(rs["status"].toInt() == 200)
+					return ExecQuerySql(tablename, fields, values);
+				else
+					return rs;
 			}
 
-			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) {
-				return select(sql, params, fields, values, 2);
+			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
+			{
+				bool parameterized = sql.find("?") != sql.npos;
+				Json rs = genSql(sql, values, params, std::vector<string>(), 3, parameterized);
+				if(rs["status"].toInt() == 200)
+					return ExecNoneQuerySql(sql, values);
+				else
+					return rs;
+			}
+
+			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
+			{
+				bool parameterized = sql.find("?") != sql.npos;
+				Json rs = genSql(sql, values, params, fields, 2, parameterized);
+				if(rs["status"].toInt() == 200)
+					return ExecQuerySql(sql, fields, values);
+				else
+					return rs;
 			}
 
 			Json insertBatch(string tablename, Json& elements, string constraint) {
@@ -241,9 +264,16 @@ namespace ZORM {
 				}
 			}
 
-			Json select(string tableOrSql, Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) {
+			sqlite3* getHandle()
+			{
+				return mSQLitePtr.get();
+			}
+
+		private:
+			Json genSql(string& querySql, Json& values, Json& params, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false) {
 				if (!params.isError()) {
-					string querySql = "";
+					string tablename = querySql;
+					querySql = "";
 					string where = "";
 					const string AndJoinStr = " and ";
 					string fieldsJoinStr = "*";
@@ -264,7 +294,9 @@ namespace ZORM {
 					size_t len = allKeys.size();
 					for (size_t i = 0; i < len; i++) {
 						string k = allKeys[i];
+						bool vIsString = params[k].isString();
 						string v = params[k].toString();
+						!parameterized && vIsString && escapeString(v);
 						if (where.length() > 0) {
 							where.append(AndJoinStr);
 						}
@@ -279,16 +311,20 @@ namespace ZORM {
 								if (k.compare("ins") == 0) {
 									string c = ele.at(0);
 									vector<string>(ele.begin() + 1, ele.end()).swap(ele);
-									whereExtra.append(c).append(" in (");
-									int eleLen = ele.size();
-									for(int i = 0; i < eleLen; i++){
-										string el = ele[i];
-										whereExtra.append("?");
-										if(i < eleLen - 1)
-											whereExtra.append(",");
-										values.addSubitem(el);
-									}
-									whereExtra.append(")");
+									if(parameterized){
+										whereExtra.append(c).append(" in (");
+										int eleLen = ele.size();
+										for (int i = 0; i < eleLen; i++)
+										{
+											string el = ele[i];
+											whereExtra.append("?");
+											if (i < eleLen - 1)
+												whereExtra.append(",");
+											values.addSubitem(el);
+										}
+										whereExtra.append(")");
+									}else
+										whereExtra.append(c).append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
 								}
 								else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
 									whereExtra.append(" ( ");
@@ -297,14 +333,19 @@ namespace ZORM {
 											whereExtra.append(" or ");
 										}
 										whereExtra.append(ele.at(j)).append(" ");
-										string eqStr = k.compare("lks") == 0 ? " like ?" : " = ?";
+										string eqStr = parameterized ? (k.compare("lks") == 0 ? " like ?" : " = ?") : (k.compare("lks") == 0 ? " like '" : " = '");
 										string vsStr = ele.at(j + 1);
 										if (k.compare("lks") == 0) {
 											vsStr.insert(0, "%");
 											vsStr.append("%");
 										}
 										whereExtra.append(eqStr);
-										values.addSubitem(vsStr);
+										if(parameterized)
+											values.addSubitem(vsStr);
+										else{
+											vsStr.append("'");
+											whereExtra.append(vsStr);
+										}
 									}
 									whereExtra.append(" ) ");
 								}
@@ -315,26 +356,46 @@ namespace ZORM {
 							if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v)) {
 								vector<string> vls = DbUtils::MakeVector(v);
 								if (vls.size() == 2) {
-									where.append(k).append(vls.at(0)).append(" ? ");
-									values.addSubitem(vls.at(1));
+									if(parameterized){
+										where.append(k).append(vls.at(0)).append(" ? ");
+										values.addSubitem(vls.at(1));
+									}else
+										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
 								}
 								else if (vls.size() == 4) {
-									where.append(k).append(vls.at(0)).append(" ? ").append("and ");
-									where.append(k).append(vls.at(2)).append("? ");
-									values.addSubitem(vls.at(1));
-									values.addSubitem(vls.at(3));
+									if(parameterized){
+										where.append(k).append(vls.at(0)).append(" ? ").append("and ");
+										where.append(k).append(vls.at(2)).append("? ");
+										values.addSubitem(vls.at(1));
+										values.addSubitem(vls.at(3));
+									}else{
+										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
+										where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
+									}
 								}
 								else {
 									return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
 								}
 							}
 							else if (fuzzy == "1") {
-								where.append(k).append(" like ? ");
-								values.addSubitem(v.insert(0, "%").append("%"));
+								if(parameterized){
+									where.append(k).append(" like ? ");
+									values.addSubitem(v.insert(0, "%").append("%"));
+								}
+								else
+									where.append(k).append(" like '%").append(v).append("%'");
+								
 							}
 							else {
+								if(parameterized){
 									where.append(k).append(" = ? ");
-									values.addSubitem(v);
+									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+								}else{
+									if (vIsString)
+										where.append(k).append(" = '").append(v).append("'");
+									else
+										where.append(k).append(" = ").append(v);
+								}
 							}
 						}
 					}
@@ -362,12 +423,12 @@ namespace ZORM {
 					}
 
 					if (queryType == 1) {
-						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tableOrSql);
+						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
 						if (where.length() > 0)
 							querySql.append(" where ").append(where);
 					}
 					else {
-						querySql.append(tableOrSql);
+						querySql.append(tablename);
 						if (queryType == 2 && !fields.empty()) {
 							size_t starIndex = querySql.find('*');
 							if (starIndex < 10) {
@@ -397,19 +458,13 @@ namespace ZORM {
 						page--;
 						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
 					}
-					return queryType == 3 ? ExecNoneQuerySql(querySql, values) : ExecQuerySql(querySql, fields, values);
+					return DbUtils::MakeJsonObject(STSUCCESS);
 				}
 				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 			};
 
-			sqlite3* getHandle()
-			{
-				return mSQLitePtr.get();
-			}
-
-		private:
 			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 				sqlite3_stmt* stmt = NULL;
@@ -533,8 +588,14 @@ namespace ZORM {
 				return SQLITE_OK == ret && stepRet == SQLITE_DONE ? true : false;
 			}
 
-			bool DbLogClose;
+			bool escapeString(string& pStr)
+			{
+				pStr = std::regex_replace(pStr, std::regex("'"), "''");
+				return true;
+			}
 
+			bool DbLogClose;
+			bool queryByParameter;
 		};
 	}
 

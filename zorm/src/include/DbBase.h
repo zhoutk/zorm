@@ -14,7 +14,7 @@ namespace ZORM
 			transform(dbType.begin(), dbType.end(), dbType.begin(), ::tolower);
 			bool DbLogClose = options["DbLogClose"].toBool();
 			if (dbType.compare("sqlite3") == 0)
-				db = new Sqlit3::Sqlit3Db(options["connString"].toString(), DbLogClose);
+				db = new Sqlit3::Sqlit3Db(options["connString"].toString(), DbLogClose, options["query_parameterized"].toBool());
 			else if(dbType.compare("mysql") == 0){
 				string dbhost = options.getAndRemove("db_host").toString();
 				string dbuser = options.getAndRemove("db_user").toString();
@@ -34,7 +34,7 @@ namespace ZORM
 			}
 		};
 
-		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array), int queryType = 1) {
+		Json select(string tablename, Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) {
 			return values.isArray() ? db->select(tablename, params, fields) : DbUtils::MakeJsonObject(STPARAMERR);
 		};
 

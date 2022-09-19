@@ -16,7 +16,7 @@ namespace ZORM
 	public:
 		virtual Json select(string tablename, Json &params,
 							vector<string> fields = vector<string>(),
-							Json values = Json(JsonType::Array), int queryType = 1) = 0;
+							Json values = Json(JsonType::Array)) = 0;
 		virtual Json create(string tablename, Json &params) = 0;
 		virtual Json update(string tablename, Json &params) = 0;
 		virtual Json remove(string tablename, Json &params) = 0;
