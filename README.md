@@ -55,7 +55,7 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 
 > Sqlite3:
 ```
-Json options;
+    Json options;
 	options.addSubitem("connString", "./db.db");    //数据库位置
 	options.addSubitem("DbLogClose", false);        //显示查询语句
 	options.addSubitem("parameterized", false);     //不使用参数化查询
