@@ -244,19 +244,23 @@ namespace ZORM {
 					string keyStr = " ( ";
 					string updateStr = "";
 					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) values ");
-					for (size_t i = 0; i < elements.size(); i++) {
+					for (int i = 0; i < elements.size(); i++) {
 						vector<string> keys = elements[i].getAllKeys();
 						string valueStr = " ( ";
-						for (size_t j = 0; j < keys.size(); j++) {
+						for (int j = 0; j < keys.size(); j++) {
 							if(i == 0)
 								updateStr.append(keys[j]).append(" = values(").append(keys[j]).append(")");
+							bool vIsString = elements[i][keys[j]].isString();
 							string v = elements[i][keys[j]].toString();
-							!queryByParameter && elements[i][keys[j]].isString() && escapeString(v);
+							!queryByParameter && vIsString && escapeString(v);
 							if(queryByParameter){
 								valueStr.append("?");
 								values.addSubitem(v);
 							}else{
-								valueStr.append("'").append(v).append("'");
+								if(vIsString)
+									valueStr.append("'").append(v).append("'");
+								else
+									valueStr.append(v);
 							}
 							if (j < keys.size() - 1) {
 								valueStr.append(",");

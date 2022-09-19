@@ -253,13 +253,25 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 				else {
+					Json values = Json(JsonType::Array);
 					string keyStr = " (";
 					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) ");
-					for (size_t i = 0; i < elements.size(); i++) {
+					for (int i = 0; i < elements.size(); i++) {
 						vector<string> keys = elements[i].getAllKeys();
 						string valueStr = " select ";
-						for (size_t j = 0; j < keys.size(); j++) {
-							valueStr.append("'").append(elements[i][keys[j]].toString()).append("'");
+						for (int j = 0; j < keys.size(); j++) {
+							bool vIsString = elements[i][keys[j]].isString();
+							string v = elements[i][keys[j]].toString();
+							!queryByParameter && vIsString && escapeString(v);
+							if(queryByParameter){
+								valueStr.append("?");
+								values.addSubitem(v);
+							}else{
+								if(vIsString)
+									valueStr.append("'").append(v).append("'");
+								else
+									valueStr.append(v);
+							}
 							if (j < keys.size() - 1) {
 								valueStr.append(",");
 							}
@@ -270,8 +282,8 @@ namespace ZORM {
 						keyStr.append(valueStr);
 					}
 					sql.append(tablename).append(keyStr);
+					return ExecNoneQuerySql(sql, values);
 				}
-				return ExecNoneQuerySql(sql);
 			}
 
 			Json transGo(Json& sqls, bool isAsync = false) {
