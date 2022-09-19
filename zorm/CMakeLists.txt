@@ -44,7 +44,7 @@ include_directories(../thirds/sqlit3)
 include_directories(../thirds/MySQL-C-Api-6.1/include)
 include_directories(../thirds/zjson)
 
-if(NOT UNIX)
+if(APPLE OR NOT UNIX)
     link_directories(../thirds/MySQL-C-Api-6.1/lib)
 endif()
 

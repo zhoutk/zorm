@@ -31,7 +31,7 @@ include_directories(./thirds/sqlit3)
 include_directories(./zorm/src/include)
 include_directories(./thirds/zjson)
 include_directories(./thirds/MySQL-C-Api-6.1/include)
-if(NOT UNIX)
+if(APPLE OR NOT UNIX)
     link_directories(./thirds/MySQL-C-Api-6.1/lib)
 endif()
 
