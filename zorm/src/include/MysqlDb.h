@@ -68,8 +68,8 @@ namespace ZORM {
 					charsetName = options["db_char"].toString();
 				if (!options["DbLogClose"].isError())
 					DbLogClose = options["DbLogClose"].toBool();
-				if(!options["query_parameterized"].isError())
-					queryByParameter = options["query_parameterized"].toBool();
+				if(!options["parameterized"].isError())
+					queryByParameter = options["parameterized"].toBool();
 			}
 
 			Json create(string tablename, Json& params) override

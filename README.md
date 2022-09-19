@@ -47,7 +47,35 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
         virtual Json transGo(Json& sqls, bool isAsync = false) = 0;
     };
   ```
+
+## 实例构造
+> 全局查询开关变量：
+- DbLogClose : sql 查询语句显示开关
+- parameterized : 是否使用参数化查询
+
+> Sqlite3:
+```
+Json options;
+	options.addSubitem("connString", "./db.db");    //数据库位置
+	options.addSubitem("DbLogClose", false);        //显示查询语句
+	options.addSubitem("parameterized", false);     //不使用参数化查询
+	DbBase* db = new DbBase("sqlite3", options);
+```
   
+> Mysql:
+```
+    Json options;
+	options.addSubitem("db_host", "192.168.6.6");   //mysql服务IP
+	options.addSubitem("db_port", 3306);            //端口
+	options.addSubitem("db_name", "dbtest");        //数据库名称
+	options.addSubitem("db_user", "root");          //登记用户名
+	options.addSubitem("db_pass", "123456");        //密码
+	options.addSubitem("db_char", "utf8mb4");       //连接字符设定[可选]
+	options.addSubitem("db_conn", 5);               //连接池配置[可选]，默认为2
+	options.addSubitem("DbLogClose", true);         //不显示查询语句
+	options.addSubitem("parameterized", true);      //使用参数化查询
+	DbBase* db = new DbBase("mysql", options);
+```
 ## 智能查询方式设计
 > 查询保留字：page, size, sort, fuzzy, lks, ins, ors, count, sum, group
 

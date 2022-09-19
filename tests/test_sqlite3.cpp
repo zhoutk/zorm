@@ -9,7 +9,7 @@ TEST(TestTest, test_test_1) {
 	Json options;
 	options.addSubitem("connString", "./db.db");
 	options.addSubitem("DbLogClose", false);
-	options.addSubitem("query_parameterized", false);
+	options.addSubitem("parameterized", true);
 	DbBase* db = new DbBase("sqlite3", options);
 	Json rs = db->execSql("DROP TABLE IF EXISTS \"table_for_test\";");
 	EXPECT_EQ(rs["status"].toInt(), 200);
