@@ -88,15 +88,38 @@ namespace ZORM {
 				new (this)Sqlit3Db(aFilename.c_str(), logFlag, parameterized, aFlags, aBusyTimeoutMs, aVfs.empty() ? nullptr : aVfs.c_str());
 			};
 
-			Json remove(string tablename, Json& params)
+			Json create(string tablename, Json& params)
 			{
 				if (!params.isError()) {
-					string execSql = "delete from ";
-					execSql.append(tablename).append(" where id = ?");
-
 					Json values(JsonType::Array);
-					values.addSubitem(params["id"].toString());
+					string execSql = "insert into ";
+					execSql.append(tablename).append(" ");
 
+					vector<string> allKeys = params.getAllKeys();
+					size_t len = allKeys.size();
+					string fields = "", vs = "";
+					for (size_t i = 0; i < len; i++) {
+						string k = allKeys[i];
+						fields.append(k);
+						bool vIsString = params[k].isString();
+						string v = params[k].toString();
+						!queryByParameter && vIsString &&escapeString(v);
+						if(queryByParameter){
+							vs.append("?");
+							vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+						}else{
+							if (vIsString)
+								vs.append("'").append(v).append("'");
+							else
+								vs.append(v);
+						}
+						
+						if (i < len - 1) {
+							fields.append(",");
+							vs.append(",");
+						}
+					}
+					execSql.append("(").append(fields).append(") values (").append(vs).append(")");
 					return ExecNoneQuerySql(execSql, values);
 				}
 				else {
@@ -120,24 +143,45 @@ namespace ZORM {
 					else {
 						size_t len = allKeys.size();
 						size_t conditionLen = len - 2;
-						string fields = "", where = " where id = ?";
-						string idStr = "";
+						string fields = "", where = " where id = ";
+						Json idJson;
 						for (size_t i = 0; i < len; i++) {
-							string key = allKeys[i];
-							string v = params[key].toString();
-							if (key.compare("id") == 0) {
+							string k = allKeys[i];
+							bool vIsString = params[k].isString();
+							string v = params[k].toString();
+							!queryByParameter && vIsString &&escapeString(v);
+							if (k.compare("id") == 0) {
 								conditionLen++;
-								idStr = v;
+								if(queryByParameter){
+									where.append(" ? ");
+									idJson = params[k];
+								}else{
+									if (vIsString)
+										where.append("'").append(v).append("'");
+									else
+										where.append(v);
+								}
 							}
 							else {
-								fields.append(key).append(" = ?");
-								values.addSubitem(v);
+								fields.append(k).append(" = ");
+								if (queryByParameter)
+								{
+									fields.append(" ? ");
+									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+								}
+								else
+								{
+									if (vIsString)
+										fields.append("'").append(v).append("'");
+									else
+										fields.append(v);
+								}
 								if (i < conditionLen) {
 									fields.append(",");
 								}
 							}
 						}
-						values.addSubitem(idStr);
+						values.concat(idJson);
 						execSql.append(fields).append(where);
 						return ExecNoneQuerySql(execSql, values);
 					}
@@ -147,28 +191,26 @@ namespace ZORM {
 				}
 			}
 
-			Json create(string tablename, Json& params)
+			Json remove(string tablename, Json& params)
 			{
 				if (!params.isError()) {
 					Json values(JsonType::Array);
-					string execSql = "insert into ";
-					execSql.append(tablename).append(" ");
+					string execSql = "delete from ";
+					execSql.append(tablename).append(" where id = ");
 
-					vector<string> allKeys = params.getAllKeys();
-					size_t len = allKeys.size();
-					string fields = "", vs = "";
-					for (size_t i = 0; i < len; i++) {
-						string key = allKeys[i];
-						string v = params[key].toString();
-						fields.append(key);
-						vs.append("?");
-						values.addSubitem(v);
-						if (i < len - 1) {
-							fields.append(",");
-							vs.append(",");
-						}
+					string k = "id";
+					bool vIsString = params[k].isString();
+					string v = params[k].toString();
+					!queryByParameter && vIsString &&escapeString(v);
+					if(queryByParameter){
+						execSql.append(" ? ");
+						vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+					}else{
+						if (vIsString)
+							execSql.append("'").append(v).append("'");
+						else
+							execSql.append(v);
 					}
-					execSql.append("(").append(fields).append(") values (").append(vs).append(")");
 					return ExecNoneQuerySql(execSql, values);
 				}
 				else {
