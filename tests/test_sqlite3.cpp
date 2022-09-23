@@ -5,7 +5,7 @@
 
 using namespace ZORM;
 
-TEST(TestTest, test_test_1) {
+TEST(TestTest, test_sqlite3) {
 	Json options;
 	options.addSubitem("connString", "./db.db");
 	options.addSubitem("DbLogClose", false);

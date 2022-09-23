@@ -38,6 +38,8 @@ elseif(UNIX)
 
     set(MysqlDll mysqlclient)
     set(pthread pthread)
+    set(pqxxName pqxx)
+    set(pqName pq)
 endif()
 
 include_directories(../thirds/sqlit3)
@@ -52,4 +54,4 @@ FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c")
 FILE(GLOB_RECURSE HEAD_FILES "./*.h" "../thirds/sqlit3/*.h") 
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES})
-target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll})
+target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll} ${pqxxName} ${pqName})

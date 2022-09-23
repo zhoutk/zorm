@@ -25,7 +25,7 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
   - [x] linux 
   - [x] windows
   - [x] macos
-- [ ] Pstgre 实现
+- [x] Pstgre 实现
   - [ ] linux 
   - [ ] windows
   - [ ] macos

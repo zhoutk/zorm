@@ -9,7 +9,7 @@
 
 namespace ZORM {
 
-	using namespace std;
+	using std::string;
 
 	namespace Mysql {
 		vector<string> QUERY_EXTRA_KEYS;
@@ -58,11 +58,11 @@ namespace ZORM {
 		public:
 
 			MysqlDb(string dbhost, string dbuser, string dbpwd, string dbname, int dbport = 3306, Json options = Json()) :
-				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport), DbLogClose(false), queryByParameter(false)
+				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport), maxConn(2), DbLogClose(false), queryByParameter(false)
 			{
 				init();
 
-				if(!options["db_conn"].isError())
+				if(!options["db_conn"].isError() && options["db_conn"].toInt() > 2)
 					maxConn = options["db_conn"].toInt();
 				if(!options["db_char"].isError())
 					charsetName = options["db_char"].toString();
@@ -304,7 +304,7 @@ namespace ZORM {
 					if (isExecSuccess)
 					{
 						mysql_query(mysql, "commit;");
-						!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() << " sqls." << endl;
+						!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
 						return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
 					}
 					else
@@ -562,7 +562,7 @@ namespace ZORM {
 					}
 					mysql_free_result(result);
 				}
-				!DbLogClose && std::cout << "SQL: " << aQuery << endl;
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
 
@@ -670,7 +670,7 @@ namespace ZORM {
 						delete[] el;
 				}
 				mysql_stmt_close(stmt);
-				!DbLogClose && cout << "SQL: " << aQuery << endl;
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
 
@@ -691,7 +691,7 @@ namespace ZORM {
 					int affected = (int)mysql_affected_rows(mysql);
 					rs.addSubitem("affected", affected);
 				}
-				!DbLogClose && cout << "SQL: " << aQuery << endl;
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
 
@@ -749,7 +749,7 @@ namespace ZORM {
 					for (auto el : dataInputs)
 						delete[] el;
 				}
-				!DbLogClose && cout << "SQL: " << aQuery << endl;
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
 
@@ -876,7 +876,7 @@ namespace ZORM {
 					for (auto el : dataInputs)
 						delete[] el;
 				}
-				!DbLogClose && cout << "SQL: " << aQuery << endl;
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return true;
 			}
 
