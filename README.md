@@ -14,7 +14,7 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 
 ## 项目进度
   现在已经实现了sqlit3与mysql的所有功能，postgres也做了技术准备。  
-  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - pqxx 。
+  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - libpqxx7.7.4 。
 
 任务列表：
 - [x] Sqlite3 实现
