@@ -18,7 +18,7 @@ namespace ZORM {
 		class ZORM_API MysqlDb : public Idb {
 
 		private:
-			MYSQL* GetConnection() {
+			MYSQL* GetConnection(char* err = nullptr) {
 				//srand((unsigned int)(time(nullptr)));
 				size_t index = (rand() % maxConn) + 1;
 				if (index > pool.size()) {
@@ -32,7 +32,7 @@ namespace ZORM {
 							pool.push_back(pmysql);
 							return pmysql;
 						}else{
-							//string errMsg = mysql_error(pmysql);
+							err = (char*)mysql_error(pmysql);
 							std::cout << "Error message : " << mysql_error(pmysql);
 						}
 

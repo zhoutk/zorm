@@ -18,15 +18,14 @@ namespace ZORM {
 		class ZORM_API PostgresDb : public Idb
 		{
 		private:
-			pqxx::connection* GetConnection(string *err = nullptr)
+			pqxx::connection* GetConnection(char* err = nullptr)
 			{
 				size_t index = (rand() % maxConn) + 1;
 				if (index > pool.size())
 				{
 					try
 					{
-						pqxx::connection *pqsql;
-						pqsql = new pqxx::connection(connString);
+						pqxx::connection *pqsql = new pqxx::connection(connString);
 						if (pqsql->is_open())
 						{
 							pool.push_back(pqsql);
@@ -37,7 +36,8 @@ namespace ZORM {
 					}
 					catch (const std::exception &e)
 					{
-						err = new string(e.what());
+						err = (char*)e.what();
+						std::cout << "Error message : " << err;
 						return nullptr;
 					}
 				}
@@ -107,7 +107,7 @@ namespace ZORM {
 
 			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				return ExecNoneQuerySql(sql);
 			}
 
 
@@ -123,11 +123,11 @@ namespace ZORM {
 
 			~PostgresDb()
 			{
-				// while (pool.size())
-				// {
-				// 	mysql_close(pool.back());
-				// 	pool.pop_back();
-				// }
+				while (pool.size())
+				{
+					(pool.back())->close();
+					pool.pop_back();
+				}
 			}
 
 		private:
@@ -146,7 +146,26 @@ namespace ZORM {
 			}
 
 			Json ExecNoneQuerySql(string aQuery) {
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				char* err;
+				pqxx::connection *pq = GetConnection(err);
+				if (pq == nullptr)
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				try
+				{
+					pqxx::nontransaction N(*pq);
+					pqxx::result R(N.exec(aQuery));
+
+					rs.addSubitem("affected", R.affected_rows());
+					rs.addSubitem("newId", R.inserted_oid());
+				}
+				catch (const std::exception &e)
+				{
+					std::cout << e.what();
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, e.what());
+				}
+				std::cout << "SQL: " << aQuery << std::endl;
+				return rs;
 			}
 
 			Json ExecNoneQuerySql(string aQuery, Json values) {

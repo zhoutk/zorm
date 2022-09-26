@@ -17,16 +17,16 @@ TEST(TestTest, test_postgres) {
 	options.addSubitem("DbLogClose", false);
 	options.addSubitem("parameterized", true);
 	DbBase* db = new DbBase("postgres", options);
-	// Json rs = db->execSql("DROP TABLE IF EXISTS `table_for_test`;");
-	// EXPECT_EQ(rs["status"].toInt(), 200);
-	// rs = db->execSql("CREATE TABLE `table_for_test` (\
-	// 	`id` char(64) CHARACTER SET utf8mb4 NOT NULL,\
-	// 	`name` varchar(128) CHARACTER SET utf8mb4 NULL DEFAULT '',\
-	// 	`age` int(0) NULL DEFAULT 0,\
-	// 	`score` double NULL DEFAULT 0,\
-	// 	PRIMARY KEY (`id`) USING BTREE\
-	// 	) ENGINE = InnoDB CHARACTER SET = utf8mb4 ROW_FORMAT = Dynamic;");
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	Json rs = db->execSql("DROP TABLE IF EXISTS \"public\".\"table_for_test\";");
+	EXPECT_EQ(rs["status"].toInt(), 200);
+	rs = db->execSql("CREATE TABLE \"public\".\"table_for_test\" (\
+		\"id\" char(64) NOT NULL,\
+		\"name\" varchar(128) DEFAULT \'\'::character varying,\
+		\"age\" int4 DEFAULT 0,\
+		\"score\" numeric DEFAULT 0.0)");
+	EXPECT_EQ(rs["status"].toInt(), 200);
+	db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
+	EXPECT_EQ(rs["status"].toInt(), 200);
 	// Json cObj{
 	// 	{"id", "a1b2c3d4"},
 	// 	{"name", "Kevin 凯文"},
