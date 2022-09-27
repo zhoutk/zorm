@@ -79,7 +79,41 @@ namespace ZORM {
 
 			Json create(string tablename, Json& params) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				if (!params.isError()) {
+					Json values(JsonType::Array);
+					string execSql = "insert into ";
+					execSql.append(tablename).append(" ");
+
+					vector<string> allKeys = params.getAllKeys();
+					size_t len = allKeys.size();
+					string fields = "", vs = "";
+					for (size_t i = 0; i < len; i++) {
+						string k = allKeys[i];
+						fields.append(k);
+						bool vIsString = params[k].isString();
+						string v = params[k].toString();
+						!queryByParameter && vIsString &&escapeString(v);
+						if(queryByParameter){
+							vs.append("$").append(DbUtils::IntTransToString(i+1));
+							vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+						}else{
+							if (vIsString)
+								vs.append("'").append(v).append("'");
+							else
+								vs.append(v);
+						}
+						
+						if (i < len - 1) {
+							fields.append(",");
+							vs.append(",");
+						}
+					}
+					execSql.append("(").append(fields).append(") values (").append(vs).append(")");
+					return ExecNoneQuerySql(execSql, values);
+				}
+				else {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
 			}
 
 			Json update(string tablename, Json& params) override
@@ -145,16 +179,21 @@ namespace ZORM {
 				return DbUtils::MakeJsonObject(STPARAMERR);
 			}
 
-			Json ExecNoneQuerySql(string aQuery) {
+			Json ExecNoneQuerySql(string aQuery, Json values = Json(JsonType::Array)) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 				char* err;
 				pqxx::connection *pq = GetConnection(err);
 				if (pq == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				pqxx::params ps;
+				int len = values.size();
+				for(int i = 0; i < len; i++){
+					ps.append(values[i].toString());
+				}
 				try
 				{
 					pqxx::nontransaction N(*pq);
-					pqxx::result R(N.exec(aQuery));
+					pqxx::result R(N.exec_params(aQuery, ps));
 
 					rs.addSubitem("affected", R.affected_rows());
 					rs.addSubitem("newId", R.inserted_oid());
@@ -166,10 +205,6 @@ namespace ZORM {
 				}
 				std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
-			}
-
-			Json ExecNoneQuerySql(string aQuery, Json values) {
-				return DbUtils::MakeJsonObject(STPARAMERR);
 			}
 
 			bool ExecSqlForTransGo(string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {

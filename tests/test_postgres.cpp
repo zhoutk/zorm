@@ -27,14 +27,14 @@ TEST(TestTest, test_postgres) {
 	EXPECT_EQ(rs["status"].toInt(), 200);
 	db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
 	EXPECT_EQ(rs["status"].toInt(), 200);
-	// Json cObj{
-	// 	{"id", "a1b2c3d4"},
-	// 	{"name", "Kevin 凯文"},
-	// 	{"age", 18},
-	// 	{"score", 99.99}
-	// };
-	// rs = db->create("table_for_test", cObj);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	Json cObj{
+		{"id", "a1b2c3d4"},
+		{"name", "Kevin 凯文"},
+		{"age", 18},
+		{"score", 99.99}
+	};
+	rs = db->create("table_for_test", cObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
 
 	// Json cObjs(JsonType::Array);
 	// cObjs.addSubitem(Json("{\"id\":\"a2b3c4d5\",\"name\":\"test001\",\"age\":19,\"score\":69.15}"));
