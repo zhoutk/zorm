@@ -130,18 +130,31 @@ namespace ZORM {
 
 			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
+				if(rs["status"].toInt() == 200)
+					return ExecQuerySql(tablename, fields, values);
+				else
+					return rs;
 			}
 
 			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				bool parameterized = sql.find("?") != sql.npos;
+				Json rs = genSql(sql, values, params, fields, 2, parameterized);
+				if(rs["status"].toInt() == 200)
+					return ExecQuerySql(sql, fields, values);
+				else
+					return rs;
 			}
-
 
 			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
 			{
-				return ExecNoneQuerySql(sql);
+				bool parameterized = sql.find("?") != sql.npos;
+				Json rs = genSql(sql, values, params, std::vector<string>(), 3, parameterized);
+				if(rs["status"].toInt() == 200)
+					return ExecNoneQuerySql(sql, values);
+				else
+					return rs;
 			}
 
 
@@ -248,16 +261,235 @@ namespace ZORM {
 		private:
 			Json genSql(string& querySql, Json& values, Json& params, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false)
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
-			}
+				if (!params.isError()) {
+					string tablename = querySql;
+					querySql = "";
+					string where = "";
+					const string AndJoinStr = " and ";
+					string fieldsJoinStr = "*";
 
-			Json ExecQuerySql(string aQuery, vector<string> fields)
-			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+					if (!fields.empty()) {
+						fieldsJoinStr = DbUtils::GetVectorJoinStr(fields);
+					}
+
+					string fuzzy = params.getAndRemove("fuzzy").toString();
+					string sort = params.getAndRemove("sort").toString();
+					int page = atoi(params.getAndRemove("page").toString().c_str());
+					int size = atoi(params.getAndRemove("size").toString().c_str());
+					string sum = params.getAndRemove("sum").toString();
+					string count = params.getAndRemove("count").toString();
+					string group = params.getAndRemove("group").toString();
+
+					vector<string> allKeys = params.getAllKeys();
+					size_t len = allKeys.size();
+					int index = 1;
+					for (size_t i = 0; i < len; i++) {
+						string k = allKeys[i];
+						bool vIsString = params[k].isString();
+						string v = params[k].toString();
+						!parameterized && vIsString && escapeString(v);
+						if (where.length() > 0) {
+							where.append(AndJoinStr);
+						}
+
+						if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
+							string whereExtra = "";
+							vector<string> ele = DbUtils::MakeVector(params[k].toString());
+							if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
+								return DbUtils::MakeJsonObject(STPARAMERR, k + " is wrong.");
+							}
+							else {
+								if (k.compare("ins") == 0) {
+									string c = ele.at(0);
+									vector<string>(ele.begin() + 1, ele.end()).swap(ele);
+									if(parameterized){
+										whereExtra.append(c).append(" in (");
+										int eleLen = ele.size();
+										for (int i = 0; i < eleLen; i++)
+										{
+											string el = ele[i];
+											whereExtra.append("$").append(DbUtils::IntTransToString(index++));
+											if (i < eleLen - 1)
+												whereExtra.append(",");
+											values.addSubitem(el);
+										}
+										whereExtra.append(")");
+									}else
+										whereExtra.append(c).append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
+								}
+								else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
+									whereExtra.append(" ( ");
+									for (size_t j = 0; j < ele.size(); j += 2) {
+										if (j > 0) {
+											whereExtra.append(" or ");
+										}
+										whereExtra.append(ele.at(j)).append(" ");
+										string curIndexStr = string("$").append(DbUtils::IntTransToString(index++));
+										string eqStr = parameterized ? (k.compare("lks") == 0 ? string(" like ").append(curIndexStr) : string(" = ").append(curIndexStr)) : (k.compare("lks") == 0 ? " like '" : " = '");
+										string vsStr = ele.at(j + 1);
+										if (k.compare("lks") == 0) {
+											vsStr.insert(0, "%");
+											vsStr.append("%");
+										}
+										whereExtra.append(eqStr);
+										if(parameterized)
+											values.addSubitem(vsStr);
+										else{
+											vsStr.append("'");
+											whereExtra.append(vsStr);
+										}
+									}
+									whereExtra.append(" ) ");
+								}
+							}
+							where.append(whereExtra);
+						}
+						else {				// process value
+							if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v)) {
+								vector<string> vls = DbUtils::MakeVector(v);
+								if (vls.size() == 2) {
+									if(parameterized){
+										where.append(k).append(vls.at(0)).append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
+										values.addSubitem(vls.at(1));
+									}else
+										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
+								}
+								else if (vls.size() == 4) {
+									if(parameterized){
+										where.append(k).append(vls.at(0)).append(" $").append(DbUtils::IntTransToString(index++)).append(" ").append("and ");
+										where.append(k).append(vls.at(2)).append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
+										values.addSubitem(vls.at(1));
+										values.addSubitem(vls.at(3));
+									}else{
+										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
+										where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
+									}
+								}
+								else {
+									return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
+								}
+							}
+							else if (fuzzy == "1") {
+								if(parameterized){
+									where.append(k).append(" like ").append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
+									values.addSubitem(v.insert(0, "%").append("%"));
+								}
+								else
+									where.append(k).append(" like '%").append(v).append("%'");
+								
+							}
+							else {
+								if(parameterized){
+									where.append(k).append(" =").append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
+									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+								}else{
+									if (vIsString)
+										where.append(k).append(" = '").append(v).append("'");
+									else
+										where.append(k).append(" = ").append(v);
+								}
+							}
+						}
+					}
+
+					string extra = "";
+					if (!sum.empty()) {
+						vector<string> ele = DbUtils::MakeVector(sum);
+						if (ele.empty() || ele.size() % 2 == 1)
+							return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
+						else {
+							for (size_t i = 0; i < ele.size(); i += 2) {
+								extra.append(",cast(sum(").append(ele.at(i)).append(") as double) as ").append(ele.at(i + 1)).append(" ");
+							}
+						}
+					}
+					if (!count.empty()) {
+						vector<string> ele = DbUtils::MakeVector(count);
+						if (ele.empty() || ele.size() % 2 == 1)
+							return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
+						else {
+							for (size_t i = 0; i < ele.size(); i += 2) {
+								extra.append(",count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
+							}
+						}
+					}
+
+					if (queryType == 1) {
+						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
+						if (where.length() > 0){
+							querySql.append(" where ").append(where);
+						}
+					}
+					else {
+						querySql.append(tablename);
+						if (queryType == 2 && !fields.empty()) {
+							size_t starIndex = querySql.find('*');
+							if (starIndex < 10) {
+								querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
+							}
+						}
+						if (where.length() > 0) {
+							size_t whereIndex = querySql.find("where");
+							if (whereIndex == querySql.npos) {
+								querySql.append(" where ").append(where);
+							}
+							else {
+								querySql.append(" and ").append(where);
+							}
+						}
+					}
+
+					if (!group.empty()) {
+						querySql.append(" group by ").append(group);
+					}
+
+					if (!sort.empty()) {
+						querySql.append(" order by ").append(sort);
+					}
+
+					if (page > 0) {
+						page--;
+						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
+					}
+					return DbUtils::MakeJsonObject(STSUCCESS);
+				}
+				else {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
 			}
 
 			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				char* err = nullptr;
+				pqxx::connection* pq = GetConnection(err);
+				if (pq == nullptr)
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				try {
+					pqxx::nontransaction N(*pq);
+					pqxx::result R(N.exec(aQuery));
+
+					size_t coLen = R.columns();
+					vector<Json> arr;
+					for (pqxx::result::const_iterator c = R.begin(); c != R.end(); ++c) {
+						Json al;
+						for (int i = 0; i < coLen; ++i)
+						{
+							auto rsType = R.column_type(i);
+							
+							al.addSubitem(R.column_name(i), (char*)c[i].c_str());
+						}
+						arr.push_back(al);
+					}
+					if (arr.empty())
+						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+					rs.addSubitem("data", arr);
+
+					std::cout << "SQL: " << aQuery << std::endl;
+					return rs;
+				}
+				catch (const std::exception& e) {
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, (char*)e.what());
+				}
 			}
 
 			Json ExecNoneQuerySql(string aQuery, Json values = Json(JsonType::Array)) {
@@ -286,10 +518,6 @@ namespace ZORM {
 				}
 				std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
-			}
-
-			bool ExecSqlForTransGo(string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
-				return true;
 			}
 
 			bool escapeString(string& pStr)
