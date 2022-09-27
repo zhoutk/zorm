@@ -42,6 +42,7 @@ elseif(UNIX)
     set(pqName pq)
 endif()
 
+include_directories(./src/include)
 include_directories(../thirds/sqlit3)
 include_directories(../thirds/MySQL-C-Api-6.1/include)
 include_directories(../thirds/zjson)

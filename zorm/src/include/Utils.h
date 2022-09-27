@@ -153,6 +153,9 @@ namespace ZORM {
 			Json rs;
 			rs.addSubitem("status", (int)code);
 			if (!info.empty()) {
+				auto index = info.find_first_of("\n");
+				if(index != info.npos)
+					info = info.substr(0, index);
 				info.insert(0, " details, ");
 			}
 			info.insert(0, STCODEMESSAGES[(int)code]);

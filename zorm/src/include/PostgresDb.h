@@ -3,7 +3,7 @@
 #include "Idb.h"
 #include "Utils.h"
 #include "GlobalConstants.h"
- #include <pqxx/pqxx>
+#include <pqxx/pqxx>
 #include <algorithm>
 #include <cstring>
 
@@ -153,9 +153,11 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 				else {
+					Json values = Json(JsonType::Array);
 					string keyStr = " ( ";
 					string updateStr = "";
 					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) values ");
+					int index = 1;
 					for (size_t i = 0; i < elements.size(); i++) {
 						vector<string> keys = elements[i].getAllKeys();
 						string valueStr = " ( ";
@@ -165,7 +167,18 @@ namespace ZORM {
 								if (iter == restrain.end())
 									updateStr.append(keys[j]).append(" = excluded.").append(keys[j]).append(",");
 							}
-							valueStr.append("'").append(elements[i][keys[j]].toString()).append("'");
+							bool vIsString = elements[i][keys[j]].isString();
+							string v = elements[i][keys[j]].toString();
+							!queryByParameter && vIsString && escapeString(v);
+							if(queryByParameter){
+								valueStr.append("$").append(DbUtils::IntTransToString(index++));
+								values.addSubitem(v);
+							}else{
+								if(vIsString)
+									valueStr.append("'").append(v).append("'");
+								else
+									valueStr.append(v);
+							}
 							if (j < keys.size() - 1) {
 								valueStr.append(",");
 							}
@@ -184,13 +197,43 @@ namespace ZORM {
 						updateStr = updateStr.substr(0, updateStr.length() - 1);
 						sql.append(tablename).append(keyStr).append(" on conflict (").append(constraint).append(") do update set ").append(updateStr);
 					}
+					return ExecNoneQuerySql(sql, values);
 				}
-				return ExecNoneQuerySql(sql);
 			}
 
 			Json transGo(Json& sqls, bool isAsync = false) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				if (sqls.size() < 2) {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
+				else {
+					bool isExecSuccess = true;
+					string errmsg = "Running transaction error: ";
+					char* err = nullptr;
+					pqxx::connection* pq = GetConnection(err);
+					if (pq == nullptr)
+						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+
+					try {
+						pqxx::work T(*pq);
+						for (size_t i = 0; i < sqls.size(); i++) {
+							string sql = sqls[i]["text"].toString();
+							Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+							pqxx::params ps;
+							int len = values.size();
+							for (int i = 0; i < len; i++)
+								ps.append(values[i].toString());
+							T.exec_params(sql, ps);
+						}
+						T.commit();
+						std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
+						return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
+					}
+					catch (std::exception& e) {
+						std::cout << "Transaction Error: " << e.what() << std::endl;
+						return DbUtils::MakeJsonObject(STDBOPERATEERR, (char*)e.what());
+					}
+				}
 			}
 
 			~PostgresDb()
@@ -251,7 +294,13 @@ namespace ZORM {
 
 			bool escapeString(string& pStr)
 			{
+				pStr = GetConnection()->esc(pStr);
 				return true;
+			}
+
+			std::string getEscapeString(string& pStr)
+			{
+				return GetConnection()->esc(pStr);
 			}
 
 		private:
