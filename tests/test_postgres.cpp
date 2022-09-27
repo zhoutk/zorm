@@ -15,7 +15,7 @@ TEST(TestTest, test_postgres) {
 	options.addSubitem("db_char", "utf8mb4");
 	options.addSubitem("db_conn", 5);
 	options.addSubitem("DbLogClose", false);
-	options.addSubitem("parameterized", true);
+	options.addSubitem("parameterized", false);
 	DbBase* db = new DbBase("postgres", options);
 	Json rs = db->execSql("DROP TABLE IF EXISTS \"public\".\"table_for_test\";");
 	EXPECT_EQ(rs["status"].toInt(), 200);
@@ -36,11 +36,11 @@ TEST(TestTest, test_postgres) {
 	rs = db->create("table_for_test", cObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// Json cObjs(JsonType::Array);
-	// cObjs.addSubitem(Json("{\"id\":\"a2b3c4d5\",\"name\":\"test001\",\"age\":19,\"score\":69.15}"));
-	// cObjs.addSubitem(Json("{\"id\":\"a3b4c5d6\",\"name\":\"test002\",\"age\":20,\"score\":56.87}"));
-	// rs = db->insertBatch("table_for_test", cObjs);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	Json cObjs(JsonType::Array);
+	cObjs.addSubitem(Json("{\"id\":\"a2b3c4d5\",\"name\":\"test001\",\"age\":19,\"score\":69.15}"));
+	cObjs.addSubitem(Json("{\"id\":\"a3b4c5d6\",\"name\":\"test002\",\"age\":20,\"score\":56.87}"));
+	rs = db->insertBatch("table_for_test", cObjs);
+	EXPECT_EQ(rs["status"].toInt(), 200);
 
 	// Json sqlArr(JsonType::Array);
 	// sqlArr.addSubitem(Json("{\"text\":\"insert into table_for_test (id,name,age,score) values ('a4b5c6d7','test003',21,78.48)\"}"));

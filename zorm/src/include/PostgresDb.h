@@ -147,7 +147,45 @@ namespace ZORM {
 
 			Json insertBatch(string tablename, Json& elements, string constraint) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				string sql = "insert into ";
+				vector<string> restrain = DbUtils::MakeVector(constraint);
+				if (elements.size() < 2) {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
+				else {
+					string keyStr = " ( ";
+					string updateStr = "";
+					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) values ");
+					for (size_t i = 0; i < elements.size(); i++) {
+						vector<string> keys = elements[i].getAllKeys();
+						string valueStr = " ( ";
+						for (size_t j = 0; j < keys.size(); j++) {
+							if (i == 0) {
+								vector<string>::iterator iter = find(restrain.begin(), restrain.end(), keys[j]);
+								if (iter == restrain.end())
+									updateStr.append(keys[j]).append(" = excluded.").append(keys[j]).append(",");
+							}
+							valueStr.append("'").append(elements[i][keys[j]].toString()).append("'");
+							if (j < keys.size() - 1) {
+								valueStr.append(",");
+							}
+						}
+						valueStr.append(" )");
+						if (i < elements.size() - 1) {
+							valueStr.append(",");
+						}
+						keyStr.append(valueStr);
+					}
+					if (updateStr.length() == 0) {
+						sql.append(tablename).append(keyStr);
+					}
+					else
+					{
+						updateStr = updateStr.substr(0, updateStr.length() - 1);
+						sql.append(tablename).append(keyStr).append(" on conflict (").append(constraint).append(") do update set ").append(updateStr);
+					}
+				}
+				return ExecNoneQuerySql(sql);
 			}
 
 			Json transGo(Json& sqls, bool isAsync = false) override
