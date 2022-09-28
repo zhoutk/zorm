@@ -240,10 +240,10 @@ cd build && make
 
 run zorm or ctest
 ```
-注1:在linux下需要先行安装mysql开发库, 并先手动建立数据库 dbtest。  
-在ubuntu下的命令是： apt install libmysqlclient-dev
-注2:在linux下需要先行安装 libpq 开发库， 并下载libpqxx7.7.4源码编译（要求gcc版本高于8）。
-在ubuntu下的命令是： apt-get install libpq-dev
+- 注1:在linux下需要先行安装mysql开发库, 并先手动建立数据库 dbtest。  
+在ubuntu下的命令是： apt install libmysqlclient-dev  
+- 注2:在linux下需要先行安装 libpq 开发库， 并下载libpqxx7.7.4源码编译（要求gcc版本高于8）。  
+在ubuntu下的命令是： apt-get install libpq-dev  
 
 ## 相关项目
 
