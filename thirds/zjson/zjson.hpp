@@ -369,6 +369,7 @@ namespace ZJSON {
 				}else{
 					this->extendItem(&value);
 				}
+				return true;
 			}
 			else
 			{

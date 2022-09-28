@@ -6,6 +6,7 @@
 #include <pqxx/pqxx>
 #include <algorithm>
 #include <cstring>
+#include "pg_type_d.h"
 
 namespace ZORM {
 
@@ -465,18 +466,36 @@ namespace ZORM {
 				if (pq == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 				try {
+					pqxx::params ps;
+					int len = values.size();
+					for(int i = 0; i < len; i++){
+						ps.append(values[i].toString());
+					}
 					pqxx::nontransaction N(*pq);
-					pqxx::result R(N.exec(aQuery));
+					pqxx::result R(N.exec_params(aQuery, ps));
 
 					size_t coLen = R.columns();
 					vector<Json> arr;
+					pqxx::row const row = R[0];
+					
 					for (pqxx::result::const_iterator c = R.begin(); c != R.end(); ++c) {
 						Json al;
 						for (int i = 0; i < coLen; ++i)
 						{
 							auto rsType = R.column_type(i);
-							
-							al.addSubitem(R.column_name(i), (char*)c[i].c_str());
+							switch (rsType)
+							{
+							case INT2OID:
+							case INT4OID:
+							case INT8OID:
+							case NUMERICOID:
+								al.addSubitem(R.column_name(i), atof(c[i].c_str()));
+								break;
+
+							default:
+								al.addSubitem(R.column_name(i), (char*)c[i].c_str());
+								break;
+							}
 						}
 						arr.push_back(al);
 					}
