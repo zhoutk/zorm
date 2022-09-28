@@ -188,7 +188,29 @@ namespace ZORM {
 
 			Json remove(string tablename, Json& params) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				if (!params.isError()) {
+					Json values(JsonType::Array);
+					string execSql = "delete from ";
+					execSql.append(tablename).append(" where id = ");
+
+					string k = "id";
+					bool vIsString = params[k].isString();
+					string v = params[k].toString();
+					!queryByParameter && vIsString &&escapeString(v);
+					if(queryByParameter){
+						execSql.append(" $1 ");
+						vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+					}else{
+						if (vIsString)
+							execSql.append("'").append(v).append("'");
+						else
+							execSql.append(v);
+					}
+					return ExecNoneQuerySql(execSql, values);
+				}
+				else {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
 			}
 
 
