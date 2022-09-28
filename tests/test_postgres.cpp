@@ -116,9 +116,18 @@ TEST(TestTest, test_postgres) {
 	rs = db->execSql(sql, Json(), arrObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
+	sql = "update table_for_test set name = $1 where id = $2 ";
+	qObj.clear();
+	qObj.addSubitem("score", 23.27);
+	qObj.addSubitem("age", 22);
+	arrObj = Json(JsonType::Array);
+	arrObj.addSubitem({"test888", "a5b6c7d8"});
+	rs = db->execSql(sql, qObj, arrObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
+
 	qObj = Json{{"id", "a5b6c7d8"}};
 	rs = db->select("table_for_test", qObj);
-	EXPECT_EQ(rs["data"][0]["name"].toString(), "test999");
+	EXPECT_EQ(rs["data"][0]["name"].toString(), "test888");
 
 	qObj = Json{{"ins", "age,20,21,23"}};
 	rs = db->select("table_for_test", qObj);
