@@ -342,6 +342,15 @@ namespace ZORM {
 			}
 
 		private:
+			int getParameterizedIndex(std::string_view sql){
+				int index = 0, cur = 0;
+				do{
+					cur = sql.find("$", cur);
+					++index;
+				}while(cur++ != sql.npos);
+				return index;
+			}
+
 			Json genSql(string& querySql, Json& values, Json& params, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false)
 			{
 				if (!params.isError()) {
@@ -365,7 +374,7 @@ namespace ZORM {
 
 					vector<string> allKeys = params.getAllKeys();
 					size_t len = allKeys.size();
-					int index = 1;
+					int index = getParameterizedIndex(tablename);
 					for (size_t i = 0; i < len; i++) {
 						string k = allKeys[i];
 						bool vIsString = params[k].isString();

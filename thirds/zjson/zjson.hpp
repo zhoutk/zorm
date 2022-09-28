@@ -379,6 +379,14 @@ namespace ZJSON {
 			}
 		}
 
+		void clear(){
+			if(this->type == Type::Array || this->type == Type::Object){
+				if(this->child)
+					deleteJson(this->child);
+				this->child = nullptr;
+			}
+		}
+
 		void remove(const string &key, Json *self = nullptr, Json* prev = nullptr)
 		{
 			if (key.empty() || (self == nullptr && this->type != Type::Object))

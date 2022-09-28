@@ -104,6 +104,12 @@ TEST(TestTest, test_mysql) {
 	rs = db->querySql(sql, Json(), arrObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
+	sql = "select * from table_for_test where name = ? ";
+	qObj.clear();
+	qObj.addSubitem("age", 19);
+	rs = db->querySql(sql, qObj, arrObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
+
 	sql = "update table_for_test set name = ? where id = ? ";
 	arrObj = Json(JsonType::Array);
 	arrObj.addSubitem({"test999", "a5b6c7d8"});
