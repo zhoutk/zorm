@@ -119,7 +119,70 @@ namespace ZORM {
 
 			Json update(string tablename, Json& params) override
 			{
-				return DbUtils::MakeJsonObject(STPARAMERR);
+				if (!params.isError()) {
+					Json values(JsonType::Array);
+					string execSql = "update ";
+					execSql.append(tablename).append(" set ");
+
+					vector<string> allKeys = params.getAllKeys();
+
+					vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
+					if (iter == allKeys.end()) {
+						return DbUtils::MakeJsonObject(STPARAMERR);
+					}
+					else {
+						size_t len = allKeys.size();
+						size_t conditionLen = len - 2;
+						string fields = "", where = " where id = ";
+						int index = 1;
+						Json idJson;
+						for (size_t i = 0; i < len; i++) {
+							string k = allKeys[i];
+							bool vIsString = params[k].isString();
+							string v = params[k].toString();
+							!queryByParameter && vIsString &&escapeString(v);
+							if (k.compare("id") == 0) {
+								conditionLen++;
+								if(queryByParameter){
+									//where.append(" ? ");
+									idJson = params[k];
+								}else{
+									if (vIsString)
+										where.append("'").append(v).append("'");
+									else
+										where.append(v);
+								}
+							}
+							else {
+								fields.append(k).append(" = ");
+								if (queryByParameter)
+								{
+									fields.append(" $").append(DbUtils::IntTransToString(index++));
+									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+								}
+								else
+								{
+									if (vIsString)
+										fields.append("'").append(v).append("'");
+									else
+										fields.append(v);
+								}
+								if (i < conditionLen) {
+									fields.append(",");
+								}
+							}
+						}
+						if(queryByParameter){
+							where.append(" $").append(DbUtils::IntTransToString(index++));
+							values.concat(idJson);
+						}
+						execSql.append(fields).append(where);
+						return ExecNoneQuerySql(execSql, values);
+					}
+				}
+				else {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
 			}
 
 
@@ -476,8 +539,6 @@ namespace ZORM {
 
 					size_t coLen = R.columns();
 					vector<Json> arr;
-					pqxx::row const row = R[0];
-					
 					for (pqxx::result::const_iterator c = R.begin(); c != R.end(); ++c) {
 						Json al;
 						for (int i = 0; i < coLen; ++i)
@@ -502,6 +563,7 @@ namespace ZORM {
 					if (arr.empty())
 						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 					rs.addSubitem("data", arr);
+					R.clear();
 
 					std::cout << "SQL: " << aQuery << std::endl;
 					return rs;
@@ -529,6 +591,7 @@ namespace ZORM {
 
 					rs.addSubitem("affected", R.affected_rows());
 					rs.addSubitem("newId", R.inserted_oid());
+					R.clear();
 				}
 				catch (const std::exception &e)
 				{

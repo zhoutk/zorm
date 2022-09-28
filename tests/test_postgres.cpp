@@ -15,7 +15,7 @@ TEST(TestTest, test_postgres) {
 	options.addSubitem("db_char", "utf8mb4");
 	options.addSubitem("db_conn", 5);
 	options.addSubitem("DbLogClose", false);
-	options.addSubitem("parameterized", false);
+	options.addSubitem("parameterized", true);
 	DbBase* db = new DbBase("postgres", options);
 	Json rs = db->execSql("DROP TABLE IF EXISTS \"public\".\"table_for_test\";");
 	EXPECT_EQ(rs["status"].toInt(), 200);
@@ -74,14 +74,14 @@ TEST(TestTest, test_postgres) {
 	rs = db->select("table_for_test", qObj);
 	EXPECT_EQ(rs["data"][0]["name"].toString(), "Kevin 凯文");
 
-	// qObj = Json{{"id", "a1b2c3d4"}};
-	// qObj.addSubitem("score", 6.6);
-	// rs = db->update("table_for_test", qObj);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	qObj = Json{{"id", "a1b2c3d4"}};
+	qObj.addSubitem("score", 6.6);
+	rs = db->update("table_for_test", qObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// qObj = Json{{"id", "a1b2c3d4"}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"][0]["score"].toDouble(), 6.6);
+	qObj = Json{{"id", "a1b2c3d4"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"][0]["score"].toDouble(), 6.6);
 
 	// rs = db->remove("table_for_test", qObj);
 	// EXPECT_EQ(rs["status"].toInt(), 200);
