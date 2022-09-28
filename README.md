@@ -13,7 +13,7 @@
 ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges三种关系数据库，同时支持windows、linux和macOS。
 
 ## 项目进度
-  现在已经实现了sqlit3与mysql的所有功能，postgres也做了技术准备。  
+  现在已经实现了sqlit3与mysql的所有功能，postgres已经完成linux下的所有功能。  
   我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - libpqxx7.7.4 。
 
 任务列表：
@@ -80,15 +80,15 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 > Postgres:
 ```
     Json options;
-	options.addSubitem("db_host", "192.168.6.6");
-	options.addSubitem("db_port", 5432);
-	options.addSubitem("db_name", "dbtest");
-	options.addSubitem("db_user", "root");
-	options.addSubitem("db_pass", "123456");
-	options.addSubitem("db_conn", 5);
-	options.addSubitem("DbLogClose", false);
-	options.addSubitem("parameterized", true);
-	DbBase* db = new DbBase("postgres", options);
+    options.addSubitem("db_host", "192.168.6.6");
+    options.addSubitem("db_port", 5432);
+    options.addSubitem("db_name", "dbtest");
+    options.addSubitem("db_user", "root");
+    options.addSubitem("db_pass", "123456");
+    options.addSubitem("db_conn", 5);
+    options.addSubitem("DbLogClose", false);
+    options.addSubitem("parameterized", true);
+    DbBase* db = new DbBase("postgres", options);
 ```
 
 ## 智能查询方式设计
