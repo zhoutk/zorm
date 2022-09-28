@@ -185,7 +185,6 @@ namespace ZORM {
 				}
 			}
 
-
 			Json remove(string tablename, Json& params) override
 			{
 				if (!params.isError()) {
@@ -213,7 +212,6 @@ namespace ZORM {
 				}
 			}
 
-
 			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
 			{
 				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
@@ -225,7 +223,7 @@ namespace ZORM {
 
 			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
 			{
-				bool parameterized = sql.find("?") != sql.npos;
+				bool parameterized = sql.find("$") != sql.npos;
 				Json rs = genSql(sql, values, params, fields, 2, parameterized);
 				if(rs["status"].toInt() == 200)
 					return ExecQuerySql(sql, fields, values);
@@ -235,14 +233,13 @@ namespace ZORM {
 
 			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
 			{
-				bool parameterized = sql.find("?") != sql.npos;
+				bool parameterized = sql.find("$") != sql.npos;
 				Json rs = genSql(sql, values, params, std::vector<string>(), 3, parameterized);
 				if(rs["status"].toInt() == 200)
 					return ExecNoneQuerySql(sql, values);
 				else
 					return rs;
 			}
-
 
 			Json insertBatch(string tablename, Json& elements, string constraint) override
 			{
@@ -409,9 +406,11 @@ namespace ZORM {
 										if (j > 0) {
 											whereExtra.append(" or ");
 										}
-										whereExtra.append(ele.at(j)).append(" ");
+										whereExtra.append("CAST(").append(ele.at(j)).append(" as TEXT) ");
 										string curIndexStr = string("$").append(DbUtils::IntTransToString(index++));
-										string eqStr = parameterized ? (k.compare("lks") == 0 ? string(" like ").append(curIndexStr) : string(" = ").append(curIndexStr)) : (k.compare("lks") == 0 ? " like '" : " = '");
+										string eqStr = parameterized ? 
+													   (k.compare("lks") == 0 ? string(" like ").append(curIndexStr) : string(" = ").append(curIndexStr)) : 
+													   (k.compare("lks") == 0 ? " like '" : " = '");
 										string vsStr = ele.at(j + 1);
 										if (k.compare("lks") == 0) {
 											vsStr.insert(0, "%");
@@ -457,7 +456,7 @@ namespace ZORM {
 							}
 							else if (fuzzy == "1") {
 								if(parameterized){
-									where.append(k).append(" like ").append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
+									where.append("CAST(").append(k).append(" as TEXT) ").append(" like ").append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
 									values.addSubitem(v.insert(0, "%").append("%"));
 								}
 								else
@@ -485,7 +484,7 @@ namespace ZORM {
 							return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
 						else {
 							for (size_t i = 0; i < ele.size(); i += 2) {
-								extra.append(",cast(sum(").append(ele.at(i)).append(") as double) as ").append(ele.at(i + 1)).append(" ");
+								extra.append("sum(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
 							}
 						}
 					}
@@ -495,12 +494,14 @@ namespace ZORM {
 							return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
 						else {
 							for (size_t i = 0; i < ele.size(); i += 2) {
-								extra.append(",count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
+								extra.append("count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
 							}
 						}
 					}
 
 					if (queryType == 1) {
+						if(extra.find("count(") != extra.npos || extra.find("sum(") != extra.npos)
+							fieldsJoinStr = "";
 						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
 						if (where.length() > 0){
 							querySql.append(" where ").append(where);
@@ -535,7 +536,7 @@ namespace ZORM {
 
 					if (page > 0) {
 						page--;
-						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
+						querySql.append(" limit ").append(DbUtils::IntTransToString(size)).append(" OFFSET ").append(DbUtils::IntTransToString(page * size));
 					}
 					return DbUtils::MakeJsonObject(STSUCCESS);
 				}

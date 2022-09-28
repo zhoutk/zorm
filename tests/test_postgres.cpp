@@ -15,7 +15,7 @@ TEST(TestTest, test_postgres) {
 	options.addSubitem("db_char", "utf8mb4");
 	options.addSubitem("db_conn", 5);
 	options.addSubitem("DbLogClose", false);
-	options.addSubitem("parameterized", false);
+	options.addSubitem("parameterized", true);
 	DbBase* db = new DbBase("postgres", options);
 	Json rs = db->execSql("DROP TABLE IF EXISTS \"public\".\"table_for_test\";");
 	EXPECT_EQ(rs["status"].toInt(), 200);
@@ -89,55 +89,54 @@ TEST(TestTest, test_postgres) {
 	rs = db->select("table_for_test", qObj);
 	EXPECT_EQ(rs["status"].toInt(), 202);
 
-	// qObj = Json{{"name", "test"}, {"fuzzy", 1}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"].size(), 5);
+	qObj = Json{{"name", "test"}, {"fuzzy", 1}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 5);
 
-	// string sql = "select * from table_for_test";
-	// qObj = Json{{"id", "a2b3c4d5"}};
-	// rs = db->querySql(sql, qObj);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	string sql = "select * from table_for_test";
+	qObj = Json{{"id", "a2b3c4d5"}};
+	rs = db->querySql(sql, qObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// sql = "select * from table_for_test where name = ? ";
-	// Json arrObj(JsonType::Array);
-	// arrObj.addSubitem("test001");
-	// rs = db->querySql(sql, Json(), arrObj);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	sql = "select * from table_for_test where name = $1 ";
+	Json arrObj(JsonType::Array);
+	arrObj.addSubitem("test001");
+	rs = db->querySql(sql, Json(), arrObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// sql = "update table_for_test set name = ? where id = ? ";
-	// arrObj = Json(JsonType::Array);
-	// arrObj.addSubitem({"test999", "a5b6c7d8"});
-	// rs = db->execSql(sql, Json(), arrObj);
-	// EXPECT_EQ(rs["status"].toInt(), 200);
+	sql = "update table_for_test set name = $1 where id = $2 ";
+	arrObj = Json(JsonType::Array);
+	arrObj.addSubitem({"test999", "a5b6c7d8"});
+	rs = db->execSql(sql, Json(), arrObj);
+	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	// qObj = Json{{"id", "a5b6c7d8"}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"][0]["name"].toString(), "test999");
+	qObj = Json{{"id", "a5b6c7d8"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"][0]["name"].toString(), "test999");
 
-	// qObj = Json{{"ins", "age,20,21,23"}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"].size(), 3);
+	qObj = Json{{"ins", "age,20,21,23"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 3);
 
-	// qObj = Json{{"lks", "name,001,age,23"}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"].size(), 2);
+	qObj = Json{{"lks", "name,001,age,23"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 2);
 
-	// qObj = Json{{"ors", "age,19,age,23"}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"].size(), 2);
+	qObj = Json{{"ors", "age,19,age,23"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 2);
 
-	// qObj = Json{{"page", 1}, {"size", 3}};
-	// rs = db->select("table_for_test", qObj);
-	// EXPECT_EQ(rs["data"].size(), 3);
+	qObj = Json{{"page", 1}, {"size", 3}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"].size(), 3);
 
-	// qObj = Json{{"count", "1,total"}};
-	// std::vector<string> vs{"id"};
-	// rs = db->select("table_for_test", qObj, vs);
-	// EXPECT_EQ(rs["data"][0]["total"].toInt(), 5);
+	qObj = Json{{"count", "1,total"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"][0]["total"].toInt(), 5);
 
-	// qObj = Json{{"sum", "age,ageSum"}, {"age", "<=,20"}};
-	// rs = db->select("table_for_test", qObj, vs);
-	// EXPECT_EQ(rs["data"][0]["ageSum"].toInt(), 39);
+	qObj = Json{{"sum", "age,ageSum"}, {"age", "<=,20"}};
+	rs = db->select("table_for_test", qObj);
+	EXPECT_EQ(rs["data"][0]["agesum"].toInt(), 39);
 
 	// qObj = Json{{"id", "a4b5c6d7"}};
 	// qObj.addSubitem("age", 22);
