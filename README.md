@@ -76,6 +76,21 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     options.addSubitem("parameterized", true);      //使用参数化查询
     DbBase* db = new DbBase("mysql", options);
 ```
+
+> Postgres:
+```
+    Json options;
+	options.addSubitem("db_host", "192.168.6.6");
+	options.addSubitem("db_port", 5432);
+	options.addSubitem("db_name", "dbtest");
+	options.addSubitem("db_user", "root");
+	options.addSubitem("db_pass", "123456");
+	options.addSubitem("db_conn", 5);
+	options.addSubitem("DbLogClose", false);
+	options.addSubitem("parameterized", true);
+	DbBase* db = new DbBase("postgres", options);
+```
+
 ## 智能查询方式设计
 > 查询保留字：page, size, sort, fuzzy, lks, ins, ors, count, sum, group
 
@@ -225,8 +240,10 @@ cd build && make
 
 run zorm or ctest
 ```
-注在linux下需要先行安装mysql开发库, 并先手动建立数据库 dbtest。  
+注1:在linux下需要先行安装mysql开发库, 并先手动建立数据库 dbtest。  
 在ubuntu下的命令是： apt install libmysqlclient-dev
+注2:在linux下需要先行安装 libpq 开发库， 并下载libpqxx7.7.4源码编译（要求gcc版本高于8）。
+在ubuntu下的命令是： apt-get install libpq-dev
 
 ## 相关项目
 
