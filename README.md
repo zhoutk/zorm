@@ -244,6 +244,10 @@ run zorm or ctest
 在ubuntu下的命令是： apt install libmysqlclient-dev  
 - 注2:在linux下需要先行安装 libpq 开发库， 并下载libpqxx7.7.4源码编译（要求gcc版本高于8）。  
 在ubuntu下的命令是： apt-get install libpq-dev  
+- 注3:在windows下，要安装postgres数据库，编译libpqxx7.7.4，命令如下：
+cmake -A win32 -DPostgreSQL_ROOT=/d/softs/pgsql ..
+cmake --build . --config Release
+cmake --install . --prefix /d/softs/libpqxx
 
 ## 相关项目
 
