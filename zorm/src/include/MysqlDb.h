@@ -18,7 +18,7 @@ namespace ZORM {
 		class ZORM_API MysqlDb : public Idb {
 
 		private:
-			MYSQL* GetConnection(char* err = nullptr) {
+			MYSQL* GetConnection(string& err) {
 				//srand((unsigned int)(time(nullptr)));
 				size_t index = (rand() % maxConn) + 1;
 				if (index > pool.size()) {
@@ -289,9 +289,10 @@ namespace ZORM {
 				else {
 					bool isExecSuccess = true;
 					string errmsg = "Running transaction error: ";
-					MYSQL* mysql = GetConnection();
+					string err = "";
+					MYSQL* mysql = GetConnection(err);
 					if (mysql == nullptr)
-						return DbUtils::MakeJsonObject(STDBCONNECTERR);
+						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 
 					mysql_query(mysql, "begin;");
 					for (size_t i = 0; i < sqls.size(); i++) {
@@ -525,9 +526,10 @@ namespace ZORM {
 			Json ExecQuerySql(string aQuery, vector<string> fields)
 			{
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				MYSQL *mysql = GetConnection();
+				string err = "";
+				MYSQL *mysql = GetConnection(err);
 				if (mysql == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 				if (mysql_query(mysql, aQuery.c_str()))
 				{
 					string errmsg = "";
@@ -568,9 +570,10 @@ namespace ZORM {
 
 			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				MYSQL* mysql = GetConnection();
+				string err = "";
+				MYSQL* mysql = GetConnection(err);
 				if (mysql == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
 				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
 				{
@@ -676,9 +679,10 @@ namespace ZORM {
 
 			Json ExecNoneQuerySql(string aQuery) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				MYSQL* mysql = GetConnection();
+				string err = "";
+				MYSQL* mysql = GetConnection(err);
 				if (mysql == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 
 				if (mysql_query(mysql, aQuery.c_str()))
 				{
@@ -697,9 +701,10 @@ namespace ZORM {
 
 			Json ExecNoneQuerySql(string aQuery, Json values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				MYSQL* mysql = GetConnection();
+				string err = "";
+				MYSQL* mysql = GetConnection(err);
 				if (mysql == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 
 				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
 				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
@@ -817,7 +822,8 @@ namespace ZORM {
 			};
 
 			bool ExecSqlForTransGo(string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
-				MYSQL* mysql = GetConnection();
+				string err = "";
+				MYSQL* mysql = GetConnection(err);
 				if (mysql == nullptr){
 					if(out)
 						*out += "can not connect the database.";
@@ -883,7 +889,8 @@ namespace ZORM {
 			bool escapeString(string& pStr)
 			{
 				char *tStr = new char[pStr.length() * 2 + 1];
-				mysql_real_escape_string(GetConnection(), tStr, pStr.c_str(), pStr.length());
+				string err = "";
+				mysql_real_escape_string(GetConnection(err), tStr, pStr.c_str(), pStr.length());
 				pStr = std::string(tStr);
 				delete[] tStr;
 				return true;

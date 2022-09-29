@@ -25,6 +25,13 @@ if(MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 
     set(MysqlDll libmysql.dll)
+
+    include_directories(../thirds/libpqxx/include)
+    link_directories(../thirds/libpqxx/lib)
+    #include_directories(/d/softs/pgsql/include)
+    #link_directories(/d/softs/pgsql/lib)
+    set(pqxxName pqxx.dll)
+    #set(pqName libpq.dll)
 elseif(APPLE)
     set(MysqlDll libmysqlclient.a)
     include_directories(/usr/local/Cellar/libpq/14.5/include)

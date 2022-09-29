@@ -247,9 +247,10 @@ run zorm or ctest
 - 注3：在macos下需要先行安装 libpqxx 开发库。  
 命令是： brew install libpqxx
 - 注4：在windows下，要安装postgres数据库，编译libpqxx7.7.4，命令如下：
-cmake -A win32 -DPostgreSQL_ROOT=/d/softs/pgsql ..
+cmake -A win32 -DBUILD_SHARED_LIBS=on -DSKIP_BUILD_TEST=on -DPostgreSQL_ROOT=/d/softs/pgsql ..
 cmake --build . --config Release
-cmake --install . --prefix /d/softs/libpqxx
+cmake --install . --prefix /d/softs/libpqxx  
+- 注5：在windows下，因为postgres10是支持win32的最后一个版本，所以我用了它的libpq.dll作为libpqxx的链接目标。
 
 ## 相关项目
 

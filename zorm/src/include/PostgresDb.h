@@ -19,7 +19,7 @@ namespace ZORM {
 		class ZORM_API PostgresDb : public Idb
 		{
 		private:
-			pqxx::connection* GetConnection(char* err = nullptr)
+			pqxx::connection* GetConnection(string& err)
 			{
 				size_t index = (rand() % maxConn) + 1;
 				if (index > pool.size())
@@ -37,7 +37,7 @@ namespace ZORM {
 					}
 					catch (const std::exception &e)
 					{
-						err = (char*)e.what();
+						err = string(e.what());
 						std::cout << "Error message : " << err;
 						return nullptr;
 					}
@@ -305,7 +305,7 @@ namespace ZORM {
 				else {
 					bool isExecSuccess = true;
 					string errmsg = "Running transaction error: ";
-					char* err = nullptr;
+					string err = "";
 					pqxx::connection* pq = GetConnection(err);
 					if (pq == nullptr)
 						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
@@ -556,7 +556,7 @@ namespace ZORM {
 
 			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				char* err = nullptr;
+				string err = "";
 				pqxx::connection* pq = GetConnection(err);
 				if (pq == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
@@ -607,7 +607,7 @@ namespace ZORM {
 
 			Json ExecNoneQuerySql(string aQuery, Json values = Json(JsonType::Array)) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				char* err;
+				string err = "";
 				pqxx::connection *pq = GetConnection(err);
 				if (pq == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
@@ -636,13 +636,15 @@ namespace ZORM {
 
 			bool escapeString(string& pStr)
 			{
-				pStr = GetConnection()->esc(pStr);
+				string err = "";
+				pStr = GetConnection(err)->esc(pStr);
 				return true;
 			}
 
 			std::string getEscapeString(string& pStr)
 			{
-				return GetConnection()->esc(pStr);
+				string err = "";
+				return GetConnection(err)->esc(pStr);
 			}
 
 		private:
