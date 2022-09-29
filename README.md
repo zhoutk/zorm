@@ -13,7 +13,7 @@
 ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges三种关系数据库，同时支持windows、linux和macOS。
 
 ## 项目进度
-  现在已经实现了sqlit3与mysql的所有功能，postgres已经完成linux下的所有功能。  
+  现在已经实现了sqlit3与mysql的所有功能，postgres已经完成linux和macos下的所有功能。  
   我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - libpqxx7.7.4 。
 
 任务列表：
@@ -28,7 +28,7 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 - [x] Pstgre 实现
   - [x] linux 
   - [ ] windows
-  - [ ] macos
+  - [x] macos
 
 ## 数据库通用接口
   > 应用类直接操作这个通用接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。
@@ -226,7 +226,7 @@ https://github.com/zhoutk/zorm
 ```
 
 ## 运行方法
-该项目在vs2019, gcc7.5, clang12.0下均编译运行正常。
+该项目在vs2022, gcc12.12.0(最低gcc8.5.0), clang12.0下均编译运行正常。
 ```
 git clone https://github.com/zhoutk/zorm
 cd zorm
@@ -240,11 +240,13 @@ cd build && make
 
 run zorm or ctest
 ```
-- 注1:在linux下需要先行安装mysql开发库, 并先手动建立数据库 dbtest。  
+- 注1：在linux下需要先行安装mysql开发库, 并先手动建立数据库 dbtest。  
 在ubuntu下的命令是： apt install libmysqlclient-dev  
-- 注2:在linux下需要先行安装 libpq 开发库， 并下载libpqxx7.7.4源码编译（要求gcc版本高于8）。  
+- 注2：在linux下需要先行安装 libpq 开发库（要求gcc版本高于8）。  
 在ubuntu下的命令是： apt-get install libpq-dev  
-- 注3:在windows下，要安装postgres数据库，编译libpqxx7.7.4，命令如下：
+- 注3：在macos下需要先行安装 libpqxx 开发库。  
+命令是： brew install libpqxx
+- 注4：在windows下，要安装postgres数据库，编译libpqxx7.7.4，命令如下：
 cmake -A win32 -DPostgreSQL_ROOT=/d/softs/pgsql ..
 cmake --build . --config Release
 cmake --install . --prefix /d/softs/libpqxx
