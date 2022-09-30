@@ -12,7 +12,7 @@ ZORM data transmission using json, so that data style can be unified from the fr
 ## Project progress
 Now all functions of using sqlit3 and mysql have been implemented. Postgres's has completed on linux and macos. The technologies I used is sqlit3 - sqllit3.h（c api）；mysql - c api （MySQL Connector C 6.1）；postgres - libpqxx7.7.4 。
 
-任务列表：
+task list：
 - [x] Sqlite3
   - [x] linux 
   - [x] windows
