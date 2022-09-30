@@ -620,7 +620,6 @@ namespace ZORM {
 				{
 					pqxx::nontransaction N(*pq);
 					pqxx::result R(N.exec_params(aQuery, ps));
-
 					rs.addSubitem("affected", R.affected_rows());
 					rs.addSubitem("newId", R.inserted_oid());
 					R.clear();
@@ -631,6 +630,7 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STDBOPERATEERR, e.what());
 				}
 				std::cout << "SQL: " << aQuery << std::endl;
+				std::cout << rs.toString() << std::endl;
 				return rs;
 			}
 

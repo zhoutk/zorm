@@ -25,7 +25,7 @@ TEST(TestTest, test_postgres) {
 		\"age\" int4 DEFAULT 0,\
 		\"score\" numeric DEFAULT 0.0)");
 	EXPECT_EQ(rs["status"].toInt(), 200);
-	db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
+	rs = db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
 	EXPECT_EQ(rs["status"].toInt(), 200);
 	Json cObj{
 		{"id", "a1b2c3d4"},
