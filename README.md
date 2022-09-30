@@ -1,37 +1,33 @@
-# zrom
+# zrom  &emsp;&emsp;  [中文介绍](https://github.com/zhoutk/zorm/blob/master/README_CN.md)  
 
-## 介绍
-我们通用的ORM，基本模式都是想要脱离数据库的，几乎都在编程语言层面建立模型，由程序去与数据库打交道。虽然脱离了数据库的具体操作，但我们要建立各种模型文档，用代码去写表之间的关系等等操作，让初学者一时如坠云雾。我的想法是，将关系数据库拥有的完善设计工具之优势，来实现数据设计以提供结构信息，让json对象自动映射成为标准的SQL查询语句。只要我们理解了标准的SQL语言，我们就能够完成数据库查询操作。
+## Introduce  
+        The basic models of ORM use to be separated from the database. Almost all of them build models at the level of programming language, and let the program deal with all things of the database. Although it is separated from the specific operation of the database, we have to establish various models and write the relationship between tables etc. This is very unfriendly to ordinary developers. My idea is to design tables use tools of relational databases, in our project, json objects can be automatically mapped into standard SQL. As long as we understand the standard SQL language, we can complete the database query operation. Furthermore, We can handled the relationship between tables through views or stored procedures. So our appliction can process all things only using Zorm and Json.
 
-## 相关项目
-本项目依赖 本人的 另一个项目 Zjson，此项目提供简洁、方便、高效的Json库。该库使用方便，是一个单文件库，只需要下载并引入项目即可。具体信息请移步 [gitee-Zjson](https://gitee.com/zhoutk/zjson.git) 或 [github-Zjson](https://github.com/zhoutk/zjson.git) 。
+## Related items
+        This project relies on my other project Zjson, which provides a simple, convenient and efficient Json library. The library is easy to use, a single file library, you only need to download and import the project. Please move to [gitee-Zjson](https://gitee.com/zhoutk/zjson.git) 或 [github-Zjson](https://github.com/zhoutk/zjson.git).
 
-## 项目名称说明
-本人姓名拼音第一个字母z加上orm，即得本项目名称zorm，没有其它任何意义。我将编写一系列以z开头的相关项目，命名是个很麻烦的事，因此采用了这种简单粗暴的方式。
+## Design ideas
+        ZORM data transmission using json, so that data style can be unified from the front to the end. This project aims to be used not only in C++, but also as a dynamic link library used by node.js etc. So we hope to operate json concisely and conveniently like javascript. Therefore, the zjson library was established before this. The general operation interface of database is designed separating from the databases. This interface provides CURD standard api, as well as batch insert and transaction operations, which can basically cover more than 90% of normal database operations. The basic goal of the project is to support Sqlite 3, MySQL, and Postges. Can running on Windows, Linux, or MacOS.
 
-## 设计思路 
-ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges三种关系数据库，同时支持windows、linux和macOS。
-
-## 项目进度
-  现在已经实现了sqlit3与mysql的所有功能，postgres已经完成linux和macos下的所有功能。  
-  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - libpqxx7.7.4 。
+## Project progress
+        Now all functions of using sqlit3 and mysql have been implemented. Postgres's has completed on linux and macos. The technologies I used is sqlit3 - sqllit3.h（c api）；mysql - c api （MySQL Connector C 6.1）；postgres - libpqxx7.7.4 。
 
 任务列表：
-- [x] Sqlite3 实现
+- [x] Sqlite3
   - [x] linux 
   - [x] windows
   - [x] macos
-- [x] Mysql 实现
+- [x] Mysql
   - [x] linux 
   - [x] windows
   - [x] macos
-- [x] Pstgre 实现
+- [x] Postgre
   - [x] linux 
   - [ ] windows
   - [x] macos
 
-## 数据库通用接口
-  > 应用类直接操作这个通用接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。
+## Database interface
+  > The interface was designed to separate operations from databases. 
 
   ```
     class ZORM_API Idb
@@ -48,32 +44,32 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     };
   ```
 
-## 实例构造
-> 全局查询开关变量：
-- DbLogClose : sql 查询语句显示开关
-- parameterized : 是否使用参数化查询
+## Example of DbBase
+> Global query switch variable:
+- DbLogClose : show sql or not
+- parameterized : query using parameterized or not
 
 > Sqlite3:
 ```
     Json options;
-    options.addSubitem("connString", "./db.db");    //数据库位置
-    options.addSubitem("DbLogClose", false);        //显示查询语句
-    options.addSubitem("parameterized", false);     //不使用参数化查询
+    options.addSubitem("connString", "./db.db");    //where database locate
+    options.addSubitem("DbLogClose", false);        //show sql
+    options.addSubitem("parameterized", false);     //no parameterized
     DbBase* db = new DbBase("sqlite3", options);
 ```
   
 > Mysql:
 ```
     Json options;
-    options.addSubitem("db_host", "192.168.6.6");   //mysql服务IP
-    options.addSubitem("db_port", 3306);            //端口
-    options.addSubitem("db_name", "dbtest");        //数据库名称
-    options.addSubitem("db_user", "root");          //登记用户名
-    options.addSubitem("db_pass", "123456");        //密码
-    options.addSubitem("db_char", "utf8mb4");       //连接字符设定[可选]
-    options.addSubitem("db_conn", 5);               //连接池配置[可选]，默认为2
-    options.addSubitem("DbLogClose", true);         //不显示查询语句
-    options.addSubitem("parameterized", true);      //使用参数化查询
+    options.addSubitem("db_host", "192.168.6.6");   //mysql service IP
+    options.addSubitem("db_port", 3306);            //port
+    options.addSubitem("db_name", "dbtest");        //database's name
+    options.addSubitem("db_user", "root");          //username
+    options.addSubitem("db_pass", "123456");        //password
+    options.addSubitem("db_char", "utf8mb4");       //Connection character setting[optional]
+    options.addSubitem("db_conn", 5);               //pool setting[optional]，default is 2
+    options.addSubitem("DbLogClose", true);         //not show sql
+    options.addSubitem("parameterized", true);      //use parameterized
     DbBase* db = new DbBase("mysql", options);
 ```
 
@@ -91,12 +87,11 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     DbBase* db = new DbBase("postgres", options);
 ```
 
-## 智能查询方式设计
-> 查询保留字：page, size, sort, fuzzy, lks, ins, ors, count, sum, group
+## Design of intelligent query use Json
+> Query reserved words：page, size, sort, fuzzy, lks, ins, ors, count, sum, group
 
-- page, size, sort, 分页排序
-    在sqlit3与mysql中这比较好实现，limit来分页是很方便的，排序只需将参数直接拼接到order by后就好了。  
-    查询示例：
+- page, size, sort &emsp;&emsp;//paging and set query order
+    example：
     ```
     Json p;
     p.addSubitem("page", 1);
@@ -104,10 +99,9 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     p.addSubitem("size", "sort desc");
     (new DbBase(...))->select("users", p);
     
-    生成sql：   SELECT * FROM users  ORDER BY age desc LIMIT 0,10
+    generate sql：   SELECT * FROM users  ORDER BY age desc LIMIT 0,10
     ```
-- fuzzy, 模糊查询切换参数，不提供时为精确匹配
-    提供字段查询的精确匹配与模糊匹配的切换。
+- fuzzy &emsp;&emsp;//Fuzzy query switch, if not provided, it is exact matching. Provides it or not will switch between exact matching and fuzzy matching.
     ```
     Json p;
     p.addSubitem("username", "john");
@@ -115,93 +109,82 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     p.addSubitem("fuzzy", 1);
     (new DbBase(...))->select("users", p);
    
-    生成sql：   SELECT * FROM users  WHERE username like '%john%'  and password like '%123%'
+    generate sql：   SELECT * FROM users  WHERE username like '%john%'  and password like '%123%'
     ```
-- ins, lks, ors
-    这是最重要的三种查询方式，如何找出它们之间的共同点，减少冗余代码是关键。
+- ins, lks, ors &emsp;&emsp;//Three most important query methods. How to find the common points among them is the key to reduce redundant codes.
 
-    - ins, 数据库表单字段in查询，一字段对多个值，例：  
-        查询示例：
+    - ins &emsp;&emsp;//single field, multiple values：
     ```
     Json p;
     p.addSubitem("ins", "age,11,22,36");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT * FROM users  WHERE age in ( 11,22,26 )
+    generate sql：   SELECT * FROM users  WHERE age in ( 11,22,26 )
     ```
-    - ors, 数据库表多字段精确查询，or连接，多个字段对多个值，例：  
-        查询示例：
+    - ors &emsp;&emsp;//exact matching; multiple fields, multiple values：
     ```
     Json p;
     p.addSubitem("ors", "age,11,age,36");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT * FROM users  WHERE  ( age = 11  or age = 26 )
+    generate sql：   SELECT * FROM users  WHERE  ( age = 11  or age = 26 )
     ```
-    - lks, 数据库表多字段模糊查询，or连接，多个字段对多个值，例：
-        查询示例：
+    - lks &emsp;&emsp;//fuzzy matching; multiple fields, multiple values：
     ```
     Json p;
     p.addSubitem("lks", "username,john,password,123");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT * FROM users  WHERE  ( username like '%john%'  or password like '%123%'  )
+    generate sql：   SELECT * FROM users  WHERE  ( username like '%john%'  or password like '%123%'  )
     ```
 - count, sum
-    这两个统计求和，处理方式也类似，查询时一般要配合group与fields使用。
-    - count, 数据库查询函数count，行统计，例：
-        查询示例：
+    > Two statistics function. 
+    - count &emsp;&emsp;//count, line statistics：
     ```
     Json p;
     p.addSubitem("count", "1,total");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT *,count(1) as total  FROM users
+    generate sql：   SELECT *,count(1) as total  FROM users
     ```
-    - sum, 数据库查询函数sum，字段求和，例：
-        查询示例：
+    - sum &emsp;&emsp;//sum, columns statistics：
     ```
     Json p;
     p.addSubitem("sum", "age,ageSum");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT username,sum(age) as ageSum  FROM users
+    generate sql：   SELECT username,sum(age) as ageSum  FROM users
     ```
-- group, 数据库分组函数group，例：  
-    查询示例：
+- group &emsp;&emsp;：
     ```
     Json p;
     p.addSubitem("group", "age");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT * FROM users  GROUP BY age
+    generate sql：   SELECT * FROM users  GROUP BY age
     ```
 
-> 不等操作符查询支持
+> Unequal operator query support
 
-支持的不等操作符有：>, >=, <, <=, <>, =；逗号符为分隔符，一个字段支持一或二个操作。  
-特殊处：使用"="可以使某个字段跳过search影响，让模糊匹配与精确匹配同时出现在一个查询语句中
+The supported operators are : >, >=, <, <=, <>, = . Comma is the separator. One field supports one or two operations.Special features: using "=" can enable a field to skip the fuzzy matching. So fuzzy matching and exact matching can appear in one query at the same time.
 
-- 一个字段一个操作，示例：
-    查询示例：
+- one field, one operation：
     ```
     Json p;
     p.addSubitem("age", ">,10");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT * FROM users  WHERE age> 10
+    generate sql：   SELECT * FROM users  WHERE age> 10
     ```
-- 一个字段二个操作，示例：
-    查询示例：
+- two field, two operation：
     ```
     Json p;
     p.addSubitem("age", ">=,10,<=,33");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT * FROM users  WHERE age>= 10 and age<= 33
+    generate sql：   SELECT * FROM users  WHERE age>= 10 and age<= 33
     ```
-- 使用"="去除字段的fuzzy影响，示例：
-    查询示例：
+- use "=" skip fuzzy matching：
     ```
     Json p;
     p.addSubitem("age", "=,18");
@@ -209,24 +192,24 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     p.addSubitem("fuzzy", "1");
     (new DbBase(...))->select("users", p);
 
-    生成sql：   SELECT * FROM users  WHERE age= 18  and username like '%john%'
+    generate sql：   SELECT * FROM users  WHERE age= 18  and username like '%john%'
     ```
- 具体使用方法，请参看uint test。 
+ Details in unit test, thanks! 
 
-## 单元测试
-有完整功能的单元测试用例，请参见tests目录下的测试用例。
-> 测试用例运行结果样例
-![输入图片说明](tests/uniTest.PNG)
+## Unit test
+Detailed description, please move to tests catalogue.
+> Example of test case running results
+![test result](tests/uniTest.PNG)
 
-## 项目地址
+## Project site
 ```
 https://gitee.com/zhoutk/zorm
-或
+or
 https://github.com/zhoutk/zorm
 ```
 
-## 运行方法
-该项目在vs2022, gcc12.12.0(最低gcc8.5.0), clang12.0下均编译运行正常。
+## run guidance
+The project is built in vs2022, gcc12.12.0(at lest gcc8.5.0), clang12.0 success。
 ```
 git clone https://github.com/zhoutk/zorm
 cd zorm
@@ -240,21 +223,20 @@ cd build && make
 
 run zorm or ctest
 ```
-- 注1：在linux下需要先行安装mysql开发库, 并先手动建立数据库 dbtest。  
-在ubuntu下的命令是： apt install libmysqlclient-dev  
-- 注2：在linux下需要先行安装 libpq 开发库（要求gcc版本高于8）。  
-在ubuntu下的命令是： apt-get install libpq-dev  
-- 注3：在macos下需要先行安装 libpqxx 开发库。  
-命令是： brew install libpqxx
-- 注4：在windows下，要安装postgres数据库，编译libpqxx7.7.4，命令如下：
+- note 1：on linux need mysql dev lib and create a db named dbtest first.
+the command of ubuntu： apt install libmysqlclient-dev  
+- note 2：on linux need libpq dev lib (gcc at least 8).
+the command of ubuntu： apt-get install libpq-dev  
+- note 3：on macos need libpqxx dev lib.  
+the command is ： brew install libpqxx
+- note 4：on windows, need postgres database installed and compile libpqxx7.7.4, as follows：
 cmake -A x64 -DBUILD_SHARED_LIBS=on -DSKIP_BUILD_TEST=on -DPostgreSQL_ROOT=/d/softs/pgsql ..
 cmake --build . --config Release
 cmake --install . --prefix /d/softs/libpqxx  
-- 注5：在windows下，postgres10是支持win32的最后一个版本，我先择只支行64位版本，选择了最高版本。
+- note 5：on windows, postgres10 is the last version which support win32, So I only support the x64 version using pg14。
+- note 6: on windows, postgres can only link libpqxx7.7.4's dll using debug version, and run with a Expression:__acrt_first_block==header, I'm try to solve it ...
 
-## 相关项目
-
-会有一系列项目出炉，网络服务相关，敬请期待...
+## Associated projects
 
 [gitee-Zjson](https://gitee.com/zhoutk/zjson.git) 
 [github-Zjson](https://github.com/zhoutk/zjson.git)
