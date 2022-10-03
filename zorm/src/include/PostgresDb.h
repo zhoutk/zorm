@@ -3,9 +3,9 @@
 #include "Idb.h"
 #include "Utils.h"
 #include "GlobalConstants.h"
-#include <pqxx/pqxx>
 #include <algorithm>
 #include <cstring>
+#include <libpq-fe.h>
 #include "pg_type_d.h"
 
 namespace ZORM {
@@ -19,25 +19,20 @@ namespace ZORM {
 		class ZORM_API PostgresDb : public Idb
 		{
 		private:
-			pqxx::connection* GetConnection(string& err)
+			PGconn * GetConnection(string& err)
 			{
 				size_t index = (rand() % maxConn) + 1;
 				if (index > pool.size())
 				{
-					try
+					PGconn *pqsql = PQconnectdb(connString.c_str());
+					if (PQstatus(pqsql) == CONNECTION_OK)
 					{
-						pqxx::connection *pqsql = new pqxx::connection(connString);
-						if (pqsql->is_open())
-						{
-							pool.push_back(pqsql);
-							return pqsql;
-						}
-						else
-							return nullptr;
+						pool.push_back(pqsql);
+						return pqsql;
 					}
-					catch (const std::exception &e)
+					else
 					{
-						err = string(e.what());
+						err = string(PQerrorMessage(pqsql));
 						std::cout << "Error message : " << err;
 						return nullptr;
 					}
@@ -299,44 +294,44 @@ namespace ZORM {
 
 			Json transGo(Json& sqls, bool isAsync = false) override
 			{
-				if (sqls.size() < 2) {
+				// if (sqls.size() < 2) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-				}
-				else {
-					bool isExecSuccess = true;
-					string errmsg = "Running transaction error: ";
-					string err = "";
-					pqxx::connection* pq = GetConnection(err);
-					if (pq == nullptr)
-						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				// }
+				// else {
+				// 	bool isExecSuccess = true;
+				// 	string errmsg = "Running transaction error: ";
+				// 	string err = "";
+				// 	PGconn* pq = GetConnection(err);
+				// 	if (pq == nullptr)
+				// 		return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 
-					try {
-						pqxx::work T(*pq);
-						for (size_t i = 0; i < sqls.size(); i++) {
-							string sql = sqls[i]["text"].toString();
-							Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
-							pqxx::params ps;
-							int len = values.size();
-							for (int i = 0; i < len; i++)
-								ps.append(values[i].toString());
-							T.exec_params(sql, ps);
-						}
-						T.commit();
-						std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
-						return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
-					}
-					catch (std::exception& e) {
-						std::cout << "Transaction Error: " << e.what() << std::endl;
-						return DbUtils::MakeJsonObject(STDBOPERATEERR, (char*)e.what());
-					}
-				}
+				// 	try {
+				// 		pqxx::work T(*pq);
+				// 		for (size_t i = 0; i < sqls.size(); i++) {
+				// 			string sql = sqls[i]["text"].toString();
+				// 			Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+				// 			pqxx::params ps;
+				// 			int len = values.size();
+				// 			for (int i = 0; i < len; i++)
+				// 				ps.append(values[i].toString());
+				// 			T.exec_params(sql, ps);
+				// 		}
+				// 		T.commit();
+				// 		std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
+				// 		return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
+				// 	}
+				// 	catch (std::exception& e) {
+				// 		std::cout << "Transaction Error: " << e.what() << std::endl;
+				// 		return DbUtils::MakeJsonObject(STDBOPERATEERR, (char*)e.what());
+				// 	}
+				// }
 			}
 
 			~PostgresDb()
 			{
 				while (pool.size())
 				{
-					(pool.back())->close();
+					PQfinish(pool.back());
 					pool.pop_back();
 				}
 			}
@@ -556,99 +551,102 @@ namespace ZORM {
 
 			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				string err = "";
-				pqxx::connection* pq = GetConnection(err);
-				if (pq == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-				try {
-					pqxx::params ps;
-					int len = values.size();
-					for(int i = 0; i < len; i++){
-						ps.append(values[i].toString());
-					}
-					pqxx::nontransaction N(*pq);
-					pqxx::result R(N.exec_params(aQuery, ps));
+				// string err = "";
+				// PGconn* pq = GetConnection(err);
+				// if (pq == nullptr)
+				// 	return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				// try {
+				// 	pqxx::params ps;
+				// 	int len = values.size();
+				// 	for(int i = 0; i < len; i++){
+				// 		ps.append(values[i].toString());
+				// 	}
+				// 	pqxx::nontransaction N(*pq);
+				// 	pqxx::result R(N.exec_params(aQuery, ps));
 
-					size_t coLen = R.columns();
-					vector<Json> arr;
-					for (pqxx::result::const_iterator c = R.begin(); c != R.end(); ++c) {
-						Json al;
-						for (int i = 0; i < coLen; ++i)
-						{
-							auto rsType = R.column_type(i);
-							switch (rsType)
-							{
-							case INT2OID:
-							case INT4OID:
-							case INT8OID:
-							case NUMERICOID:
-								al.addSubitem(R.column_name(i), atof(c[i].c_str()));
-								break;
+				// 	size_t coLen = R.columns();
+				// 	vector<Json> arr;
+				// 	for (pqxx::result::const_iterator c = R.begin(); c != R.end(); ++c) {
+				// 		Json al;
+				// 		for (int i = 0; i < coLen; ++i)
+				// 		{
+				// 			auto rsType = R.column_type(i);
+				// 			switch (rsType)
+				// 			{
+				// 			case INT2OID:
+				// 			case INT4OID:
+				// 			case INT8OID:
+				// 			case NUMERICOID:
+				// 				al.addSubitem(R.column_name(i), atof(c[i].c_str()));
+				// 				break;
 
-							default:
-								al.addSubitem(R.column_name(i), (char*)c[i].c_str());
-								break;
-							}
-						}
-						arr.push_back(al);
-					}
-					if (arr.empty())
-						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-					rs.addSubitem("data", arr);
-					R.clear();
+				// 			default:
+				// 				al.addSubitem(R.column_name(i), (char*)c[i].c_str());
+				// 				break;
+				// 			}
+				// 		}
+				// 		arr.push_back(al);
+				// 	}
+				// 	if (arr.empty())
+				// 		rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+				// 	rs.addSubitem("data", arr);
+				// 	R.clear();
 
-					std::cout << "SQL: " << aQuery << std::endl;
+				// 	std::cout << "SQL: " << aQuery << std::endl;
 					return rs;
-				}
-				catch (const std::exception& e) {
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, (char*)e.what());
-				}
+				// }
+				// catch (const std::exception& e) {
+				// 	return DbUtils::MakeJsonObject(STDBOPERATEERR, (char*)e.what());
+				// }
 			}
 
 			Json ExecNoneQuerySql(string aQuery, Json values = Json(JsonType::Array)) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
 				string err = "";
-				pqxx::connection *pq = GetConnection(err);
+				PGconn *pq = GetConnection(err);
 				if (pq == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-				pqxx::params ps;
-				int len = values.size();
-				for(int i = 0; i < len; i++){
-					ps.append(values[i].toString());
+				int vLen = values.size();
+				std::vector<char *> dataInputs;
+				if(vLen > 0){
+					dataInputs.resize(vLen);
+					for (int i = 0; i < vLen; i++) {
+						string ele = values[i].toString();
+						int eleLen = ele.length() + 1;
+						dataInputs[i] = new char[eleLen];
+						memset(dataInputs[i], 0, eleLen);
+						memcpy(dataInputs[i], ele.c_str(), eleLen);
+					}
 				}
-				try
-				{
-					pqxx::nontransaction N(*pq);
-					pqxx::result R(N.exec_params(aQuery, ps));
-					rs.addSubitem("affected", R.affected_rows());
-					rs.addSubitem("newId", R.inserted_oid());
-					R.clear();
+				PGresult *res = PQexecParams(pq, aQuery.c_str(), vLen, nullptr, vLen > 0 ? dataInputs.data() : nullptr, nullptr, nullptr,0);
+				if (nullptr == res) {
+					std::cout << PQerrorMessage(pq) << std::endl;
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, PQerrorMessage(pq));
 				}
-				catch (const std::exception &e)
-				{
-					std::cout << e.what();
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, e.what());
-				}
+
 				std::cout << "SQL: " << aQuery << std::endl;
 				std::cout << rs.toString() << std::endl;
+				PQclear(res);
+				for (auto el : dataInputs)
+					delete[] el;
 				return rs;
 			}
 
 			bool escapeString(string& pStr)
 			{
-				string err = "";
-				pStr = GetConnection(err)->esc(pStr);
+				// string err = "";
+				// pStr = GetConnection(err)->esc(pStr);
 				return true;
 			}
 
 			std::string getEscapeString(string& pStr)
 			{
 				string err = "";
-				return GetConnection(err)->esc(pStr);
+				return err;//GetConnection(err)->esc(pStr);
 			}
 
 		private:
-			std::vector<pqxx::connection*> pool;
+			std::vector<PGconn*> pool;
 			int maxConn;
 			string dbhost;
 			string dbuser;

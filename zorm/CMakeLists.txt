@@ -26,9 +26,8 @@ if(MSVC)
 
     set(MysqlDll libmysql.dll)
 
-    include_directories(../thirds/libpqxx/include)
-    link_directories(../thirds/libpqxx/lib)
-    set(pqxxName pqxx.dll)
+    include_directories(../thirds/pgsql/include)
+    link_directories(../thirds/pgsql/lib)
     set(pqName libpq.dll)
 elseif(APPLE)
     set(MysqlDll libmysqlclient.a)
@@ -66,4 +65,4 @@ FILE(GLOB_RECURSE SRC_FILES "./*.cc" "../thirds/sqlit3/*.c")
 FILE(GLOB_RECURSE HEAD_FILES "./*.h" "../thirds/sqlit3/*.h") 
 
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_FILES} ${HEAD_FILES})
-target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll} ${pqxxName} ${pqName})
+target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll} ${pqName})
