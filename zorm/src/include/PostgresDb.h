@@ -614,7 +614,7 @@ namespace ZORM {
 				for (auto el : dataInputs)
 					delete[] el;
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-				if (nullptr == res) {
+				if (PQresultStatus(res) != PGRES_COMMAND_OK) {
 					std::cout << PQerrorMessage(pq) << std::endl;
 					rs = DbUtils::MakeJsonObject(STDBOPERATEERR, PQerrorMessage(pq));
 				}
@@ -653,7 +653,7 @@ namespace ZORM {
 				for (auto el : dataInputs)
 					delete[] el;
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-				if (nullptr == res) {
+				if (PQresultStatus(res) != PGRES_COMMAND_OK) {
 					string err = PQerrorMessage(pq);
 					std::cout << err << std::endl;
 					if(out)
