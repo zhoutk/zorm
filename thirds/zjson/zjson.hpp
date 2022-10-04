@@ -1,12 +1,12 @@
 #pragma once
 #include "utils.hpp"
-#include <array>
 #include <string>
 #include <variant>
 #include <any>
 #include <iostream>
 #include <algorithm>
 #include <limits>
+#include <array>
 
 namespace ZJSON {
 	static const int max_depth = 100;
@@ -374,9 +374,23 @@ namespace ZJSON {
 				return true;
 			}
 			else
-			{
 				return false;
+		}
+
+		bool push_front(Json value){
+			if (this->type == Type::Array)
+			{
+				Json *theChild = this->child;
+				this->child = new Json(value);
+				this->child->brother = theChild;
+				return true;
 			}
+			else
+				return false;
+		}
+
+		bool push_back(Json value){
+			return addSubitem(value);
 		}
 
 		void clear(){
@@ -510,6 +524,7 @@ namespace ZJSON {
 					v = std::any_cast<string>(data);
 				string cutStr(v);
 				cutStr.erase(cutStr.begin(), std::find_if_not(cutStr.begin(), cutStr.end(), [](unsigned char x){return std::isspace(x);}));
+				//cutStr.erase(std::remove_if(cutStr.begin(), cutStr.end(), [](unsigned char x){return std::isspace(x);}), cutStr.end());
 				if(cutStr.at(0) == '{' || cutStr.at(0) == '['){
 					delete node;
 					return new Json(cutStr);

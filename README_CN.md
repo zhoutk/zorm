@@ -13,8 +13,8 @@
 ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges三种关系数据库，同时支持windows、linux和macOS。
 
 ## 项目进度
-  现在已经实现了sqlit3与mysql的所有功能，postgres已经完成linux和macos下的所有功能。  
-  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - libpqxx7.7.4 。
+  现在已经实现了基本目标的所有功能。  
+  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - c api(pgsql14); pqxx分支实现了libpqxx7.7.4的封装，linux和macos上运行正常，windows上运行有问题，待解决。
 
 任务列表：
 - [x] Sqlite3 实现
@@ -27,7 +27,7 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
   - [x] macos
 - [x] Postgre 实现
   - [x] linux 
-  - [ ] windows
+  - [x] windows
   - [x] macos
 
 ## 数据库通用接口

@@ -294,37 +294,29 @@ namespace ZORM {
 
 			Json transGo(Json& sqls, bool isAsync = false) override
 			{
-				// if (sqls.size() < 2) {
+				if (sqls.size() < 2) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-				// }
-				// else {
-				// 	bool isExecSuccess = true;
-				// 	string errmsg = "Running transaction error: ";
-				// 	string err = "";
-				// 	PGconn* pq = GetConnection(err);
-				// 	if (pq == nullptr)
-				// 		return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-
-				// 	try {
-				// 		pqxx::work T(*pq);
-				// 		for (size_t i = 0; i < sqls.size(); i++) {
-				// 			string sql = sqls[i]["text"].toString();
-				// 			Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
-				// 			pqxx::params ps;
-				// 			int len = values.size();
-				// 			for (int i = 0; i < len; i++)
-				// 				ps.append(values[i].toString());
-				// 			T.exec_params(sql, ps);
-				// 		}
-				// 		T.commit();
-				// 		std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
-				// 		return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
-				// 	}
-				// 	catch (std::exception& e) {
-				// 		std::cout << "Transaction Error: " << e.what() << std::endl;
-				// 		return DbUtils::MakeJsonObject(STDBOPERATEERR, (char*)e.what());
-				// 	}
-				// }
+				}
+				else {
+					bool isExecSuccess = true;
+					string errmsg = "Running transaction error: ";
+					string err = "";
+					PGconn* pq = GetConnection(err);
+					if (pq == nullptr)
+						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+					sqls.push_front(Json({{"text", "BEGIN TRANSACTION;"}}));
+					sqls.push_back(Json({{"text", "END TRANSACTION;"}}));
+					for (size_t i = 0; i < sqls.size(); i++) {
+						string sql = sqls[i]["text"].toString();
+						Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+						if(!ExecSqlForTransGo(pq, sql, values, &err)){
+							ExecSqlForTransGo(pq, "ROLLBACK;");
+							return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
+						}
+					}
+					!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() - 2 << " sqls." << std::endl;
+					return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success."); 
+				}
 			}
 
 			~PostgresDb()
@@ -619,16 +611,15 @@ namespace ZORM {
 					}
 				}
 				PGresult *res = PQexecParams(pq, aQuery.c_str(), vLen, nullptr, vLen > 0 ? dataInputs.data() : nullptr, nullptr, nullptr,0);
-				if (nullptr == res) {
-					std::cout << PQerrorMessage(pq) << std::endl;
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, PQerrorMessage(pq));
-				}
-
-				std::cout << "SQL: " << aQuery << std::endl;
-				std::cout << rs.toString() << std::endl;
-				PQclear(res);
 				for (auto el : dataInputs)
 					delete[] el;
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+				if (nullptr == res) {
+					std::cout << PQerrorMessage(pq) << std::endl;
+					rs = DbUtils::MakeJsonObject(STDBOPERATEERR, PQerrorMessage(pq));
+				}
+				//std::cout << rs.toString() << std::endl;
+				PQclear(res);
 				return rs;
 			}
 
@@ -643,6 +634,34 @@ namespace ZORM {
 			{
 				string err = "";
 				return err;//GetConnection(err)->esc(pStr);
+			}
+
+			bool ExecSqlForTransGo(PGconn *pq, string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
+				int vLen = values.size();
+				std::vector<char *> dataInputs;
+				if(vLen > 0){
+					dataInputs.resize(vLen);
+					for (int i = 0; i < vLen; i++) {
+						string ele = values[i].toString();
+						int eleLen = ele.length() + 1;
+						dataInputs[i] = new char[eleLen];
+						memset(dataInputs[i], 0, eleLen);
+						memcpy(dataInputs[i], ele.c_str(), eleLen);
+					}
+				}
+				PGresult *res = PQexecParams(pq, aQuery.c_str(), vLen, nullptr, vLen > 0 ? dataInputs.data() : nullptr, nullptr, nullptr,0);
+				for (auto el : dataInputs)
+					delete[] el;
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+				if (nullptr == res) {
+					string err = PQerrorMessage(pq);
+					std::cout << err << std::endl;
+					if(out)
+						*out = err;
+					return false;
+				}
+				PQclear(res);
+				return true;
 			}
 
 		private:
