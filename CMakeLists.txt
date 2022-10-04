@@ -41,6 +41,8 @@ include_directories(./thirds/zjson)
 include_directories(./thirds/MySQL-C-Api-6.1/include)
 if(APPLE OR NOT UNIX)
     link_directories(./thirds/MySQL-C-Api-6.1/lib)
+elseif(UNIX)
+    include_directories(/usr/include/postgresql)
 endif()
 
 FILE(GLOB_RECURSE SRC_FILES "./src/*.cc" "./thirds/sqlit3/*.c") 
