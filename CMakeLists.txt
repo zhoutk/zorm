@@ -60,7 +60,6 @@ endif()
 
 FILE(GLOB_RECURSE SRC_FILES "./src/*.cc" "./thirds/sqlit3/*.c") 
 FILE(GLOB_RECURSE HEAD_FILES "./src/*.h" "./thirds/sqlit3/*.h") 
-# FILE(GLOB MYSQL_FILES "./thirds/MySQL-C-Api-6.1/include/*.h") 
 
 add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEAD_FILES})
 if(MSVC)
