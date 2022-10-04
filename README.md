@@ -227,14 +227,14 @@ run zorm or ctest
 the command of ubuntu： apt install libmysqlclient-dev  
 - note 2：on linux need libpq dev lib (gcc at least 8).
 the command of ubuntu： apt-get install libpq-dev  
-- note 3：on macos need libpqxx dev lib.  
-the command is ： brew install libpqxx
-- note 4：on windows, need postgres database installed and compile libpqxx7.7.4, as follows：
+- note 3：on macos need postgresql@14.  
+the command is ： brew install postgresql@14
+- note 4：on windows, need postgres database installed. if yout want use branch pqxx, need compile libpqxx7.7.4, as follows：
 cmake -A x64 -DBUILD_SHARED_LIBS=on -DSKIP_BUILD_TEST=on -DPostgreSQL_ROOT=/d/softs/pgsql ..
 cmake --build . --config Release
 cmake --install . --prefix /d/softs/libpqxx  
 - note 5：on windows, postgres10 is the last version which support win32, So I only support the x64 version using pg14。
-- note 6: on windows, postgres can only link libpqxx7.7.4's dll using debug version, and run with a Expression:__acrt_first_block==header, I'm try to solve it ...
+- note 6: About pqxx branch, on windows, postgres can only link libpqxx7.7.4's dll using debug version, and run with a Expression:__acrt_first_block==header, I'm try to solve it ...
 
 ## Associated projects
 

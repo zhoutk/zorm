@@ -244,14 +244,14 @@ run zorm or ctest
 在ubuntu下的命令是： apt install libmysqlclient-dev  
 - 注2：在linux下需要先行安装 libpq 开发库（要求gcc版本高于8）。  
 在ubuntu下的命令是： apt-get install libpq-dev  
-- 注3：在macos下需要先行安装 libpqxx 开发库。  
-命令是： brew install libpqxx
-- 注4：在windows下，要安装postgres数据库，编译libpqxx7.7.4，命令如下：
+- 注3：在macos下需要先行安装 postgresql@14 开发库。  
+命令是： brew install postgresql@14  
+- 注4：在windows下，要安装postgres数据库，若想使用pqxx分支，需编译libpqxx7.7.4，命令如下：
 cmake -A x64 -DBUILD_SHARED_LIBS=on -DSKIP_BUILD_TEST=on -DPostgreSQL_ROOT=/d/softs/pgsql ..
 cmake --build . --config Release
 cmake --install . --prefix /d/softs/libpqxx  
 - 注5：在windows下，postgres10是支持win32的最后一个版本，我先择只支行64位版本，选择了最高版本。
-- 注6：在windows下, postgres 只能链接 libpqxx7.7.4 的 debug 版， 运行时会出错， Expression:__acrt_first_block==header， 我正在努力解决 ...
+- 注6：关于pqxx分支，在windows下, postgres 只能链接 libpqxx7.7.4 的 debug 版， 运行时会出错， Expression:__acrt_first_block==header， 我正在努力解决 ...
 
 ## 相关项目
 
