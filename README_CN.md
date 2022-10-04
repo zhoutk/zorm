@@ -246,7 +246,7 @@ run zorm or ctest
 在ubuntu下的命令是： apt-get install libpq-dev  
 - 注3：在macos下需要先行安装 postgresql@14 开发库。  
 命令是： brew install postgresql@14  
-- 注4：在windows下，要安装postgres数据库，若想使用pqxx分支，需编译libpqxx7.7.4，命令如下：
+- 注4：在windows下，若想使用pqxx分支，需编译libpqxx7.7.4，命令如下：
 cmake -A x64 -DBUILD_SHARED_LIBS=on -DSKIP_BUILD_TEST=on -DPostgreSQL_ROOT=/d/softs/pgsql ..
 cmake --build . --config Release
 cmake --install . --prefix /d/softs/libpqxx  

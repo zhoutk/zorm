@@ -229,7 +229,7 @@ the command of ubuntu： apt install libmysqlclient-dev
 the command of ubuntu： apt-get install libpq-dev  
 - note 3：on macos need postgresql@14.  
 the command is ： brew install postgresql@14
-- note 4：on windows, need postgres database installed. if yout want use branch pqxx, need compile libpqxx7.7.4, as follows：
+- note 4：On windows, if yout want use branch pqxx, need compile libpqxx7.7.4, as follows：
 cmake -A x64 -DBUILD_SHARED_LIBS=on -DSKIP_BUILD_TEST=on -DPostgreSQL_ROOT=/d/softs/pgsql ..
 cmake --build . --config Release
 cmake --install . --prefix /d/softs/libpqxx  
