@@ -412,6 +412,37 @@ namespace ZJSON {
 				return false;
 		}
 
+		bool insert(int index, Json value){
+			if(this->type == Type::Array){
+				if(index < 0){
+					index += this->size();
+					if(index < 0)
+						return false;
+				}
+				if(index == 0)
+					return this->push_front(value);
+				else{
+					int ct = 0;
+					Json *pre = this;
+					Json *cur = this->child;
+					while (cur) {
+						if (index == ct++)
+							break;
+						pre = cur;
+						cur = cur->brother;
+					}
+					if (index < ct) {
+						pre->brother = new Json(value);
+						pre->brother->brother = cur;
+						return true;
+					}
+					else
+						return false;
+				}
+			}else
+				return false;
+		}
+
 		void clear(){
 			if(this->type == Type::Array || this->type == Type::Object){
 				if(this->child)
@@ -541,12 +572,10 @@ namespace ZJSON {
 					v = std::any_cast<char *>(data);
 				else
 					v = std::any_cast<string>(data);
-				string cutStr(v);
-				cutStr.erase(cutStr.begin(), std::find_if_not(cutStr.begin(), cutStr.end(), [](unsigned char x){return std::isspace(x);}));
-				//cutStr.erase(std::remove_if(cutStr.begin(), cutStr.end(), [](unsigned char x){return std::isspace(x);}), cutStr.end());
-				if(cutStr.at(0) == '{' || cutStr.at(0) == '['){
+				auto it = std::find_if_not(v.begin(), v.end(), [](unsigned char x){return std::isspace(x);});
+				if(it != v.end() && (*it == '{' || *it == '[')){
 					delete node;
-					return new Json(cutStr);
+					return new Json(v);
 				}
 				node->type = Type::String;
 				node->data = v;
