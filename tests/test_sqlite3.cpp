@@ -7,7 +7,7 @@ using namespace ZORM;
 
 TEST(TestTest, test_sqlite3) {
 	Json options;
-	options.addSubitem("connString", "./db.db");
+	options.addSubitem("connString", ":memory:");
 	options.addSubitem("DbLogClose", false);
 	options.addSubitem("parameterized", true);
 	DbBase* db = new DbBase("sqlite3", options);

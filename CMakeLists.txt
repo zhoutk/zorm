@@ -34,6 +34,7 @@ elseif(UNIX AND NOT APPLE)
 endif()
 
 add_definitions(-DZORM_LIB)
+add_definitions(-DSQLITE_OMIT_TEMPDB)
 
 include_directories(./thirds/sqlit3)
 include_directories(./src/include)
