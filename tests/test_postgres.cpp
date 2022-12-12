@@ -7,7 +7,7 @@ using namespace ZORM;
 
 TEST(TestTest, test_postgres) {
 	Json options;
-	options.addSubitem("db_host", "192.168.6.6");
+	options.addSubitem("db_host", "192.168.0.12");
 	options.addSubitem("db_port", 5432);
 	options.addSubitem("db_name", "dbtest");
 	options.addSubitem("db_user", "root");
