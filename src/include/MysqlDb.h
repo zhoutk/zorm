@@ -12,11 +12,13 @@ namespace ZORM {
 	using std::string;
 
 	namespace Mysql {
-		vector<string> QUERY_EXTRA_KEYS;
-		vector<string> QUERY_UNEQ_OPERS;
 
 		class ZORM_API MysqlDb : public Idb {
 
+		public:
+			const vector<string> QUERY_EXTRA_KEYS { "ins", "lks", "ors"};
+			const vector<string> QUERY_UNEQ_OPERS { ">,", ">=,", "<,", "<=,", "<>,", "=,"};
+			 
 		private:
 			MYSQL* GetConnection(string& err) {
 				//srand((unsigned int)(time(nullptr)));
@@ -44,24 +46,11 @@ namespace ZORM {
 				}
 			}
 
-			void init(){
-				QUERY_EXTRA_KEYS = DbUtils::MakeVector("ins,lks,ors");
-
-				QUERY_UNEQ_OPERS.push_back(">,");
-				QUERY_UNEQ_OPERS.push_back(">=,");
-				QUERY_UNEQ_OPERS.push_back("<,");
-				QUERY_UNEQ_OPERS.push_back("<=,");
-				QUERY_UNEQ_OPERS.push_back("<>,");
-				QUERY_UNEQ_OPERS.push_back("=,");
-			}
-
 		public:
 
 			MysqlDb(string dbhost, string dbuser, string dbpwd, string dbname, int dbport = 3306, Json options = Json()) :
 				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(dbname), dbport(dbport), maxConn(2), DbLogClose(false), queryByParameter(false)
 			{
-				init();
-
 				if(!options["db_conn"].isError() && options["db_conn"].toInt() > 2)
 					maxConn = options["db_conn"].toInt();
 				if(!options["db_char"].isError())
