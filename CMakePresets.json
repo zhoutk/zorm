@@ -1,6 +1,35 @@
-﻿{
+{
     "version": 3,
     "configurePresets": [
+        {
+            "name": "linux-base",
+            "displayName": "Linux Debug",
+            "description": "面向适用于 Linux 的 Windows 子系统(WSL)或远程 Linux 系统。",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "installDir": "${sourceDir}/out/install/${presetName}",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "vendor": { "microsoft.com/VisualStudioRemoteSettings/CMake/1.0": { "sourceDir": "$env{HOME}/vs/$ms{projectDirName}" } }
+        },
+        {
+            "name": "linux-debug",
+            "displayName": "Linux Debug",
+            "description": "Linux (64 位)(Debug)",
+            "inherits": "linux-base",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "linux-release",
+            "displayName": "Linux Release",
+            "description": "Linux (64 位)(Release)",
+            "inherits": "linux-base",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        },
         {
             "name": "windows-base",
             "description": "面向具有 Visual Studio 开发环境的 Windows。",
