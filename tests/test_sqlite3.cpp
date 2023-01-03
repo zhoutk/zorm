@@ -42,6 +42,9 @@ TEST(TestTest, test_sqlite3) {
 	rs = db->transGo(sqlArr);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
+	rs = db->select("table_name_not_exist_in_db", Json());
+	EXPECT_EQ(rs["status"].toInt(), 701);
+
 	Json qObj;
 	qObj.addSubitem("id", "a1b2c3d4");
 	rs = db->select("table_for_test", qObj);
