@@ -29,6 +29,9 @@ TEST(TestTest, test_sqlite3) {
 	rs = db->create("table_for_test", cObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
+	// rs = db->querySql("SELECT name FROM sqlite_master WHERE type = 'view'");
+	// EXPECT_EQ(rs["status"].toInt(), 200);
+
 	Json cObjs(JsonType::Array);
 	cObjs.addSubitem(Json("{\"id\":\"a2b3c4d5\",\"name\":\"test001\",\"age\":19,\"score\":69.15}"));
 	cObjs.addSubitem(Json("{\"id\":\"a3b4c5d6\",\"name\":\"test002\",\"age\":20,\"score\":56.87}"));
