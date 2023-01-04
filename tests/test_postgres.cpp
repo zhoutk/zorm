@@ -36,6 +36,9 @@ TEST(TestTest, test_postgres) {
 	rs = db->create("table_for_test", cObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
+	rs = db->querySql("select viewname from pg_views where schemaname = 'public' and viewname = 'v_table_name_not_exist_in_db'");
+	EXPECT_EQ(rs["status"].toInt(), 202);
+
 	Json cObjs(JsonType::Array);
 	cObjs.addSubitem(Json("{\"id\":\"a2b3c4d5\",\"name\":\"test001\",\"age\":19,\"score\":69.15}"));
 	cObjs.addSubitem(Json("{\"id\":\"a3b4c5d6\",\"name\":\"test002\",\"age\":20,\"score\":56.87}"));
@@ -50,10 +53,10 @@ TEST(TestTest, test_postgres) {
 	rs = db->transGo(sqlArr);
 	EXPECT_EQ(rs["status"].toInt(), 200);
 
-	rs = db->select("table_name_not_exist_in_db", Json());
+	Json qObj;
+	rs = db->select("table_name_not_exist_in_db", qObj);
 	EXPECT_EQ(rs["status"].toInt(), 701);
 
-	Json qObj;
 	qObj.addSubitem("id", "a1b2c3d4");
 	rs = db->select("table_for_test", qObj);
 	EXPECT_EQ(rs["status"].toInt(), 200);
