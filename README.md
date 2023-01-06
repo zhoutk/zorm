@@ -1,4 +1,4 @@
-# ZORM  &emsp;&emsp;  [中文介绍](blob/master/README_CN.md)  
+# ZORM  &emsp;&emsp;  [中文介绍](README_CN.md)  
 
 ## Introduce  
 The basic models of ORM use to be separated from the database. Almost all of them build models at the level of programming language, and let the program deal with all things of the database. Although it is separated from the specific operation of the database, we have to establish various models and write the relationship between tables etc. This is very unfriendly to ordinary developers. My idea is to design tables use tools of relational databases, in our project, json objects can be automatically mapped into standard SQL. As long as we understand the standard SQL language, we can complete the database query operation. Furthermore, We can handled the relationship between tables through views or stored procedures. So our appliction can process all things only using Zorm and Json.
