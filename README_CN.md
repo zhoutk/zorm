@@ -1,4 +1,4 @@
-# zrom  &emsp;&emsp;  [English](https://gitee.com/zhoutk/zorm/blob/master/README.md)  
+# zrom  &emsp;&emsp;  [English](README.md)  
 
 ## 介绍
 我们通用的ORM，基本模式都是想要脱离数据库的，几乎都在编程语言层面建立模型，由程序去与数据库打交道。虽然脱离了数据库的具体操作，但我们要建立各种模型文档，用代码去写表之间的关系等等操作，让初学者一时如坠云雾。我的想法是，将关系数据库拥有的完善设计工具之优势，来实现数据设计以提供结构信息，让json对象自动映射成为标准的SQL查询语句。只要理解了标准的SQL语言，我们就能够完成数据库查询操作。更进一步，可以使用关系数据库的视图和存储过程来处理表之间的关系，并且在应用层使用一个映射（Zrest - next prj will realize），就可以仅仅使用Zorm和Json来完成所有的数据库操作。
