@@ -305,6 +305,10 @@ namespace ZJSON {
 			}
 		}
 
+		bool isEmpty(){
+			return this->size() <= 0;
+		}
+
 		string toString() {
 			if (this->type == Type::Error){
 				return "";
