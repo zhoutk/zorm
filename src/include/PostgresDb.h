@@ -558,7 +558,7 @@ namespace ZORM {
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				if (PQresultStatus(res) == PGRES_TUPLES_OK) {
 					int coLen = PQnfields(res);
-					vector<Json> arr;
+					Json arr(JsonType::Array);
 					for (int i = 0; i < PQntuples(res); i++) {
 						Json al;
 						for (int j = 0; j < coLen; j++)
@@ -580,7 +580,7 @@ namespace ZORM {
 						}
 						arr.push_back(al);
 					}
-					if (arr.empty())
+					if (arr.size() == 0)
 						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 					rs.addSubitem("data", arr);
 					PQclear(res);

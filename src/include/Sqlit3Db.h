@@ -560,7 +560,7 @@ namespace ZORM {
 						sqlite3_bind_text(stmt, i + 1, ele.c_str(), ele.length(), SQLITE_TRANSIENT);
 					}
 
-					vector<Json> arr;
+					Json arr(JsonType::Array);
 					while (sqlite3_step(stmt) == SQLITE_ROW) {
 						Json al;
 						for (int j = 0; j < nCol; j++)
@@ -588,7 +588,7 @@ namespace ZORM {
 						}
 						arr.push_back(al);
 					}
-					if (arr.empty())
+					if (arr.size() == 0)
 						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 					rs.addSubitem("data", arr);
 				}

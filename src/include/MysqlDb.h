@@ -637,7 +637,7 @@ namespace ZORM {
 							ps[i].is_null = &is_null[i];
 						}
 						ret = mysql_stmt_bind_result(stmt, ps);
-						vector<Json> arr;
+						Json arr(JsonType::Array);
 						while (mysql_stmt_fetch(stmt) != MYSQL_NO_DATA)
 						{
 							Json al;
@@ -654,7 +654,7 @@ namespace ZORM {
 							}
 							arr.push_back(al);
 						}
-						if (arr.empty())
+						if (arr.size() == 0)
 							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 						rs.addSubitem("data", arr);
 						delete [] ps;

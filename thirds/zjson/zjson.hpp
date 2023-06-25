@@ -80,7 +80,7 @@ namespace ZJSON {
 			this->type = (Type)type;
 		}
 
-		template<typename T> Json(T value, string key = ""){
+		template<typename T> Json(T value){
 			*this = *makeValueJson(value);
 		}
 
@@ -330,15 +330,16 @@ namespace ZJSON {
 					return (*rs);
 				else
 					return 0.0;
+			}else if(this->type == Type::String){
+				return atof(this->toString().c_str());
 			}else
 				return 0.0;
 		}
 
 		bool toBool(){
 			if(this->type == Type::False || this->type == Type::True){
-				bool * rs = std::get_if<bool>(&this->data);
-				if(rs)
-					return (*rs);
+				if(this->type == Type::True)
+					return true;
 				else
 					return false;
 			}else
@@ -575,7 +576,9 @@ namespace ZJSON {
 				auto it = std::find_if_not(v.begin(), v.end(), [](unsigned char x){return std::isspace(x);});
 				if(it != v.end() && (*it == '{' || *it == '[')){
 					delete node;
-					return new Json(v);
+					Json* t = new Json(v);
+					t->name = name;
+					return t;
 				}
 				node->type = Type::String;
 				node->data = v;
@@ -632,6 +635,8 @@ namespace ZJSON {
 			while (cur)
 			{
 				if (cur->type == Type::Object || cur->type == Type::Array){
+					if(cur->child == nullptr)
+						return;
 					Json *subObj = new Json();
 					subObj->type = cur->type;
 					subObj->name = name;
@@ -686,12 +691,17 @@ namespace ZJSON {
 
 		Json find(const string& key, bool notArray = true){
 			if(this->type == Type::Array || this->type == Type::Object){
-				if(this->brother)
-					return this->brother->find(key, this->type != Type::Array);
-				else if(this->child)
-					return this->child->find(key, this->type != Type::Array);
-				else
-					return Json(Type::Error);
+				if(this->brother){
+					Json rs = this->brother->find(key, this->type != Type::Array);
+					if(!rs.isError())
+						return rs;
+				}
+				if(this->child){
+					Json rs = this->child->find(key, this->type != Type::Array);
+					if(!rs.isError())
+						return rs;
+				}
+				return Json(Type::Error);
 			}else{
 				Json* cur = this;
 				Json rs(Type::Error);
