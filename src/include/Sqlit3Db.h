@@ -101,7 +101,7 @@ namespace ZORM {
 					for (size_t i = 0; i < len; i++) {
 						string k = allKeys[i];
 						fields.append(k);
-						bool vIsString = params[k].isString();
+						bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
 						string v = params[k].toString();
 						!queryByParameter && vIsString &&escapeString(v);
 						if(queryByParameter){
@@ -147,7 +147,7 @@ namespace ZORM {
 						Json idJson;
 						for (size_t i = 0; i < len; i++) {
 							string k = allKeys[i];
-							bool vIsString = params[k].isString();
+							bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
 							string v = params[k].toString();
 							!queryByParameter && vIsString &&escapeString(v);
 							if (k.compare("id") == 0) {
@@ -199,7 +199,7 @@ namespace ZORM {
 					execSql.append(tablename).append(" where id = ");
 
 					string k = "id";
-					bool vIsString = params[k].isString();
+					bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
 					string v = params[k].toString();
 					!queryByParameter && vIsString &&escapeString(v);
 					if(queryByParameter){
@@ -260,7 +260,7 @@ namespace ZORM {
 						vector<string> keys = elements[i].getAllKeys();
 						string valueStr = " select ";
 						for (int j = 0; j < keys.size(); j++) {
-							bool vIsString = elements[i][keys[j]].isString();
+							bool vIsString = elements[i][keys[j]].isString() || elements[i][keys[j]].isArray() || elements[i][keys[j]].isObject();
 							string v = elements[i][keys[j]].toString();
 							!queryByParameter && vIsString && escapeString(v);
 							if(queryByParameter){
@@ -348,7 +348,7 @@ namespace ZORM {
 					size_t len = allKeys.size();
 					for (size_t i = 0; i < len; i++) {
 						string k = allKeys[i];
-						bool vIsString = params[k].isString();
+						bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
 						string v = params[k].toString();
 						!parameterized && vIsString && escapeString(v);
 						if (where.length() > 0) {
