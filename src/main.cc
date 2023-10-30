@@ -8,15 +8,15 @@ int main()
 {
 
 	Json options;
-	options.addSubitem("db_host", "192.168.6.6");
-	options.addSubitem("db_port", 5432);
-	options.addSubitem("db_name", "dbtest");
-	options.addSubitem("db_user", "root");
-	options.addSubitem("db_pass", "123456");
-	options.addSubitem("db_char", "utf8mb4");
-	options.addSubitem("db_conn", 5);
-	options.addSubitem("DbLogClose", false);
-	options.addSubitem("parameterized", true);
+	options.add("db_host", "192.168.6.6");
+	options.add("db_port", 5432);
+	options.add("db_name", "dbtest");
+	options.add("db_user", "root");
+	options.add("db_pass", "123456");
+	options.add("db_char", "utf8mb4");
+	options.add("db_conn", 5);
+	options.add("DbLogClose", false);
+	options.add("parameterized", true);
 	ZORM::DbBase* db = new ZORM::DbBase("postgres", options);
 	// Json rs = db->execSql("DROP TABLE IF EXISTS \"public\".\"table_for_test\";");
 	// rs = db->execSql("CREATE TABLE \"public\".\"table_for_test\" (\

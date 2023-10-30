@@ -195,7 +195,7 @@ namespace ZJSON {
 			return rs;
 		}
 
-		bool addSubitem(std::initializer_list<Json> values){
+		bool add(std::initializer_list<Json> values){
 			if (this->type == Type::Array){
 				for (auto al : values)
 				{
@@ -207,14 +207,14 @@ namespace ZJSON {
 				return false;
 		}
 
-		template<typename T> bool addSubitem(T value) {
+		template<typename T> bool add(T value) {
 			if(this->type == Type::Array)
-				return addSubitem("", value);
+				return add("", value);
 			else
 				return false;
 		}
 
-		template<typename T> bool addSubitem(string name, T value) {
+		template<typename T> bool add(string name, T value) {
 			if (this->type == Type::Object || this->type == Type::Array) {
 				string typeStr = GetTypeName(T);
 				if(this->type == Type::Array)
@@ -239,16 +239,16 @@ namespace ZJSON {
 				return false;	
 		}
 
-		bool addSubitem(string name, std::vector<Json> items){
+		bool add(string name, std::vector<Json> items){
 			if(items.empty())
 				return true;
 			if (this->type == Type::Object){
 				Json arr(Type::Array);
 				for (Json item : items)
 				{
-					arr.addSubitem(item);
+					arr.add(item);
 				}
-				return this->addSubitem(name, std::move(arr));
+				return this->add(name, std::move(arr));
 			}else{
 				return false;
 			}
@@ -412,7 +412,7 @@ namespace ZJSON {
 
 		bool push_back(Json value){
 			if (this->type == Type::Array)
-				return addSubitem(value);
+				return add(value);
 			else
 				return false;
 		}
@@ -513,23 +513,23 @@ namespace ZJSON {
 			switch (cur->type)
 					{
 					case Type::False:
-						this->addSubitem(cur->name, false);
+						this->add(cur->name, false);
 						break;
 					case Type::True:
-						this->addSubitem(cur->name, true);
+						this->add(cur->name, true);
 						break;
 					case Type::Null:
-						this->addSubitem(cur->name, nullptr);
+						this->add(cur->name, nullptr);
 						break;
 					case Type::Number:
-						this->addSubitem(cur->name, cur->toDouble());
+						this->add(cur->name, cur->toDouble());
 						break;
 					case Type::String:
-						this->addSubitem(cur->name, std::get<std::string>(cur->data));
+						this->add(cur->name, std::get<std::string>(cur->data));
 						break;
 					case Type::Object:
 					case Type::Array:
-						this->addSubitem(cur->name, *cur);
+						this->add(cur->name, *cur);
 					default:
 						break;
 					}

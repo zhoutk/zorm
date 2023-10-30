@@ -55,38 +55,38 @@ task list：
 > Sqlite3:
 ```
     Json options;
-    options.addSubitem("connString", "./db.db");    //where database locate
-    options.addSubitem("DbLogClose", false);        //show sql
-    options.addSubitem("parameterized", false);     //no parameterized
+    options.add("connString", "./db.db");    //where database locate
+    options.add("DbLogClose", false);        //show sql
+    options.add("parameterized", false);     //no parameterized
     DbBase* db = new DbBase("sqlite3", options);
 ```
   
 > Mysql:
 ```
     Json options;
-    options.addSubitem("db_host", "192.168.6.6");   //mysql service IP
-    options.addSubitem("db_port", 3306);            //port
-    options.addSubitem("db_name", "dbtest");        //database's name
-    options.addSubitem("db_user", "root");          //username
-    options.addSubitem("db_pass", "123456");        //password
-    options.addSubitem("db_char", "utf8mb4");       //Connection character setting[optional]
-    options.addSubitem("db_conn", 5);               //pool setting[optional]，default is 2
-    options.addSubitem("DbLogClose", true);         //not show sql
-    options.addSubitem("parameterized", true);      //use parameterized
+    options.add("db_host", "192.168.6.6");   //mysql service IP
+    options.add("db_port", 3306);            //port
+    options.add("db_name", "dbtest");        //database's name
+    options.add("db_user", "root");          //username
+    options.add("db_pass", "123456");        //password
+    options.add("db_char", "utf8mb4");       //Connection character setting[optional]
+    options.add("db_conn", 5);               //pool setting[optional]，default is 2
+    options.add("DbLogClose", true);         //not show sql
+    options.add("parameterized", true);      //use parameterized
     DbBase* db = new DbBase("mysql", options);
 ```
 
 > Postgres:
 ```
     Json options;
-    options.addSubitem("db_host", "192.168.6.6");
-    options.addSubitem("db_port", 5432);
-    options.addSubitem("db_name", "dbtest");
-    options.addSubitem("db_user", "root");
-    options.addSubitem("db_pass", "123456");
-    options.addSubitem("db_conn", 5);
-    options.addSubitem("DbLogClose", false);
-    options.addSubitem("parameterized", true);
+    options.add("db_host", "192.168.6.6");
+    options.add("db_port", 5432);
+    options.add("db_name", "dbtest");
+    options.add("db_user", "root");
+    options.add("db_pass", "123456");
+    options.add("db_conn", 5);
+    options.add("DbLogClose", false);
+    options.add("parameterized", true);
     DbBase* db = new DbBase("postgres", options);
 ```
 
@@ -97,9 +97,9 @@ task list：
     example：
     ```
     Json p;
-    p.addSubitem("page", 1);
-    p.addSubitem("size", 10);
-    p.addSubitem("size", "sort desc");
+    p.add("page", 1);
+    p.add("size", 10);
+    p.add("size", "sort desc");
     (new DbBase(...))->select("users", p);
     
     generate sql：   SELECT * FROM users  ORDER BY age desc LIMIT 0,10
@@ -107,9 +107,9 @@ task list：
 - fuzzy &emsp;&emsp;//Fuzzy query switch, if not provided, it is exact matching. Provides it or not will switch between exact matching and fuzzy matching.
     ```
     Json p;
-    p.addSubitem("username", "john");
-    p.addSubitem("password", "123");
-    p.addSubitem("fuzzy", 1);
+    p.add("username", "john");
+    p.add("password", "123");
+    p.add("fuzzy", 1);
     (new DbBase(...))->select("users", p);
    
     generate sql：   SELECT * FROM users  WHERE username like '%john%'  and password like '%123%'
@@ -119,7 +119,7 @@ task list：
     - ins &emsp;&emsp;//single field, multiple values：
     ```
     Json p;
-    p.addSubitem("ins", "age,11,22,36");
+    p.add("ins", "age,11,22,36");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT * FROM users  WHERE age in ( 11,22,26 )
@@ -127,7 +127,7 @@ task list：
     - ors &emsp;&emsp;//exact matching; multiple fields, multiple values：
     ```
     Json p;
-    p.addSubitem("ors", "age,11,age,36");
+    p.add("ors", "age,11,age,36");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT * FROM users  WHERE  ( age = 11  or age = 26 )
@@ -135,7 +135,7 @@ task list：
     - lks &emsp;&emsp;//fuzzy matching; multiple fields, multiple values：
     ```
     Json p;
-    p.addSubitem("lks", "username,john,password,123");
+    p.add("lks", "username,john,password,123");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT * FROM users  WHERE  ( username like '%john%'  or password like '%123%'  )
@@ -145,7 +145,7 @@ task list：
     - count &emsp;&emsp;//count, line statistics：
     ```
     Json p;
-    p.addSubitem("count", "1,total");
+    p.add("count", "1,total");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT *,count(1) as total  FROM users
@@ -153,7 +153,7 @@ task list：
     - sum &emsp;&emsp;//sum, columns statistics：
     ```
     Json p;
-    p.addSubitem("sum", "age,ageSum");
+    p.add("sum", "age,ageSum");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT username,sum(age) as ageSum  FROM users
@@ -161,7 +161,7 @@ task list：
 - group &emsp;&emsp;：
     ```
     Json p;
-    p.addSubitem("group", "age");
+    p.add("group", "age");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT * FROM users  GROUP BY age
@@ -174,7 +174,7 @@ The supported operators are : >, >=, <, <=, <>, = . Comma is the separator. One 
 - one field, one operation：
     ```
     Json p;
-    p.addSubitem("age", ">,10");
+    p.add("age", ">,10");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT * FROM users  WHERE age> 10
@@ -182,7 +182,7 @@ The supported operators are : >, >=, <, <=, <>, = . Comma is the separator. One 
 - two field, two operation：
     ```
     Json p;
-    p.addSubitem("age", ">=,10,<=,33");
+    p.add("age", ">=,10,<=,33");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT * FROM users  WHERE age>= 10 and age<= 33
@@ -190,9 +190,9 @@ The supported operators are : >, >=, <, <=, <>, = . Comma is the separator. One 
 - use "=" skip fuzzy matching：
     ```
     Json p;
-    p.addSubitem("age", "=,18");
-    p.addSubitem("username", "john");
-    p.addSubitem("fuzzy", "1");
+    p.add("age", "=,18");
+    p.add("username", "john");
+    p.add("fuzzy", "1");
     (new DbBase(...))->select("users", p);
 
     generate sql：   SELECT * FROM users  WHERE age= 18  and username like '%john%'

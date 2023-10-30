@@ -84,7 +84,7 @@ namespace ZORM {
 						!queryByParameter && vIsString &&escapeString(v);
 						if(queryByParameter){
 							vs.append("$").append(DbUtils::IntTransToString(i+1));
-							vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+							vIsString ? values.add(v) : values.add(params[k].toDouble());
 						}else{
 							if (vIsString)
 								vs.append("'").append(v).append("'");
@@ -146,7 +146,7 @@ namespace ZORM {
 								if (queryByParameter)
 								{
 									fields.append(" $").append(DbUtils::IntTransToString(index++));
-									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+									vIsString ? values.add(v) : values.add(params[k].toDouble());
 								}
 								else
 								{
@@ -186,7 +186,7 @@ namespace ZORM {
 					!queryByParameter && vIsString &&escapeString(v);
 					if(queryByParameter){
 						execSql.append(" $1 ");
-						vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+						vIsString ? values.add(v) : values.add(params[k].toDouble());
 					}else{
 						if (vIsString)
 							execSql.append("'").append(v).append("'");
@@ -256,7 +256,7 @@ namespace ZORM {
 							!queryByParameter && vIsString && escapeString(v);
 							if(queryByParameter){
 								valueStr.append("$").append(DbUtils::IntTransToString(index++));
-								values.addSubitem(v);
+								values.add(v);
 							}else{
 								if(vIsString)
 									valueStr.append("'").append(v).append("'");
@@ -383,7 +383,7 @@ namespace ZORM {
 											whereExtra.append("$").append(DbUtils::IntTransToString(index++));
 											if (i < eleLen - 1)
 												whereExtra.append(",");
-											values.addSubitem(el);
+											values.add(el);
 										}
 										whereExtra.append(")");
 									}else
@@ -407,7 +407,7 @@ namespace ZORM {
 										}
 										whereExtra.append(eqStr);
 										if(parameterized)
-											values.addSubitem(vsStr);
+											values.add(vsStr);
 										else{
 											vsStr.append("'");
 											whereExtra.append(vsStr);
@@ -424,7 +424,7 @@ namespace ZORM {
 								if (vls.size() == 2) {
 									if(parameterized){
 										where.append(k).append(vls.at(0)).append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
-										values.addSubitem(vls.at(1));
+										values.add(vls.at(1));
 									}else
 										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
 								}
@@ -432,8 +432,8 @@ namespace ZORM {
 									if(parameterized){
 										where.append(k).append(vls.at(0)).append(" $").append(DbUtils::IntTransToString(index++)).append(" ").append("and ");
 										where.append(k).append(vls.at(2)).append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
-										values.addSubitem(vls.at(1));
-										values.addSubitem(vls.at(3));
+										values.add(vls.at(1));
+										values.add(vls.at(3));
 									}else{
 										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
 										where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
@@ -446,7 +446,7 @@ namespace ZORM {
 							else if (fuzzy == "1") {
 								if(parameterized){
 									where.append("CAST(").append(k).append(" as TEXT) ").append(" like ").append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
-									values.addSubitem(v.insert(0, "%").append("%"));
+									values.add(v.insert(0, "%").append("%"));
 								}
 								else
 									where.append(k).append(" like '%").append(v).append("%'");
@@ -455,7 +455,7 @@ namespace ZORM {
 							else {
 								if(parameterized){
 									where.append(k).append(" =").append(" $").append(DbUtils::IntTransToString(index++)).append(" ");
-									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+									vIsString ? values.add(v) : values.add(params[k].toDouble());
 								}else{
 									if (vIsString)
 										where.append(k).append(" = '").append(v).append("'");
@@ -570,11 +570,11 @@ namespace ZORM {
 							case INT4OID:
 							case INT8OID:
 							case NUMERICOID:
-								al.addSubitem(PQfname(res, j), atof(PQgetvalue(res, i, j)));
+								al.add(PQfname(res, j), atof(PQgetvalue(res, i, j)));
 								break;
 
 							default:
-								al.addSubitem(PQfname(res, j), PQgetvalue(res, i, j));
+								al.add(PQfname(res, j), PQgetvalue(res, i, j));
 								break;
 							}
 						}
@@ -582,7 +582,7 @@ namespace ZORM {
 					}
 					if (arr.size() == 0)
 						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-					rs.addSubitem("data", arr);
+					rs.add("data", arr);
 					PQclear(res);
 					return rs;
 				}else{

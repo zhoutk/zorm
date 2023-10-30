@@ -106,7 +106,7 @@ namespace ZORM {
 						!queryByParameter && vIsString &&escapeString(v);
 						if(queryByParameter){
 							vs.append("?");
-							vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+							vIsString ? values.add(v) : values.add(params[k].toDouble());
 						}else{
 							if (vIsString)
 								vs.append("'").append(v).append("'");
@@ -167,7 +167,7 @@ namespace ZORM {
 								if (queryByParameter)
 								{
 									fields.append(" ? ");
-									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+									vIsString ? values.add(v) : values.add(params[k].toDouble());
 								}
 								else
 								{
@@ -204,7 +204,7 @@ namespace ZORM {
 					!queryByParameter && vIsString &&escapeString(v);
 					if(queryByParameter){
 						execSql.append(" ? ");
-						vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+						vIsString ? values.add(v) : values.add(params[k].toDouble());
 					}else{
 						if (vIsString)
 							execSql.append("'").append(v).append("'");
@@ -265,7 +265,7 @@ namespace ZORM {
 							!queryByParameter && vIsString && escapeString(v);
 							if(queryByParameter){
 								valueStr.append("?");
-								values.addSubitem(v);
+								values.add(v);
 							}else{
 								if(vIsString)
 									valueStr.append("'").append(v).append("'");
@@ -374,7 +374,7 @@ namespace ZORM {
 											whereExtra.append("?");
 											if (i < eleLen - 1)
 												whereExtra.append(",");
-											values.addSubitem(el);
+											values.add(el);
 										}
 										whereExtra.append(")");
 									}else
@@ -395,7 +395,7 @@ namespace ZORM {
 										}
 										whereExtra.append(eqStr);
 										if(parameterized)
-											values.addSubitem(vsStr);
+											values.add(vsStr);
 										else{
 											vsStr.append("'");
 											whereExtra.append(vsStr);
@@ -412,7 +412,7 @@ namespace ZORM {
 								if (vls.size() == 2) {
 									if(parameterized){
 										where.append(k).append(vls.at(0)).append(" ? ");
-										values.addSubitem(vls.at(1));
+										values.add(vls.at(1));
 									}else
 										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
 								}
@@ -420,8 +420,8 @@ namespace ZORM {
 									if(parameterized){
 										where.append(k).append(vls.at(0)).append(" ? ").append("and ");
 										where.append(k).append(vls.at(2)).append("? ");
-										values.addSubitem(vls.at(1));
-										values.addSubitem(vls.at(3));
+										values.add(vls.at(1));
+										values.add(vls.at(3));
 									}else{
 										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
 										where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
@@ -434,7 +434,7 @@ namespace ZORM {
 							else if (fuzzy == "1") {
 								if(parameterized){
 									where.append(k).append(" like ? ");
-									values.addSubitem(v.insert(0, "%").append("%"));
+									values.add(v.insert(0, "%").append("%"));
 								}
 								else
 									where.append(k).append(" like '%").append(v).append("%'");
@@ -443,7 +443,7 @@ namespace ZORM {
 							else {
 								if(parameterized){
 									where.append(k).append(" = ? ");
-									vIsString ? values.addSubitem(v) : values.addSubitem(params[k].toDouble());
+									vIsString ? values.add(v) : values.add(params[k].toDouble());
 								}else{
 									if (vIsString)
 										where.append(k).append(" = '").append(v).append("'");
@@ -568,13 +568,13 @@ namespace ZORM {
 							string k = fields.at(j);
 							int nType = sqlite3_column_type(stmt, j);
 							if (nType == 1) {					//SQLITE_INTEGER
-								al.addSubitem(k, sqlite3_column_int(stmt, j));
+								al.add(k, sqlite3_column_int(stmt, j));
 							}
 							else if (nType == 2) {				//SQLITE_FLOAT
-								al.addSubitem(k, sqlite3_column_double(stmt, j));
+								al.add(k, sqlite3_column_double(stmt, j));
 							}
 							else if (nType == 3) {				//SQLITE_TEXT
-								al.addSubitem(k, (char*)sqlite3_column_text(stmt, j));
+								al.add(k, (char*)sqlite3_column_text(stmt, j));
 							}
 							//else if (nType == 4) {				//SQLITE_BLOB
 
@@ -583,14 +583,14 @@ namespace ZORM {
 
 							//}
 							else{
-								al.addSubitem(k, "");
+								al.add(k, "");
 							}
 						}
 						arr.push_back(al);
 					}
 					if (arr.size() == 0)
 						rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-					rs.addSubitem("data", arr);
+					rs.add("data", arr);
 				}
 				sqlite3_finalize(stmt);
 				//if(!DbLogClose)
