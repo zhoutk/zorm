@@ -336,13 +336,13 @@ namespace ZORM {
 						fieldsJoinStr = DbUtils::GetVectorJoinStr(fields);
 					}
 
-					string fuzzy = params.getAndRemove("fuzzy").toString();
-					string sort = params.getAndRemove("sort").toString();
-					int page = atoi(params.getAndRemove("page").toString().c_str());
-					int size = atoi(params.getAndRemove("size").toString().c_str());
-					string sum = params.getAndRemove("sum").toString();
-					string count = params.getAndRemove("count").toString();
-					string group = params.getAndRemove("group").toString();
+					string fuzzy = params.take("fuzzy").toString();
+					string sort = params.take("sort").toString();
+					int page = atoi(params.take("page").toString().c_str());
+					int size = atoi(params.take("size").toString().c_str());
+					string sum = params.take("sum").toString();
+					string count = params.take("count").toString();
+					string group = params.take("group").toString();
 
 					vector<string> allKeys = params.getAllKeys();
 					size_t len = allKeys.size();

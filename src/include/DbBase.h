@@ -3,6 +3,7 @@
 #include "Sqlit3Db.h"
 #include "MysqlDb.h"
 #include "PostgresDb.h"
+#include "Dm8Db.h"
 #include <algorithm>
 
 namespace ZORM
@@ -17,22 +18,29 @@ namespace ZORM
 			if (dbType.compare("sqlite3") == 0)
 				db = new Sqlit3::Sqlit3Db(options["connString"].toString(), DbLogClose, options["parameterized"].toBool());
 			else if(dbType.compare("mysql") == 0){
-				string dbhost = options.getAndRemove("db_host").toString();
-				string dbuser = options.getAndRemove("db_user").toString();
-				string dbpwd = options.getAndRemove("db_pass").toString();
-				string dbname = options.getAndRemove("db_name").toString();
-				int dbport = options.getAndRemove("db_port").toInt();
+				string dbhost = options.take("db_host").toString();
+				string dbuser = options.take("db_user").toString();
+				string dbpwd = options.take("db_pass").toString();
+				string dbname = options.take("db_name").toString();
+				int dbport = options.take("db_port").toInt();
 
 				db = new Mysql::MysqlDb(dbhost, dbuser, dbpwd, dbname, dbport, options);
 			}
 			else if(dbType.compare("postgres") == 0){
-				string dbhost = options.getAndRemove("db_host").toString();
-				string dbuser = options.getAndRemove("db_user").toString();
-				string dbpwd = options.getAndRemove("db_pass").toString();
-				string dbname = options.getAndRemove("db_name").toString();
-				int dbport = options.getAndRemove("db_port").toInt();
+				string dbhost = options.take("db_host").toString();
+				string dbuser = options.take("db_user").toString();
+				string dbpwd = options.take("db_pass").toString();
+				string dbname = options.take("db_name").toString();
+				int dbport = options.take("db_port").toInt();
 
 				db = new Postgres::PostgresDb(dbhost, dbuser, dbpwd, dbname, dbport, options);
+			}
+			else if (dbType.compare("dm8") == 0) {
+				string dbhost = options.take("db_host").toString();
+				string dbuser = options.take("db_user").toString();
+				string dbpwd = options.take("db_pass").toString();
+
+				db = new Dm8::Dm8Db(dbhost, dbuser, dbpwd, options);
 			}
 			else {
 				throw "Db Type error or not be supported. ";

@@ -176,7 +176,7 @@ namespace ZJSON {
 			return TYPENAMES[this->type];
 		}
 
-		Json getAndRemove(const string& key){
+		Json take(const string& key){
 			Json rs = (*this)[key];
 			this->remove(key);
 			return rs;
