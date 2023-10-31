@@ -252,22 +252,18 @@ namespace ZORM {
 
 			Json insertBatch(string tablename, Json& elements, string constraint) override
 			{
-				return Json();
-				/*string sql = "insert into ";
+				string sql = "insert into ";
 				if (elements.size() < 2) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 				else {
 					Json values = Json(JsonType::Array);
 					string keyStr = " ( ";
-					string updateStr = "";
-					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) values ");
+					keyStr.append(DbUtils::GetVectorJoinStrArroundQuots(elements[0].getAllKeys())).append(" ) values ");
 					for (int i = 0; i < elements.size(); i++) {
 						vector<string> keys = elements[i].getAllKeys();
 						string valueStr = " ( ";
 						for (int j = 0; j < keys.size(); j++) {
-							if(i == 0)
-								updateStr.append(keys[j]).append(" = values(").append(keys[j]).append(")");
 							bool vIsString = elements[i][keys[j]].isString() || elements[i][keys[j]].isArray() || elements[i][keys[j]].isObject();
 							string v = elements[i][keys[j]].toString();
 							!queryByParameter && vIsString && escapeString(v);
@@ -282,8 +278,6 @@ namespace ZORM {
 							}
 							if (j < keys.size() - 1) {
 								valueStr.append(",");
-								if (i == 0)
-									updateStr.append(",");
 							}
 						}
 						valueStr.append(" )");
@@ -292,9 +286,9 @@ namespace ZORM {
 						}
 						keyStr.append(valueStr);
 					}
-					sql.append(tablename).append(keyStr).append(" on duplicate key update ").append(updateStr);
+					sql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(keyStr);
 					return queryByParameter ? ExecNoneQuerySql(sql,values) : ExecNoneQuerySql(sql);
-				}*/
+				}
 			}
 
 			Json transGo(Json& sqls, bool isAsync = false) override

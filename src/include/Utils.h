@@ -138,6 +138,19 @@ namespace ZORM {
 			return ss.str();
 		}
 
+		static string GetVectorJoinStrArroundQuots(vector<string> v) {
+			std::stringstream ss;
+			ss << "\"";
+			for (size_t i = 0; i < v.size(); ++i)
+			{
+				if (i != 0)
+					ss << "\",\"";
+				ss << v[i];
+			}
+			ss << "\"";
+			return ss.str();
+		}
+
 		static string GetVectorJoinStr(vector<string> v) {
 			std::stringstream ss;
 			for (size_t i = 0; i < v.size(); ++i)

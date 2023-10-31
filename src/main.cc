@@ -26,11 +26,20 @@ int main()
 	// 	\"score\" numeric DEFAULT 0.0)");
 	// rs = db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
 	Json cObj{
-		{"age", ">=,16,<=,20"}
+		{"id", "a1b2c3d4"},
+		{"name", "kevin"},
+		{"age", "20"}
 	};
-	//Json rs = db->create("table_for_test", cObj);
+	Json cObj2{
+		{"id", "a1b2c3d5"},
+		{"name", "john"},
+		{"age", "22"}
+	};
+	Json arr(JsonType::Array);
+	arr.add({cObj, cObj2});
+	Json rs = db->insertBatch("table_for_test", arr);
 
-	Json rs = db->select("table_for_test", cObj);
+	//Json rs = db->select("table_for_test", cObj);
 
 	/*Json uobj("{\"id\":\"a1b2c3d4\",\"name\":\"ÄãµÄÃû×Ö\"}");
 	rs = db->update("table_for_test", uobj);
