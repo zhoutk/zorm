@@ -127,66 +127,67 @@ namespace ZORM {
 
 			Json update(string tablename, Json& params) override
 			{
-				//if (!params.isError()) {
-				//	Json values(JsonType::Array);
-				//	string execSql = "update ";
-				//	execSql.append(tablename).append(" set ");
+				if (!params.isError()) {
+					Json values(JsonType::Array);
+					string execSql = "update ";
+					execSql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(" set ");
 
-				//	vector<string> allKeys = params.getAllKeys();
+					vector<string> allKeys = params.getAllKeys();
 
-				//	vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
-				//	if (iter == allKeys.end()) {
-				//		return DbUtils::MakeJsonObject(STPARAMERR);
-				//	}
-				//	else {
-				//		size_t len = allKeys.size();
-				//		size_t conditionLen = len - 2;
-				//		string fields = "", where = " where id = ";
-				//		Json idJson;
-				//		for (size_t i = 0; i < len; i++) {
-				//			string k = allKeys[i];
-				//			bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
-				//			string v = params[k].toString();
-				//			!queryByParameter && vIsString &&escapeString(v);
-				//			if (k.compare("id") == 0) {
-				//				conditionLen++;
-				//				if(queryByParameter){
-				//					where.append(" ? ");
-				//					idJson = params[k];
-				//				}else{
-				//					if (vIsString)
-				//						where.append("'").append(v).append("'");
-				//					else
-				//						where.append(v);
-				//				}
-				//			}
-				//			else {
-				//				fields.append(k).append(" = ");
-				//				if (queryByParameter)
-				//				{
-				//					fields.append(" ? ");
-				//					vIsString ? values.add(v) : values.add(params[k].toDouble());
-				//				}
-				//				else
-				//				{
-				//					if (vIsString)
-				//						fields.append("'").append(v).append("'");
-				//					else
-				//						fields.append(v);
-				//				}
-				//				if (i < conditionLen) {
-				//					fields.append(",");
-				//				}
-				//			}
-				//		}
-				//		values.concat(idJson);
-				//		execSql.append(fields).append(where);
-				//		return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
-				//	}
-				//}
-				//else {
+					vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
+					if (iter == allKeys.end()) {
+						return DbUtils::MakeJsonObject(STPARAMERR);
+					}
+					else {
+						size_t len = allKeys.size();
+						size_t conditionLen = len - 2;
+						string fields = "", where = " where \"id\" = ";
+						Json idJson;
+						for (size_t i = 0; i < len; i++) {
+							string k = allKeys[i];
+							bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
+							string v = params[k].toString();
+							!queryByParameter && vIsString&& escapeString(v);
+							if (k.compare("id") == 0) {
+								conditionLen++;
+								if (queryByParameter) {
+									where.append(" ? ");
+									idJson = params[k];
+								}
+								else {
+									if (vIsString)
+										where.append("'").append(v).append("'");
+									else
+										where.append(v);
+								}
+							}
+							else {
+								fields.append("\"").append(k).append("\"").append(" = ");
+								if (queryByParameter)
+								{
+									fields.append(" ? ");
+									vIsString ? values.add(v) : values.add(params[k].toDouble());
+								}
+								else
+								{
+									if (vIsString)
+										fields.append("'").append(v).append("'");
+									else
+										fields.append(v);
+								}
+								if (i < conditionLen) {
+									fields.append(",");
+								}
+							}
+						}
+						values.concat(idJson);
+						execSql.append(fields).append(where);
+						return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
+					}
+				}
+				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
-				//}
+				}
 			}
 
 

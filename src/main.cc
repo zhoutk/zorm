@@ -29,9 +29,13 @@ int main()
 		{"id", "a1b2c3d4"},
 		{"name", "Kevin ¿­ÎÄ"},
 		{"age", 18},
-		{"score", 99.99}
+		{"score", 99.99},
+		{"create_time", "2022-11-11"}
 	};
 	Json rs = db->create("table_for_test", cObj);
+
+	Json uobj("{\"id\":\"a1b2c3d4\",\"name\":\"ÄãµÄÃû×Ö\"}");
+	rs = db->update("table_for_test", uobj);
 
 	Json obj("{\"id\":\"a1b2c3d4\"}");
 
