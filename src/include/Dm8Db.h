@@ -221,11 +221,11 @@ namespace ZORM {
 
 			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
 			{
-				return Json(); /*= genSql(tablename, values, params, fields, 1, queryByParameter);
+				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
 				if(rs["status"].toInt() == 200)
 					return queryByParameter ? ExecQuerySql(tablename, fields, values) : ExecQuerySql(tablename, fields);
 				else
-					return rs;*/
+					return rs;
 			}
 
 			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
@@ -347,361 +347,415 @@ namespace ZORM {
 				}
 			}
 
-//		private:
-//			Json genSql(string& querySql, Json& values, Json& params, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false)
-//			{
-//				if (!params.isError()) {
-//					string tablename = querySql;
-//					querySql = "";
-//					string where = "";
-//					const string AndJoinStr = " and ";
-//					string fieldsJoinStr = "*";
-//
-//					if (!fields.empty()) {
-//						fieldsJoinStr = DbUtils::GetVectorJoinStr(fields);
-//					}
-//
-//					string fuzzy = params.take("fuzzy").toString();
-//					string sort = params.take("sort").toString();
-//					int page = atoi(params.take("page").toString().c_str());
-//					int size = atoi(params.take("size").toString().c_str());
-//					string sum = params.take("sum").toString();
-//					string count = params.take("count").toString();
-//					string group = params.take("group").toString();
-//
-//					vector<string> allKeys = params.getAllKeys();
-//					size_t len = allKeys.size();
-//					for (size_t i = 0; i < len; i++) {
-//						string k = allKeys[i];
-//						bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
-//						string v = params[k].toString();
-//						!parameterized && vIsString && escapeString(v);
-//						if (where.length() > 0) {
-//							where.append(AndJoinStr);
-//						}
-//
-//						if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
-//							string whereExtra = "";
-//							vector<string> ele = DbUtils::MakeVector(params[k].toString());
-//							if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
-//								return DbUtils::MakeJsonObject(STPARAMERR, k + " is wrong.");
-//							}
-//							else {
-//								if (k.compare("ins") == 0) {
-//									string c = ele.at(0);
-//									vector<string>(ele.begin() + 1, ele.end()).swap(ele);
-//									if(parameterized){
-//										whereExtra.append(c).append(" in (");
-//										int eleLen = ele.size();
-//										for (int i = 0; i < eleLen; i++)
-//										{
-//											string el = ele[i];
-//											whereExtra.append("?");
-//											if (i < eleLen - 1)
-//												whereExtra.append(",");
-//											values.add(el);
-//										}
-//										whereExtra.append(")");
-//									}else
-//										whereExtra.append(c).append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
-//								}
-//								else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
-//									whereExtra.append(" ( ");
-//									for (size_t j = 0; j < ele.size(); j += 2) {
-//										if (j > 0) {
-//											whereExtra.append(" or ");
-//										}
-//										whereExtra.append(ele.at(j)).append(" ");
-//										string eqStr = parameterized ? (k.compare("lks") == 0 ? " like ?" : " = ?") : (k.compare("lks") == 0 ? " like '" : " = '");
-//										string vsStr = ele.at(j + 1);
-//										if (k.compare("lks") == 0) {
-//											vsStr.insert(0, "%");
-//											vsStr.append("%");
-//										}
-//										whereExtra.append(eqStr);
-//										if(parameterized)
-//											values.add(vsStr);
-//										else{
-//											vsStr.append("'");
-//											whereExtra.append(vsStr);
-//										}
-//									}
-//									whereExtra.append(" ) ");
-//								}
-//							}
-//							where.append(whereExtra);
-//						}
-//						else {				// process value
-//							if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v)) {
-//								vector<string> vls = DbUtils::MakeVector(v);
-//								if (vls.size() == 2) {
-//									if(parameterized){
-//										where.append(k).append(vls.at(0)).append(" ? ");
-//										values.add(vls.at(1));
-//									}else
-//										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("'");
-//								}
-//								else if (vls.size() == 4) {
-//									if(parameterized){
-//										where.append(k).append(vls.at(0)).append(" ? ").append("and ");
-//										where.append(k).append(vls.at(2)).append("? ");
-//										values.add(vls.at(1));
-//										values.add(vls.at(3));
-//									}else{
-//										where.append(k).append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
-//										where.append(k).append(vls.at(2)).append("'").append(vls.at(3)).append("'");
-//									}
-//								}
-//								else {
-//									return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
-//								}
-//							}
-//							else if (fuzzy == "1") {
-//								if(parameterized){
-//									where.append(k).append(" like ? ");
-//									values.add(v.insert(0, "%").append("%"));
-//								}
-//								else
-//									where.append(k).append(" like '%").append(v).append("%'");
-//								
-//							}
-//							else {
-//								if(parameterized){
-//									where.append(k).append(" = ? ");
-//									vIsString ? values.add(v) : values.add(params[k].toDouble());
-//								}else{
-//									if (vIsString)
-//										where.append(k).append(" = '").append(v).append("'");
-//									else
-//										where.append(k).append(" = ").append(v);
-//								}
-//							}
-//						}
-//					}
-//
-//					string extra = "";
-//					if (!sum.empty()) {
-//						vector<string> ele = DbUtils::MakeVector(sum);
-//						if (ele.empty() || ele.size() % 2 == 1)
-//							return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
-//						else {
-//							for (size_t i = 0; i < ele.size(); i += 2) {
-//								extra.append(",cast(sum(").append(ele.at(i)).append(") as double) as ").append(ele.at(i + 1)).append(" ");
-//							}
-//						}
-//					}
-//					if (!count.empty()) {
-//						vector<string> ele = DbUtils::MakeVector(count);
-//						if (ele.empty() || ele.size() % 2 == 1)
-//							return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
-//						else {
-//							for (size_t i = 0; i < ele.size(); i += 2) {
-//								extra.append(",count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
-//							}
-//						}
-//					}
-//
-//					if (queryType == 1) {
-//						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append(tablename);
-//						if (where.length() > 0){
-//							querySql.append(" where ").append(where);
-//						}
-//					}
-//					else {
-//						querySql.append(tablename);
-//						if (queryType == 2 && !fields.empty()) {
-//							size_t starIndex = querySql.find('*');
-//							if (starIndex < 10) {
-//								querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
-//							}
-//						}
-//						if (where.length() > 0) {
-//							size_t whereIndex = querySql.find("where");
-//							if (whereIndex == querySql.npos) {
-//								querySql.append(" where ").append(where);
-//							}
-//							else {
-//								querySql.append(" and ").append(where);
-//							}
-//						}
-//					}
-//
-//					if (!group.empty()) {
-//						querySql.append(" group by ").append(group);
-//					}
-//
-//					if (!sort.empty()) {
-//						querySql.append(" order by ").append(sort);
-//					}
-//
-//					if (page > 0) {
-//						page--;
-//						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
-//					}
-//					return DbUtils::MakeJsonObject(STSUCCESS);
-//				}
-//				else {
-//					return DbUtils::MakeJsonObject(STPARAMERR);
-//				}
-//			}
-//
-//			Json ExecQuerySql(string aQuery, vector<string> fields)
-//			{
-//				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-//				string err = "";
-//				MYSQL *mysql = GetConnection(err);
-//				if (mysql == nullptr)
-//					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-//				if (mysql_query(mysql, aQuery.c_str()))
-//				{
-//					string errmsg = "";
-//					errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-//					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-//					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-//					return rs;
-//				}
-//				else
-//				{
-//					MYSQL_RES *result = mysql_use_result(mysql);
-//					if (result != NULL)
-//					{
-//						MYSQL_ROW row;
-//						int num_fields = mysql_num_fields(result);
-//						MYSQL_FIELD *fields = mysql_fetch_fields(result);
-//						vector<Json> arr;
-//						while ((row = mysql_fetch_row(result)) && row != NULL)
-//						{
-//							Json al;
-//							for (int i = 0; i < num_fields; ++i)
-//							{
-//								if(IS_NUM(fields[i].type))
-//									al.add(fields[i].name, atof(row[i]));
-//								else
-//									al.add(fields[i].name, row[i]);
-//							}
-//							arr.push_back(al);
-//						}
-//						if (arr.empty())
-//							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-//						rs.add("data", arr);
-//					}
-//					mysql_free_result(result);
-//				}
-//				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-//				return rs;
-//			}
-//
-//			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
-//				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-//				string err = "";
-//				MYSQL* mysql = GetConnection(err);
-//				if (mysql == nullptr)
-//					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-//				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
-//				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
-//				{
-//					string errmsg = "";
-//					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
-//					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-//					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-//					return rs;
-//				}
-//				else
-//				{
-//					const int vLen = values.size();
-//					std::vector<char *> dataInputs;
-//					if (vLen > 0)
-//					{
-//						MYSQL_BIND *bind = new MYSQL_BIND[vLen];
-//						std::memset(bind, 0, sizeof(MYSQL_BIND) * vLen);
-//						dataInputs.resize(vLen);
-//						for (int i = 0; i < vLen; i++)
-//						{
-//							string ele = values[i].toString();
-//							int eleLen = ele.length() + 1;
-//							dataInputs[i] = new char[eleLen];
-//							memset(dataInputs[i], 0, eleLen);
-//							memcpy(dataInputs[i], ele.c_str(), eleLen);
-//							bind[i].buffer_type = MYSQL_TYPE_STRING;
-//							bind[i].buffer = (void *)dataInputs[i];
-//							bind[i].buffer_length = eleLen - 1;
-//						}
-//						if (mysql_stmt_bind_param(stmt, bind))
-//						{
-//							string errmsg = "";
-//							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-//							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-//							rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-//							return rs;
-//						}
-//						delete [] bind;
-//					}
-//
-//					MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
-//					MYSQL_FIELD* fields;
-//					if (prepare_meta_result != nullptr)
-//					{
-//						int ret = 1;
-//						mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void *)&ret);
-//						if (mysql_stmt_execute(stmt))
-//						{
-//							string errmsg = "";
-//							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-//							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-//							rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-//							return rs;
-//						}
-//						ret = mysql_stmt_store_result(stmt);
-//						int num_fields = mysql_num_fields(prepare_meta_result);
-//						fields = mysql_fetch_fields(prepare_meta_result);
-//						MYSQL_BIND *ps = new MYSQL_BIND[num_fields];
-//						std::memset(ps, 0, sizeof(MYSQL_BIND) * num_fields);
-//						std::vector<char *> dataOuts(num_fields);
-//						char* is_null = new char[num_fields];
-//						memset(is_null, 0, sizeof(char) * num_fields);
-//						for (int i = 0; i < num_fields; ++i)
-//						{
-//							auto p = allocate_buffer_for_field(fields[i]);
-//							dataOuts[i] = new char[p.size];
-//							memset(dataOuts[i], 0, p.size);
-//							ps[i].buffer_type = p.type;
-//							ps[i].buffer = (void *)dataOuts[i];
-//							ps[i].buffer_length = p.size;
-//							ps[i].is_null = &is_null[i];
-//						}
-//						ret = mysql_stmt_bind_result(stmt, ps);
-//						Json arr(JsonType::Array);
-//						while (mysql_stmt_fetch(stmt) != MYSQL_NO_DATA)
-//						{
-//							Json al;
-//							for (int i = 0; i < num_fields; ++i)
-//							{
-//								if (is_null[i])
-//									al.add(fields[i].name, nullptr);
-//								else if (fields[i].type == MYSQL_TYPE_LONG || fields[i].type == MYSQL_TYPE_LONGLONG)  //count
-//									al.add(fields[i].name, (long)*((int *)dataOuts[i]));
-//								else if (fields[i].type == MYSQL_TYPE_DOUBLE || fields[i].type == MYSQL_TYPE_NEWDECIMAL) //sum
-//									al.add(fields[i].name, *((double *)dataOuts[i]));
-//								else
-//									al.add(fields[i].name, dataOuts[i]);
-//							}
-//							arr.push_back(al);
-//						}
-//						if (arr.size() == 0)
-//							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-//						rs.add("data", arr);
-//						delete [] ps;
-//						delete [] is_null;
-//						for(auto el : dataOuts)
-//							delete [] el;
-//					}
-//					for (auto el : dataInputs)
-//						delete[] el;
-//				}
-//				mysql_stmt_close(stmt);
-//				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-//				return rs;
-//			}
+		private:
+			Json genSql(string& querySql, Json& values, Json& params, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false)
+			{
+				if (!params.isError()) {
+					string tablename = querySql;
+					querySql = "";
+					string where = "";
+					const string AndJoinStr = " and ";
+					string fieldsJoinStr = "*";
+
+					if (!fields.empty()) {
+						fieldsJoinStr = DbUtils::GetVectorJoinStr(fields);
+					}
+
+					string fuzzy = params.take("fuzzy").toString();
+					string sort = params.take("sort").toString();
+					int page = atoi(params.take("page").toString().c_str());
+					int size = atoi(params.take("size").toString().c_str());
+					string sum = params.take("sum").toString();
+					string count = params.take("count").toString();
+					string group = params.take("group").toString();
+
+					if (!count.empty() || !sum.empty())
+						fieldsJoinStr = " ";
+
+					vector<string> allKeys = params.getAllKeys();
+					size_t len = allKeys.size();
+					for (size_t i = 0; i < len; i++) {
+						string k = allKeys[i];
+						bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
+						string v = params[k].toString();
+						!parameterized && vIsString && escapeString(v);
+						if (where.length() > 0) {
+							where.append(AndJoinStr);
+						}
+
+						if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
+							string whereExtra = "";
+							vector<string> ele = DbUtils::MakeVector(params[k].toString());
+							if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
+								return DbUtils::MakeJsonObject(STPARAMERR, k + " is wrong.");
+							}
+							else {
+								if (k.compare("ins") == 0) {
+									string c = ele.at(0);
+									vector<string>(ele.begin() + 1, ele.end()).swap(ele);
+									if(parameterized){
+										whereExtra.append("\"").append(c).append("\"").append(" in (");
+										int eleLen = ele.size();
+										for (int i = 0; i < eleLen; i++)
+										{
+											string el = ele[i];
+											whereExtra.append("?");
+											if (i < eleLen - 1)
+												whereExtra.append(",");
+											values.add(el);
+										}
+										whereExtra.append(")");
+									}else
+										whereExtra.append("\"").append(c).append("\"").append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
+								}
+								else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
+									whereExtra.append(" ( ");
+									for (size_t j = 0; j < ele.size(); j += 2) {
+										if (j > 0) {
+											whereExtra.append(" or ");
+										}
+										whereExtra.append("\"").append(ele.at(j)).append("\"").append(" ");
+										string eqStr = parameterized ? (k.compare("lks") == 0 ? " like ?" : " = ?") : (k.compare("lks") == 0 ? " like '" : " = '");
+										string vsStr = ele.at(j + 1);
+										if (k.compare("lks") == 0) {
+											vsStr.insert(0, "%");
+											vsStr.append("%");
+										}
+										whereExtra.append(eqStr);
+										if(parameterized)
+											values.add(vsStr);
+										else{
+											vsStr.append("'");
+											whereExtra.append(vsStr);
+										}
+									}
+									whereExtra.append(" ) ");
+								}
+							}
+							where.append(whereExtra);
+						}
+						else {				// process value
+							if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v)) {
+								vector<string> vls = DbUtils::MakeVector(v);
+								if (vls.size() == 2) {
+									if(parameterized){
+										where.append("\"").append(k).append("\"").append(vls.at(0)).append(" ? ");
+										values.add(vls.at(1));
+									}else
+										where.append("\"").append(k).append("\"").append(vls.at(0)).append("'").append(vls.at(1)).append("'");
+								}
+								else if (vls.size() == 4) {
+									if(parameterized){
+										where.append("\"").append(k).append("\"").append(vls.at(0)).append(" ? ").append("and ");
+										where.append("\"").append(k).append("\"").append(vls.at(2)).append("? ");
+										values.add(vls.at(1));
+										values.add(vls.at(3));
+									}else{
+										where.append("\"").append(k).append("\"").append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
+										where.append("\"").append(k).append("\"").append(vls.at(2)).append("'").append(vls.at(3)).append("'");
+									}
+								}
+								else {
+									return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
+								}
+							}
+							else if (fuzzy == "1") {
+								if(parameterized){
+									where.append("\"").append(k).append("\"").append(" like ? ");
+									values.add(v.insert(0, "%").append("%"));
+								}
+								else
+									where.append("\"").append(k).append("\"").append(" like '%").append(v).append("%'");
+								
+							}
+							else {
+								if(parameterized){
+									where.append("\"").append(k).append("\"").append(" = ? ");
+									vIsString ? values.add(v) : values.add(params[k].toDouble());
+								}else{
+									if (vIsString)
+										where.append("\"").append(k).append("\"").append(" = '").append(v).append("'");
+									else
+										where.append("\"").append(k).append("\"").append(" = ").append(v);
+								}
+							}
+						}
+					}
+
+					string extra = "";
+					if (!sum.empty()) {
+						vector<string> ele = DbUtils::MakeVector(sum);
+						if (ele.empty() || ele.size() % 2 == 1)
+							return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
+						else {
+							for (size_t i = 0; i < ele.size(); i += 2) {
+								extra.append("sum(\"").append(ele.at(i)).append("\") as ").append(ele.at(i + 1)).append(" ");
+							}
+						}
+					}
+					if (!count.empty()) {
+						vector<string> ele = DbUtils::MakeVector(count);
+						if (ele.empty() || ele.size() % 2 == 1)
+							return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
+						else {
+							for (size_t i = 0; i < ele.size(); i += 2) {
+								extra.append("count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
+							}
+						}
+					}
+
+					if (!group.empty()) {
+						vector<string> gs = DbUtils::MakeVector(group);
+						for (int i = 0; i < gs.size(); i++)
+							gs[i] = "\"" + gs[i] + "\"";
+						string gpstr = DbUtils::GetVectorJoinStr(gs);
+						querySql = "select " + gpstr + " from ";//.append(" group by ").append("\"").append(group).append("\"");
+						querySql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"");
+						querySql.append(" group by ").append(gpstr);
+					}
+					else if (queryType == 1) {
+						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"");
+						if (where.length() > 0){
+							querySql.append(" where ").append(where);
+						}
+					}
+					else {
+						querySql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"");
+						if (queryType == 2 && !fields.empty()) {
+							size_t starIndex = querySql.find('*');
+							if (starIndex < 10) {
+								querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
+							}
+						}
+						if (where.length() > 0) {
+							size_t whereIndex = querySql.find("where");
+							if (whereIndex == querySql.npos) {
+								querySql.append(" where ").append(where);
+							}
+							else {
+								querySql.append(" and ").append(where);
+							}
+						}
+					}
+
+					if (!sort.empty()) {
+						querySql.append(" order by ").append(sort);
+					}
+
+					if (page > 0) {
+						page--;
+						size = size < 1 ? 10 : size;
+						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
+					}
+					return DbUtils::MakeJsonObject(STSUCCESS);
+				}
+				else {
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				}
+			}
+
+			Json ExecQuerySql(string aQuery, vector<string> fields)
+			{
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				string err = "";
+				Dm8Con* con = GetConnection(err);
+				if (con == nullptr)
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
+				if (!DSQL_SUCCEEDED(rt))
+				{
+					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				}
+				sdint2 num_fields;
+				rt = dpi_number_columns(con->hstmt, &num_fields);
+
+				std::vector<sdbyte*> fieldNames;
+				fieldNames.resize(num_fields);
+				std::vector<sdint2> fieldType;
+				fieldType.resize(num_fields);
+				std::vector<sdint2> name_len;
+				name_len.resize(num_fields);
+
+				std::vector<slength> outPtrs;
+				outPtrs.resize(num_fields);
+				std::vector<char*> dataOuts;
+				dataOuts.resize(num_fields);
+				std::vector<double> outDoubles;
+				outDoubles.resize(num_fields);
+				std::vector<int> outInts;
+				outInts.resize(num_fields);
+
+				for (int i = 0; i < num_fields; ++i)
+				{
+					ulength col_sz;
+					sdint2 dec_digits;
+					sdint2 nullable;
+					fieldNames[i] = new sdbyte[SDBYTE_MAX];
+					memset(fieldNames[i], 0, SDBYTE_MAX);
+					rt = dpi_desc_column(con->hstmt, i + 1, fieldNames[i], SDBYTE_MAX, &name_len[i],
+						&fieldType[i], &col_sz, &dec_digits, &nullable);
+					if (!DSQL_SUCCEEDED(rt))
+					{
+						dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
+						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+					}
+					if (fieldType[i] == DSQL_DOUBLE) {
+						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_DOUBLE, &outDoubles[i], sizeof(double), &outPtrs[i]);
+					}
+					else if (fieldType[i] == DSQL_INT) {
+						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_SLONG, &outInts[i], sizeof(int), &outPtrs[i]);
+					}
+					else {
+						dataOuts[i] = new char[SDINT2_MAX];
+						memset(dataOuts[i], 0, SDINT2_MAX);
+						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_NCHAR, dataOuts[i], SDINT2_MAX, &outPtrs[i]);
+					}
+
+				}
+				
+				Json arr(JsonType::Array);
+				ulength row_num;
+				while (dpi_fetch(con->hstmt, &row_num) != DSQL_NO_DATA)
+				{
+					Json al;
+					for (int i = 0; i < num_fields; ++i)
+					{
+						if (fieldType[i] == DSQL_DOUBLE) {
+							al.add(string((char*)(fieldNames[i])), outDoubles[i]);
+						}
+						else if (fieldType[i] == DSQL_INT) {
+							al.add(string((char*)(fieldNames[i])), outInts[i]);
+						}
+						else {
+							string tmp(dataOuts[i]);
+							al.add(string((char*)(fieldNames[i])), tmp.erase(tmp.find_last_not_of(" ") + 1));
+						}
+					}
+					arr.push_back(al);
+				}
+				if (arr.isEmpty())
+					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+				rs.add("data", arr);
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+				for (auto el : dataOuts)
+					delete[] el;
+				for (auto el : fieldNames)
+					delete[] el;
+				return rs;
+			}
+
+			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				//string err = "";
+				//MYSQL* mysql = GetConnection(err);
+				//if (mysql == nullptr)
+				//	return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				//MYSQL_STMT* stmt = mysql_stmt_init(mysql);
+				//if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
+				//{
+				//	string errmsg = "";
+				//	errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
+				//	errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+				//	rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+				//	return rs;
+				//}
+				//else
+				//{
+				//	const int vLen = values.size();
+				//	std::vector<char *> dataInputs;
+				//	if (vLen > 0)
+				//	{
+				//		MYSQL_BIND *bind = new MYSQL_BIND[vLen];
+				//		std::memset(bind, 0, sizeof(MYSQL_BIND) * vLen);
+				//		dataInputs.resize(vLen);
+				//		for (int i = 0; i < vLen; i++)
+				//		{
+				//			string ele = values[i].toString();
+				//			int eleLen = ele.length() + 1;
+				//			dataInputs[i] = new char[eleLen];
+				//			memset(dataInputs[i], 0, eleLen);
+				//			memcpy(dataInputs[i], ele.c_str(), eleLen);
+				//			bind[i].buffer_type = MYSQL_TYPE_STRING;
+				//			bind[i].buffer = (void *)dataInputs[i];
+				//			bind[i].buffer_length = eleLen - 1;
+				//		}
+				//		if (mysql_stmt_bind_param(stmt, bind))
+				//		{
+				//			string errmsg = "";
+				//			errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+				//			errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+				//			rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+				//			return rs;
+				//		}
+				//		delete [] bind;
+				//	}
+
+				//	MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
+				//	MYSQL_FIELD* fields;
+				//	if (prepare_meta_result != nullptr)
+				//	{
+				//		int ret = 1;
+				//		mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void *)&ret);
+				//		if (mysql_stmt_execute(stmt))
+				//		{
+				//			string errmsg = "";
+				//			errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
+				//			errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
+				//			rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+				//			return rs;
+				//		}
+				//		ret = mysql_stmt_store_result(stmt);
+				//		int num_fields = mysql_num_fields(prepare_meta_result);
+				//		fields = mysql_fetch_fields(prepare_meta_result);
+				//		MYSQL_BIND *ps = new MYSQL_BIND[num_fields];
+				//		std::memset(ps, 0, sizeof(MYSQL_BIND) * num_fields);
+				//		std::vector<char *> dataOuts(num_fields);
+				//		char* is_null = new char[num_fields];
+				//		memset(is_null, 0, sizeof(char) * num_fields);
+				//		for (int i = 0; i < num_fields; ++i)
+				//		{
+				//			auto p = allocate_buffer_for_field(fields[i]);
+				//			dataOuts[i] = new char[p.size];
+				//			memset(dataOuts[i], 0, p.size);
+				//			ps[i].buffer_type = p.type;
+				//			ps[i].buffer = (void *)dataOuts[i];
+				//			ps[i].buffer_length = p.size;
+				//			ps[i].is_null = &is_null[i];
+				//		}
+				//		ret = mysql_stmt_bind_result(stmt, ps);
+				//		Json arr(JsonType::Array);
+				//		while (mysql_stmt_fetch(stmt) != MYSQL_NO_DATA)
+				//		{
+				//			Json al;
+				//			for (int i = 0; i < num_fields; ++i)
+				//			{
+				//				if (is_null[i])
+				//					al.add(fields[i].name, nullptr);
+				//				else if (fields[i].type == MYSQL_TYPE_LONG || fields[i].type == MYSQL_TYPE_LONGLONG)  //count
+				//					al.add(fields[i].name, (long)*((int *)dataOuts[i]));
+				//				else if (fields[i].type == MYSQL_TYPE_DOUBLE || fields[i].type == MYSQL_TYPE_NEWDECIMAL) //sum
+				//					al.add(fields[i].name, *((double *)dataOuts[i]));
+				//				else
+				//					al.add(fields[i].name, dataOuts[i]);
+				//			}
+				//			arr.push_back(al);
+				//		}
+				//		if (arr.size() == 0)
+				//			rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+				//		rs.add("data", arr);
+				//		delete [] ps;
+				//		delete [] is_null;
+				//		for(auto el : dataOuts)
+				//			delete [] el;
+				//	}
+				//	for (auto el : dataInputs)
+				//		delete[] el;
+				//}
+				//mysql_stmt_close(stmt);
+				//!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+				return rs;
+			}
 
 			Json ExecNoneQuerySql(string aQuery) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
@@ -732,16 +786,16 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
 				}
 				int vLen = values.size();
+				std::vector<char*> dataInputs;
+				dataInputs.resize(vLen); 
+				std::vector<slength> in_ptrs;
+				in_ptrs.resize(vLen);
+				std::vector<double> in_dbs;
+				in_dbs.resize(vLen);
+				std::vector<int> in_ints;
+				in_ints.resize(vLen);
 				if (vLen > 0)
 				{
-					std::vector<char*> dataInputs;
-					dataInputs.resize(vLen); 
-					std::vector<slength> in_ptrs;
-					in_ptrs.resize(vLen);
-					std::vector<double> in_dbs;
-					in_dbs.resize(vLen);
-					std::vector<int> in_ints;
-					in_ints.resize(vLen);
 					for (int i = 0; i < vLen; i++)
 					{
 						if (values[i].isString()) {
@@ -773,13 +827,15 @@ namespace ZORM {
 							
 						}
 					}
-					rt = dpi_exec(con->hstmt);
-					if (!DSQL_SUCCEEDED(rt))
-					{
-						dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
-					}
 				}
+				rt = dpi_exec(con->hstmt);
+				if (!DSQL_SUCCEEDED(rt))
+				{
+					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+				}
+				for (auto el : dataInputs)
+					delete[] el;
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
