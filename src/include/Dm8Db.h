@@ -230,25 +230,23 @@ namespace ZORM {
 
 			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
 			{
-				return Json();
-				/*bool parameterized = sql.find("?") != sql.npos;
+				bool parameterized = sql.find("?") != sql.npos;
 				Json rs = genSql(sql, values, params, fields, 2, parameterized);
 				if(rs["status"].toInt() == 200)
 					return parameterized ? ExecQuerySql(sql, fields, values) : ExecQuerySql(sql, fields);
 				else
-					return rs;*/
+					return rs;
 			}
 
 
 			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
 			{
-				return Json();
-				/*bool parameterized = sql.find("?") != sql.npos;
+				bool parameterized = sql.find("?") != sql.npos;
 				Json rs = genSql(sql, values, params, std::vector<string>(), 3, parameterized);
 				if(rs["status"].toInt() == 200)
 					return parameterized ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
 				else
-					return rs;*/
+					return rs;
 			}
 
 
@@ -839,134 +837,6 @@ namespace ZORM {
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
-
-//			struct st_buffer_size_type
-//			{
-//				size_t size;
-//				enum_field_types type;
-//				st_buffer_size_type(size_t s, enum_field_types t) : size(s + 1), type(t) {}
-//			};
-//
-//			
-//			st_buffer_size_type allocate_buffer_for_field(const MYSQL_FIELD field)
-//			{
-//				switch (field.type)
-//				{
-//				case MYSQL_TYPE_NULL:
-//					return st_buffer_size_type(0, field.type);
-//				case MYSQL_TYPE_TINY:
-//					return st_buffer_size_type(1, field.type);
-//				case MYSQL_TYPE_SHORT:
-//					return st_buffer_size_type(2, field.type);
-//				case MYSQL_TYPE_INT24:
-//				case MYSQL_TYPE_LONG:
-//				case MYSQL_TYPE_FLOAT:
-//					return st_buffer_size_type(4, field.type);
-//				case MYSQL_TYPE_DOUBLE:
-//				case MYSQL_TYPE_LONGLONG:
-//					return st_buffer_size_type(8, field.type);
-//				case MYSQL_TYPE_YEAR:
-//					return st_buffer_size_type(2, MYSQL_TYPE_SHORT);
-//				case MYSQL_TYPE_TIMESTAMP:
-//				case MYSQL_TYPE_DATE:
-//				case MYSQL_TYPE_TIME:
-//				case MYSQL_TYPE_DATETIME:
-//					return st_buffer_size_type(sizeof(MYSQL_TIME), field.type);
-//
-//				case MYSQL_TYPE_TINY_BLOB:
-//				case MYSQL_TYPE_MEDIUM_BLOB:
-//				case MYSQL_TYPE_LONG_BLOB:
-//				case MYSQL_TYPE_BLOB:
-//				case MYSQL_TYPE_STRING:
-//				case MYSQL_TYPE_VAR_STRING:
-//				case MYSQL_TYPE_JSON:{
-//					return st_buffer_size_type(field.max_length, field.type);
-//				}
-//				case MYSQL_TYPE_DECIMAL:
-//				case MYSQL_TYPE_NEWDECIMAL:
-//					return st_buffer_size_type(64, field.type);
-//#if A1
-//				case MYSQL_TYPE_TIMESTAMP:
-//				case MYSQL_TYPE_YEAR:
-//					return st_buffer_size_type(10, field.type);
-//#endif
-//#if A0
-//				case MYSQL_TYPE_ENUM:
-//				case MYSQL_TYPE_SET:
-//#endif
-//				case MYSQL_TYPE_BIT:
-//					return st_buffer_size_type(8, MYSQL_TYPE_BIT);
-//				case MYSQL_TYPE_GEOMETRY:
-//					return st_buffer_size_type(field.max_length, MYSQL_TYPE_BIT);
-//				default:
-//					return st_buffer_size_type(field.max_length, field.type);
-//				}
-//			};
-//
-//			bool ExecSqlForTransGo(string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
-//				string err = "";
-//				MYSQL* mysql = GetConnection(err);
-//				if (mysql == nullptr){
-//					if(out)
-//						*out += "can not connect the database.";
-//					return false;
-//				}
-//
-//				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
-//				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
-//				{
-//					string errmsg = "";
-//					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
-//					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-//					if(out)
-//						*out += errmsg;
-//					return false;
-//				}
-//				else {
-//					int vLen = values.size();
-//					std::vector<char *> dataInputs;
-//					if (vLen > 0)
-//					{
-//						MYSQL_BIND *bind = new MYSQL_BIND[vLen];
-//						std::memset(bind, 0, sizeof(MYSQL_BIND) * vLen);
-//						dataInputs.resize(vLen);
-//						for (int i = 0; i < vLen; i++)
-//						{
-//							string ele = values[i].toString();
-//							int eleLen = ele.length() + 1;
-//							dataInputs[i] = new char[eleLen];
-//							memset(dataInputs[i], 0, eleLen);
-//							memcpy(dataInputs[i], ele.c_str(), eleLen);
-//							bind[i].buffer_type = MYSQL_TYPE_STRING;
-//							bind[i].buffer = (void *)dataInputs[i];
-//							bind[i].buffer_length = eleLen - 1;
-//						}
-//						if (mysql_stmt_bind_param(stmt, bind))
-//						{
-//							string errmsg = "";
-//							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-//							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-//							if (out)
-//								*out += errmsg;
-//							return false;
-//						}
-//						delete [] bind;
-//					}
-//					if (mysql_stmt_execute(stmt))
-//					{
-//						string errmsg = "";
-//						errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-//						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-//						if (out)
-//							*out += errmsg;
-//						return false;
-//					}
-//					for (auto el : dataInputs)
-//						delete[] el;
-//				}
-//				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-//				return true;
-//			}
 
 			int getDecimalCount(double data) {
 				data = std::abs(data);
