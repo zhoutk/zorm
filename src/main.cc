@@ -27,12 +27,12 @@ int main()
 	// rs = db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
 	Json cObj{
 		{"id", "a1b2c3d4"},
-		{"name", "kevin中国"},
+		{"name", "kevin涓浗"},
 		{"age", "20"}
 	};
 	Json cObj2{
 		{"id", "a1b2c3d5"},
-		{"name", "john美国"},
+		{"name", "john缇庡浗"},
 		{"age", "22"}
 	};
 	Json arr(JsonType::Array);
@@ -42,7 +42,7 @@ int main()
 	Json p;
 	Json rs = db->select("table_for_test", p);
 
-	/*Json uobj("{\"id\":\"a1b2c3d4\",\"name\":\"你的名字\"}");
+	/*Json uobj("{\"id\":\"a1b2c3d4\",\"name\":\"浣犵殑鍚嶅瓧\"}");
 	rs = db->update("table_for_test", uobj);
 
 	Json obj("{\"id\":\"a1b2c3d4\"}");

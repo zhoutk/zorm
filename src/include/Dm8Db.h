@@ -17,9 +17,9 @@ namespace ZORM {
 	namespace Dm8 {
 
 		struct Dm8Con {
-			dhenv henv; /* 环境句柄 */
-			dhcon hcon; /* 连接句柄 */
-			dhstmt hstmt; /* 语句句柄 */
+			dhenv henv;
+			dhcon hcon;
+			dhstmt hstmt;
 			Dm8Con() { henv = nullptr; hcon = nullptr; hstmt = nullptr; }
 		};
 
@@ -37,7 +37,7 @@ namespace ZORM {
 				sdbyte err_msg[SDBYTE_MAX];
 				char err[SDBYTE_MAX];
 
-				/* 获取错误信息集合 */
+				/* 鑾峰彇閿欒淇℃伅闆嗗悎 */
 				dpi_get_diag_rec(hndl_type, hndl, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
 				printf("err_msg = %s, err_code = %d\n", err_msg, err_code);
 				sprintf(err, "err_msg = %s, err_code = %d\n", err_msg, err_code);

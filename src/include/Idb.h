@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "dll_global.h"
 #include "zjson.hpp"
 #include <vector>

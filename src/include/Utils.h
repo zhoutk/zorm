@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "zjson.hpp"
 #include <sstream>
 #include <time.h>
