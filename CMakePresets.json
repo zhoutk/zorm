@@ -41,6 +41,9 @@
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
+            },
+            "environment": {
+                "PATH": "D:\\libs\\ormdlls;$penv{PATH}"
             }
         },
         {
