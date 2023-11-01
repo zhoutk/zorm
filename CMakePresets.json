@@ -14,6 +14,9 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Linux"
             },
+            "environment": {
+                "LD_LIBRARY_PATH": "/opt/dm8/dpi"
+            },
             "vendor": { "microsoft.com/VisualStudioRemoteSettings/CMake/1.0": { "sourceDir": "$env{HOME}/vs/$ms{projectDirName}" } }
         },
         {
@@ -22,13 +25,6 @@
             "description": "Linux (64 位)(Debug)",
             "inherits": "linux-base",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-        },
-        {
-            "name": "linux-release",
-            "displayName": "Linux Release",
-            "description": "Linux (64 位)(Release)",
-            "inherits": "linux-base",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         },
         {
             "name": "windows-base",
@@ -57,17 +53,6 @@
                 "strategy": "external"
             },
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-        },
-        {
-            "name": "x64-release",
-            "displayName": "x64 Release",
-            "description": "使用 Visual Studio 开发环境定向到 Windows (64 位)。(RelWithDebInfo)",
-            "inherits": "windows-base",
-            "architecture": {
-                "value": "x64",
-                "strategy": "external"
-            },
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         }
     ]
 }

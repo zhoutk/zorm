@@ -27,19 +27,20 @@ int main()
 	// rs = db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
 	Json cObj{
 		{"id", "a1b2c3d4"},
-		{"name", "kevin"},
+		{"name", "kevin中国"},
 		{"age", "20"}
 	};
 	Json cObj2{
 		{"id", "a1b2c3d5"},
-		{"name", "john"},
+		{"name", "john美国"},
 		{"age", "22"}
 	};
 	Json arr(JsonType::Array);
 	arr.add({cObj, cObj2});
-	Json rs = db->insertBatch("table_for_test", arr);
+	//Json rs = db->insertBatch("table_for_test", arr);
 
-	//Json rs = db->select("table_for_test", cObj);
+	Json p;
+	Json rs = db->select("table_for_test", p);
 
 	/*Json uobj("{\"id\":\"a1b2c3d4\",\"name\":\"你的名字\"}");
 	rs = db->update("table_for_test", uobj);
