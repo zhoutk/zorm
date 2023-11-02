@@ -2,7 +2,7 @@
 #include <assert.h>
 #include "Idb.h"
 #include "sqlite3.h"
-#include "Utils.h"
+#include "DbUtils.h"
 #include "GlobalConstants.h"
 #include <regex>
 #include <algorithm>

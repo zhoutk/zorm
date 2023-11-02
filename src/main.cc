@@ -42,15 +42,32 @@ int main()
 	Json p;
 	Json rs = db->select("table_for_test", p);
 
+	std::cout << rs.toString() << "\n";
+
+	/*Json cObj{
+	{"id", "a1b2c3d4"},
+	{"name", "Kevin 凯文"},
+	{"age", 18}
+	};
+	Json rs = db->create("table_for_test", cObj);
+
+	Json p;
+	rs = db->select("table_for_test", p);
+	std::string dd = rs.toString();
+	std::cout << rs.toString() << "\n";
+
+	Json obj("{\"id\":\"a1b2c3d4\"}");
+
+	db->remove("table_for_test", obj);
+
+	std::cout << "this is the last line.";*/
+
 	/*Json uobj("{\"id\":\"a1b2c3d4\",\"name\":\"你的名字\"}");
 	rs = db->update("table_for_test", uobj);
 
 	Json obj("{\"id\":\"a1b2c3d4\"}");
 
 	db->remove("table_for_test", obj);*/
-
-	std::cout << rs.toString() << "\n";
-	std::cout << "this is the last line.";
 
     return 0;
 }

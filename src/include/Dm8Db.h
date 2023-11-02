@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Idb.h"
-#include "Utils.h"
+#include "DbUtils.h"
 #include "GlobalConstants.h"
 #include <algorithm>
 #include <iostream>
@@ -58,7 +58,6 @@ namespace ZORM {
 						dpi_err_msg_print(DSQL_HANDLE_DBC, dmCon->hcon, err);
 						return nullptr;
 					}
-					dpi_alloc_stmt(dmCon->hcon, &dmCon->hstmt);
 					pool.push_back(dmCon);
 					return dmCon;
 				}
@@ -553,6 +552,7 @@ namespace ZORM {
 				Dm8Con* con = GetConnection(err);
 				if (con == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				dpi_alloc_stmt(con->hcon, &con->hstmt);
 				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
 				if (!DSQL_SUCCEEDED(rt))
 				{
@@ -629,6 +629,7 @@ namespace ZORM {
 				if (arr.isEmpty())
 					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 				rs.add("data", arr);
+				dpi_free_stmt(con->hstmt);
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				for (auto el : dataOuts)
 					delete[] el;
@@ -755,12 +756,14 @@ namespace ZORM {
 				Dm8Con* con = GetConnection(err);
 				if (con == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				dpi_alloc_stmt(con->hcon, &con->hstmt); 
 				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
 				}
+				dpi_free_stmt(con->hstmt);
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
@@ -771,6 +774,7 @@ namespace ZORM {
 				Dm8Con* con = GetConnection(err);
 				if (con == nullptr)
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				dpi_alloc_stmt(con->hcon, &con->hstmt);
 				DPIRETURN rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
 				if (!DSQL_SUCCEEDED(rt))
 				{
@@ -826,6 +830,7 @@ namespace ZORM {
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
 				}
+				dpi_free_stmt(con->hstmt);
 				for (auto el : dataInputs)
 					delete[] el;
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;

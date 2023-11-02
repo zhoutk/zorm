@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "Idb.h"
-#include "Utils.h"
+#include "DbUtils.h"
 #include "GlobalConstants.h"
 #include "mysql.h"
 #include <algorithm>
