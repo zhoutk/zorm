@@ -511,7 +511,7 @@ namespace ZORM {
 						}
 					}
 					else {
-						querySql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"");
+						querySql.append(tablename);
 						if (queryType == 2 && !fields.empty()) {
 							size_t starIndex = querySql.find('*');
 							if (starIndex < 10) {
