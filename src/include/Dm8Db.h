@@ -37,7 +37,6 @@ namespace ZORM {
 				sdbyte err_msg[SDBYTE_MAX];
 				char err[SDBYTE_MAX];
 
-				/* 获取错误信息集合 */
 				dpi_get_diag_rec(hndl_type, hndl, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
 				printf("err_msg = %s, err_code = %d\n", err_msg, err_code);
 				sprintf(err, "err_msg = %s, err_code = %d\n", err_msg, err_code);
@@ -71,7 +70,7 @@ namespace ZORM {
 			Dm8Db(string dbhost, string dbuser, string dbpwd, Json options = Json()) :
 				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(""), dbport(5236), maxConn(1), DbLogClose(false), queryByParameter(false)
 			{
-				if(!options["db_conn"].isError())
+				if(!options["db_conn"].isError() && options["db_conn"].toInt() > 1)
 					maxConn = options["db_conn"].toInt();
 				if(!options["db_char"].isError())
 					charsetName = options["db_char"].toString();
@@ -110,7 +109,6 @@ namespace ZORM {
 							else
 								vs.append(v);
 						}
-						
 						if (i < len - 1) {
 							fields.append(",");
 							vs.append(",");
@@ -132,7 +130,6 @@ namespace ZORM {
 					execSql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(" set ");
 
 					vector<string> allKeys = params.getAllKeys();
-
 					vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 					if (iter == allKeys.end()) {
 						return DbUtils::MakeJsonObject(STPARAMERR);
@@ -189,7 +186,6 @@ namespace ZORM {
 				}
 			}
 
-
 			Json remove(string tablename, Json& params) override
 			{
 				if (!params.isError()) {
@@ -237,7 +233,6 @@ namespace ZORM {
 					return rs;
 			}
 
-
 			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
 			{
 				bool parameterized = sql.find("?") != sql.npos;
@@ -247,7 +242,6 @@ namespace ZORM {
 				else
 					return rs;
 			}
-
 
 			Json insertBatch(string tablename, Json& elements, string constraint) override
 			{
@@ -292,38 +286,47 @@ namespace ZORM {
 
 			Json transGo(Json& sqls, bool isAsync = false) override
 			{
-				return Json();
-				/*if (sqls.size() < 2) {
+				if (sqls.size() < 2) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 				else {
 					bool isExecSuccess = true;
 					string errmsg = "Running transaction error: ";
 					string err = "";
-					MYSQL* mysql = GetConnection(err);
-					if (mysql == nullptr)
+					Dm8Con* con = GetConnection(err);
+					if (con == nullptr)
 						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+					DPIRETURN rt = dpi_set_con_attr(con->hcon, DSQL_ATTR_AUTOCOMMIT, 0, 0);
+					if (!DSQL_SUCCEEDED(rt))
+					{
+						dpi_err_msg_print(DSQL_HANDLE_DBC, con->hcon, err);
+					}
 
-					mysql_query(mysql, "begin;");
 					for (size_t i = 0; i < sqls.size(); i++) {
 						string sql = sqls[i]["text"].toString();
 						Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
-						isExecSuccess = ExecSqlForTransGo(sql, values, &errmsg);
+						isExecSuccess = ExecSqlForTransGo(con, sql, values, &errmsg);
 						if (!isExecSuccess)
 							break;
 					}
 					if (isExecSuccess)
 					{
-						mysql_query(mysql, "commit;");
+						rt = dpi_commit(con->hcon);
 						!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
-						return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.");
 					}
 					else
 					{
-						mysql_query(mysql, "rollback;");
-						return DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
+						rt = dpi_rollback(con->hcon);
 					}
-				}*/
+					rt = dpi_set_con_attr(con->hcon, DSQL_ATTR_AUTOCOMMIT, (dpointer)1, 0);
+					if (!DSQL_SUCCEEDED(rt))
+					{
+						dpi_err_msg_print(DSQL_HANDLE_DBC, con->hcon, err);
+					}
+					return isExecSuccess ? 
+						DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.") : 
+						DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
+				}
 			}
 
 			~Dm8Db()
@@ -761,7 +764,7 @@ namespace ZORM {
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 				}
 				dpi_free_stmt(con->hstmt);
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
@@ -849,6 +852,22 @@ namespace ZORM {
 					minValue *= 10;
 				}
 				return ct;
+			}
+
+			bool ExecSqlForTransGo(Dm8Con* con, string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
+				DPIRETURN rt = dpi_alloc_stmt(con->hcon, &con->hstmt);
+				rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
+				if (!DSQL_SUCCEEDED(rt))
+				{
+					string err;
+					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
+					if (out)
+						*out += err;
+					return false;
+				}
+				rt = dpi_free_stmt(con->hstmt);
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+				return true;
 			}
 
 			bool escapeString(string& dest)

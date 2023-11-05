@@ -8,7 +8,7 @@ int main()
 {
 
 	Json options;
-	options.add("db_host", "192.168.5.12");
+	options.add("db_host", "192.168.0.243");
 	options.add("db_port", 5236);
 	options.add("db_name", "dbtest");
 	options.add("db_user", "SYSDBA");
@@ -25,32 +25,40 @@ int main()
 	// 	\"age\" int4 DEFAULT 0,\
 	// 	\"score\" numeric DEFAULT 0.0)");
 	// rs = db->execSql("ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");");
-	Json cObj{
-		{"id", "a1b2c3d4"},
-		{"name", "kevin中国"},
-		{"age", "20"}
-	};
-	Json cObj2{
-		{"id", "a1b2c3d5"},
-		{"name", "john美国"},
-		{"age", "22"}
-	};
-	Json arr(JsonType::Array);
-	arr.add({cObj, cObj2});
+	//Json cObj{
+	//	{"id", "a1b2c3d4"},
+	//	{"name", "kevin中国"},
+	//	{"age", "20"}
+	//};
+	//Json cObj2{
+	//	{"id", "a1b2c3d5"},
+	//	{"name", "john美国"},
+	//	{"age", "22"}
+	//};
+	//Json arr(JsonType::Array);
+	//arr.add({cObj, cObj2});
 	//Json rs = db->insertBatch("table_for_test", arr);
 
-	Json p;
-	Json rs = db->select("table_for_test", p);
+	Json sqlArr(JsonType::Array);
+	Json j1;
+	j1.add("text", "insert into \"dbtest\".\"table_for_test\" (\"id\",\"name\",\"age\",\"score\") values ('a4b5c6d7','test003',21,78.48)");
+	Json j2;
+	j2.add("text", "insert into \"dbtest\".\"table_for_test\" (\"id\",\"name\",\"age\",\"score\") values ('a6b7c8d9','test005',23,43.93)");
+	sqlArr.add({ j1, j2 });
+	Json rs = db->transGo(sqlArr);
+
+	/*Json p;
+	Json rs = db->select("table_for_test", p);*/
 
 	std::cout << rs.toString() << "\n";
 
-	/*Json cObj{
-	{"id", "a1b2c3d4"},
+	Json cObj{
+	{"id", "a8b2c3d4"},
 	{"name", "Kevin 凯文"},
 	{"age", 18}
 	};
-	Json rs = db->create("table_for_test", cObj);
-
+	rs = db->create("table_for_test", cObj);
+	/*
 	Json p;
 	rs = db->select("table_for_test", p);
 	std::string dd = rs.toString();

@@ -287,7 +287,7 @@ namespace ZORM {
 					for (size_t i = 0; i < sqls.size(); i++) {
 						string sql = sqls[i]["text"].toString();
 						Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
-						isExecSuccess = ExecSqlForTransGo(sql, values, &errmsg);
+						isExecSuccess = ExecSqlForTransGo(mysql, sql, values, &errmsg);
 						if (!isExecSuccess)
 							break;
 					}
@@ -818,15 +818,7 @@ namespace ZORM {
 				}
 			};
 
-			bool ExecSqlForTransGo(string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
-				string err = "";
-				MYSQL* mysql = GetConnection(err);
-				if (mysql == nullptr){
-					if(out)
-						*out += "can not connect the database.";
-					return false;
-				}
-
+			bool ExecSqlForTransGo(MYSQL* mysql, string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
 				MYSQL_STMT* stmt = mysql_stmt_init(mysql);
 				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
 				{

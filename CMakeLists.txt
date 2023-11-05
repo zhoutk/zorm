@@ -15,7 +15,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 # set(CMAKE_BUILD_TYPE Debug)  # Use `cmake -DCMAKE_BUILD_TYPE=Debug` more better
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
-
+add_definitions(-DDM64)
 if(MSVC)
     add_definitions(-D__MSVC__)
 	string(APPEND CMAKE_CXX_FLAGS " /Zc:__cplusplus")
