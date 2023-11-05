@@ -44,7 +44,12 @@ int main()
 	j1.add("text", "insert into \"dbtest\".\"table_for_test\" (\"id\",\"name\",\"age\",\"score\") values ('a4b5c6d7','test003',21,78.48)");
 	Json j2;
 	j2.add("text", "insert into \"dbtest\".\"table_for_test\" (\"id\",\"name\",\"age\",\"score\") values ('a6b7c8d9','test005',23,43.93)");
-	sqlArr.add({ j1, j2 });
+	Json j3;
+	j3.add("text", "insert into \"dbtest\".\"table_for_test\" (\"id\",\"name\",\"age\",\"score\") values (?,?,?,?)");
+	Json arr(JsonType::Array);
+	arr.add({ "a5b6c7d8","test004",22,23.27});
+	j3.add("values", arr);
+	sqlArr.add({ j1, j2, j3 });
 	Json rs = db->transGo(sqlArr);
 
 	/*Json p;
