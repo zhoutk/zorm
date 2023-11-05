@@ -39,6 +39,8 @@ namespace ZORM {
 
 				dpi_get_diag_rec(hndl_type, hndl, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
 				printf("err_msg = %s, err_code = %d\n", err_msg, err_code);
+				if (hndl_type == DSQL_HANDLE_STMT)
+					dpi_free_stmt(hndl);
 				sprintf(err, "err_msg = %s, err_code = %d\n", err_msg, err_code);
 				errOut = string(err);
 			}
