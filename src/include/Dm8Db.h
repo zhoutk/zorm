@@ -645,113 +645,144 @@ namespace ZORM {
 
 			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				//string err = "";
-				//MYSQL* mysql = GetConnection(err);
-				//if (mysql == nullptr)
-				//	return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-				//MYSQL_STMT* stmt = mysql_stmt_init(mysql);
-				//if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
-				//{
-				//	string errmsg = "";
-				//	errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
-				//	errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-				//	rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-				//	return rs;
-				//}
-				//else
-				//{
-				//	const int vLen = values.size();
-				//	std::vector<char *> dataInputs;
-				//	if (vLen > 0)
-				//	{
-				//		MYSQL_BIND *bind = new MYSQL_BIND[vLen];
-				//		std::memset(bind, 0, sizeof(MYSQL_BIND) * vLen);
-				//		dataInputs.resize(vLen);
-				//		for (int i = 0; i < vLen; i++)
-				//		{
-				//			string ele = values[i].toString();
-				//			int eleLen = ele.length() + 1;
-				//			dataInputs[i] = new char[eleLen];
-				//			memset(dataInputs[i], 0, eleLen);
-				//			memcpy(dataInputs[i], ele.c_str(), eleLen);
-				//			bind[i].buffer_type = MYSQL_TYPE_STRING;
-				//			bind[i].buffer = (void *)dataInputs[i];
-				//			bind[i].buffer_length = eleLen - 1;
-				//		}
-				//		if (mysql_stmt_bind_param(stmt, bind))
-				//		{
-				//			string errmsg = "";
-				//			errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-				//			errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-				//			rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-				//			return rs;
-				//		}
-				//		delete [] bind;
-				//	}
+				string err = "";
+				Dm8Con* con = GetConnection(err);
+				if (con == nullptr)
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				dpi_alloc_stmt(con->hcon, &con->hstmt);
+				
+				DPIRETURN rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
+				if (!DSQL_SUCCEEDED(rt))
+				{
+					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+				}
+				int vLen = values.size();
+				std::vector<char*> dataInputs;
+				dataInputs.resize(vLen);
+				std::vector<slength> in_ptrs;
+				in_ptrs.resize(vLen);
+				std::vector<double> in_dbs;
+				in_dbs.resize(vLen);
+				std::vector<int> in_ints;
+				in_ints.resize(vLen);
+				if (vLen > 0)
+				{
+					for (int i = 0; i < vLen; i++)
+					{
+						if (values[i].isString()) {
+							string ele = values[i].toString();
+							int eleLen = ele.length() + 1;
+							dataInputs[i] = new char[eleLen];
+							memset(dataInputs[i], 0, eleLen);
+							memcpy(dataInputs[i], ele.c_str(), eleLen);
+							in_ptrs[i] = eleLen - 1;
+							rt = dpi_bind_param(con->hstmt, i + 1,
+								DSQL_PARAM_INPUT, DSQL_C_NCHAR, DSQL_VARCHAR,
+								in_ptrs[i], 0, (void*)dataInputs[i], in_ptrs[i], &in_ptrs[i]);
+						}
+						else {
+							if (getDecimalCount(values[i].toDouble()) > 0) {
+								in_dbs[i] = values[i].toDouble();
+								in_ptrs[i] = sizeof(in_dbs[i]);
+								rt = dpi_bind_param(con->hstmt, i + 1,
+									DSQL_PARAM_INPUT, DSQL_C_DOUBLE, DSQL_DOUBLE,
+									in_ptrs[i], 0, &in_dbs[i], in_ptrs[i], &in_ptrs[i]);
+							}
+							else {
+								in_ints[i] = values[i].toInt();
+								in_ptrs[i] = sizeof(in_ints[i]);
+								rt = dpi_bind_param(con->hstmt, i + 1,
+									DSQL_PARAM_INPUT, DSQL_C_SLONG, DSQL_INT,
+									in_ptrs[i], 0, &in_ints[i], in_ptrs[i], &in_ptrs[i]);
+							}
 
-				//	MYSQL_RES* prepare_meta_result = mysql_stmt_result_metadata(stmt);
-				//	MYSQL_FIELD* fields;
-				//	if (prepare_meta_result != nullptr)
-				//	{
-				//		int ret = 1;
-				//		mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void *)&ret);
-				//		if (mysql_stmt_execute(stmt))
-				//		{
-				//			string errmsg = "";
-				//			errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
-				//			errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
-				//			rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
-				//			return rs;
-				//		}
-				//		ret = mysql_stmt_store_result(stmt);
-				//		int num_fields = mysql_num_fields(prepare_meta_result);
-				//		fields = mysql_fetch_fields(prepare_meta_result);
-				//		MYSQL_BIND *ps = new MYSQL_BIND[num_fields];
-				//		std::memset(ps, 0, sizeof(MYSQL_BIND) * num_fields);
-				//		std::vector<char *> dataOuts(num_fields);
-				//		char* is_null = new char[num_fields];
-				//		memset(is_null, 0, sizeof(char) * num_fields);
-				//		for (int i = 0; i < num_fields; ++i)
-				//		{
-				//			auto p = allocate_buffer_for_field(fields[i]);
-				//			dataOuts[i] = new char[p.size];
-				//			memset(dataOuts[i], 0, p.size);
-				//			ps[i].buffer_type = p.type;
-				//			ps[i].buffer = (void *)dataOuts[i];
-				//			ps[i].buffer_length = p.size;
-				//			ps[i].is_null = &is_null[i];
-				//		}
-				//		ret = mysql_stmt_bind_result(stmt, ps);
-				//		Json arr(JsonType::Array);
-				//		while (mysql_stmt_fetch(stmt) != MYSQL_NO_DATA)
-				//		{
-				//			Json al;
-				//			for (int i = 0; i < num_fields; ++i)
-				//			{
-				//				if (is_null[i])
-				//					al.add(fields[i].name, nullptr);
-				//				else if (fields[i].type == MYSQL_TYPE_LONG || fields[i].type == MYSQL_TYPE_LONGLONG)  //count
-				//					al.add(fields[i].name, (long)*((int *)dataOuts[i]));
-				//				else if (fields[i].type == MYSQL_TYPE_DOUBLE || fields[i].type == MYSQL_TYPE_NEWDECIMAL) //sum
-				//					al.add(fields[i].name, *((double *)dataOuts[i]));
-				//				else
-				//					al.add(fields[i].name, dataOuts[i]);
-				//			}
-				//			arr.push_back(al);
-				//		}
-				//		if (arr.size() == 0)
-				//			rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
-				//		rs.add("data", arr);
-				//		delete [] ps;
-				//		delete [] is_null;
-				//		for(auto el : dataOuts)
-				//			delete [] el;
-				//	}
-				//	for (auto el : dataInputs)
-				//		delete[] el;
-				//}
-				//mysql_stmt_close(stmt);
-				//!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+						}
+					}
+				}
+				rt = dpi_exec(con->hstmt);
+				if (!DSQL_SUCCEEDED(rt))
+				{
+					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+				}
+
+				sdint2 num_fields;
+				rt = dpi_number_columns(con->hstmt, &num_fields);
+
+				std::vector<sdbyte*> fieldNames;
+				fieldNames.resize(num_fields);
+				std::vector<sdint2> fieldType;
+				fieldType.resize(num_fields);
+				std::vector<sdint2> name_len;
+				name_len.resize(num_fields);
+
+				std::vector<slength> outPtrs;
+				outPtrs.resize(num_fields);
+				std::vector<char*> dataOuts;
+				dataOuts.resize(num_fields);
+				std::vector<double> outDoubles;
+				outDoubles.resize(num_fields);
+				std::vector<int> outInts;
+				outInts.resize(num_fields);
+
+				for (int i = 0; i < num_fields; ++i)
+				{
+					ulength col_sz;
+					sdint2 dec_digits;
+					sdint2 nullable;
+					fieldNames[i] = new sdbyte[SDBYTE_MAX];
+					memset(fieldNames[i], 0, SDBYTE_MAX);
+					rt = dpi_desc_column(con->hstmt, i + 1, fieldNames[i], SDBYTE_MAX, &name_len[i],
+						&fieldType[i], &col_sz, &dec_digits, &nullable);
+					if (!DSQL_SUCCEEDED(rt))
+					{
+						dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
+						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+					}
+					if (fieldType[i] == DSQL_DOUBLE) {
+						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_DOUBLE, &outDoubles[i], sizeof(double), &outPtrs[i]);
+					}
+					else if (fieldType[i] == DSQL_INT) {
+						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_SLONG, &outInts[i], sizeof(int), &outPtrs[i]);
+					}
+					else {
+						dataOuts[i] = new char[SDINT2_MAX];
+						memset(dataOuts[i], 0, SDINT2_MAX);
+						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_NCHAR, dataOuts[i], SDINT2_MAX, &outPtrs[i]);
+					}
+
+				}
+
+				Json arr(JsonType::Array);
+				ulength row_num;
+				while (dpi_fetch(con->hstmt, &row_num) != DSQL_NO_DATA)
+				{
+					Json al;
+					for (int i = 0; i < num_fields; ++i)
+					{
+						if (fieldType[i] == DSQL_DOUBLE) {
+							al.add(string((char*)(fieldNames[i])), outDoubles[i]);
+						}
+						else if (fieldType[i] == DSQL_INT) {
+							al.add(string((char*)(fieldNames[i])), outInts[i]);
+						}
+						else {
+							string tmp(dataOuts[i]);
+							al.add(string((char*)(fieldNames[i])), tmp.erase(tmp.find_last_not_of(" ") + 1));
+						}
+					}
+					arr.push_back(al);
+				}
+				if (arr.isEmpty())
+					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+				rs.add("data", arr);
+				dpi_free_stmt(con->hstmt);
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
+				for (auto el : dataOuts)
+					delete[] el;
+				for (auto el : fieldNames)
+					delete[] el;
 				return rs;
 			}
 
@@ -906,7 +937,6 @@ namespace ZORM {
 									DSQL_PARAM_INPUT, DSQL_C_SLONG, DSQL_INT,
 									in_ptrs[i], 0, &in_ints[i], in_ptrs[i], &in_ptrs[i]);
 							}
-
 						}
 					}
 				}
@@ -919,7 +949,7 @@ namespace ZORM {
 						*out += err;
 					return false;
 				}
-				//rt = dpi_free_stmt(con->hstmt);
+				rt = dpi_free_stmt(con->hstmt);
 				for (auto el : dataInputs)
 					delete[] el;
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
