@@ -66,7 +66,7 @@ namespace ZORM {
 					queryByParameter = options["parameterized"].toBool();
 			}
 
-			Json create(string tablename, Json& params) override
+			Json create(const string& tablename, const Json& params) override
 			{
 				if (!params.isError()) {
 					Json values(JsonType::Array);
@@ -105,7 +105,7 @@ namespace ZORM {
 				}
 			}
 
-			Json update(string tablename, Json& params) override
+			Json update(const string& tablename, const Json& params) override
 			{
 				if (!params.isError()) {
 					Json values(JsonType::Array);
@@ -173,7 +173,7 @@ namespace ZORM {
 				}
 			}
 
-			Json remove(string tablename, Json& params) override
+			Json remove(const string& tablename, const Json& params) override
 			{
 				if (!params.isError()) {
 					Json values(JsonType::Array);
@@ -200,8 +200,9 @@ namespace ZORM {
 				}
 			}
 
-			Json select(string tablename, Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
+			Json select(const string& tbname, const Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
 			{
+				string tablename = tbname;
 				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
 				if(rs["status"].toInt() == 200)
 					return ExecQuerySql(tablename, fields, values);
@@ -209,8 +210,9 @@ namespace ZORM {
 					return rs;
 			}
 
-			Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
+			Json querySql(const string& sqlstr, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
 			{
+				string sql(sqlstr);
 				bool parameterized = sql.find("$") != sql.npos;
 				Json rs = genSql(sql, values, params, fields, 2, parameterized);
 				if(rs["status"].toInt() == 200)
@@ -219,8 +221,9 @@ namespace ZORM {
 					return rs;
 			}
 
-			Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) override
+			Json execSql(const string& sqlstr, Json params = Json(), Json values = Json(JsonType::Array)) override
 			{
+				string sql(sqlstr);
 				bool parameterized = sql.find("$") != sql.npos;
 				Json rs = genSql(sql, values, params, std::vector<string>(), 3, parameterized);
 				if(rs["status"].toInt() == 200)
@@ -229,7 +232,7 @@ namespace ZORM {
 					return rs;
 			}
 
-			Json insertBatch(string tablename, Json& elements, string constraint) override
+			Json insertBatch(const string& tablename, const Json& elements, string constraint) override
 			{
 				string sql = "insert into ";
 				vector<string> restrain = DbUtils::MakeVector(constraint);
@@ -285,7 +288,7 @@ namespace ZORM {
 				}
 			}
 
-			Json transGo(Json& sqls, bool isAsync = false) override
+			Json transGo(const Json& sqls, bool isAsync = false) override
 			{
 				if (sqls.size() < 2) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
@@ -297,17 +300,18 @@ namespace ZORM {
 					PGconn* pq = GetConnection(err);
 					if (pq == nullptr)
 						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-					sqls.push_front(Json({{"text", "BEGIN TRANSACTION;"}}));
-					sqls.push_back(Json({{"text", "END TRANSACTION;"}}));
-					for (size_t i = 0; i < sqls.size(); i++) {
-						string sql = sqls[i]["text"].toString();
-						Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+					Json tsqls(sqls);
+					tsqls.push_front(Json({{"text", "BEGIN TRANSACTION;"}}));
+					tsqls.push_back(Json({{"text", "END TRANSACTION;"}}));
+					for (size_t i = 0; i < tsqls.size(); i++) {
+						string sql = tsqls[i]["text"].toString();
+						Json values = tsqls[i]["values"].isError() ? Json(JsonType::Array) : tsqls[i]["values"];
 						if(!ExecSqlForTransGo(pq, sql, values, &err)){
 							ExecSqlForTransGo(pq, "ROLLBACK;");
 							return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
 						}
 					}
-					!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() - 2 << " sqls." << std::endl;
+					!DbLogClose && std::cout << "Transaction Success: run " << tsqls.size() - 2 << " sqls." << std::endl;
 					return DbUtils::MakeJsonObject(STSUCCESS, "Transaction success."); 
 				}
 			}
@@ -331,9 +335,10 @@ namespace ZORM {
 				return index;
 			}
 
-			Json genSql(string& querySql, Json& values, Json& params, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false)
+			Json genSql(string& querySql, Json& values, const Json& ps, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false)
 			{
-				if (!params.isError()) {
+				if (!ps.isError()) {
+					Json params(ps);
 					string tablename = querySql;
 					querySql = "";
 					string where = "";

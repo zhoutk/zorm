@@ -139,7 +139,7 @@ namespace ZJSON {
 			return(*this);
 		}
 
-		Json operator[](const int& index) {
+		Json operator[](const int& index) const {
 			Json rs(Type::Error);
 			if(this->type == Type::Array) {
 				if(index < 0){
@@ -152,7 +152,7 @@ namespace ZJSON {
 				return rs;
 		}
 
-		Json operator[](const string& key) {
+		Json operator[](const string& key) const {
 			Json rs(Type::Error);
 			if(this->type == Type::Object) {
 				if(key.empty() || this->child == nullptr){
@@ -168,11 +168,11 @@ namespace ZJSON {
 				return rs;
 		}
 
-		bool contains(const string& key){
+		bool contains(const string& key) const {
 			return !((*this)[key].type == Type::Error);
 		}
 
-		string getValueType(){
+		string getValueType() const {
 			return TYPENAMES[this->type];
 		}
 
@@ -182,7 +182,7 @@ namespace ZJSON {
 			return rs;
 		}
 
-		std::vector<std::string> getAllKeys(){
+		std::vector<std::string> getAllKeys() const {
 			std::vector<std::string> rs;
 			if(this->type == Type::Object){
 				Json* cur = this->child;
@@ -254,43 +254,43 @@ namespace ZJSON {
 			}
 		}
 
-		bool isError(){
+		bool isError() const {
 			return this->type == Type::Error;
 		}
 
-		bool isNull(){
+		bool isNull() const {
 			return this->type == Type::Null;
 		}
 
-		bool isObject(){
+		bool isObject() const {
 			return this->type == Type::Object;
 		}
 
-		bool isArray(){
+		bool isArray() const {
 			return this->type == Type::Array;
 		}
 
-		bool isNumber(){
+		bool isNumber() const {
 			return this->type == Type::Number;
 		}
 
-		bool isTrue(){
+		bool isTrue() const {
 			return this->type == Type::True;
 		}
 
-		bool isFalse(){
+		bool isFalse() const {
 			return this->type == Type::False;
 		}
 
-		bool isString(){
+		bool isString() const {
 			return this->type == Type::String;
 		}
 
-		float toFloat(){
+		float toFloat() const {
 			return (float)this->toDouble();
 		}
 
-		int size(){
+		int size() const {
 			if(this->type == Type::Array){
 				int ct = 0;
 				Json *cur = this->child;
@@ -305,11 +305,11 @@ namespace ZJSON {
 			}
 		}
 
-		bool isEmpty(){
+		bool isEmpty() const {
 			return this->size() <= 0;
 		}
 
-		string toString() {
+		string toString() const {
 			if (this->type == Type::Error){
 				return "";
 			}
@@ -323,13 +323,13 @@ namespace ZJSON {
 			}
 		}
 
-		int toInt(){
+		int toInt() const {
 			return (int)this->toDouble();
 		}
 
-		double toDouble(){
+		double toDouble() const {
 			if(this->type == Type::Number){
-				double * rs = std::get_if<double>(&this->data);
+				const double * rs = std::get_if<double>(&this->data);
 				if(rs)
 					return (*rs);
 				else
@@ -340,7 +340,7 @@ namespace ZJSON {
 				return 0.0;
 		}
 
-		bool toBool(){
+		bool toBool() const {
 			if(this->type == Type::False || this->type == Type::True){
 				if(this->type == Type::True)
 					return true;
@@ -350,7 +350,7 @@ namespace ZJSON {
 				return false;
 		}
 
-		std::vector<Json> toVector(){
+		std::vector<Json> toVector() const {
 			std::vector<Json> rs;
 			if(this->type == Type::Array){
 				Json* cur = this->child;
@@ -729,7 +729,7 @@ namespace ZJSON {
 			}
 		}
 
-		void toString(Json* json, string & result, int deep = 0, bool isObj = true) {
+		void toString(const Json* json, string & result, int deep = 0, bool isObj = true) const {
 			if (json->type == Type::Object || json->type == Type::Array) {
 				if(deep > 0)
 					result.append(isObj ? "\"" + json->name + "\":" : "")
