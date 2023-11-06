@@ -509,7 +509,7 @@ namespace ZORM {
 						for (int i = 0; i < gs.size(); i++)
 							gs[i] = "\"" + gs[i] + "\"";
 						string gpstr = DbUtils::GetVectorJoinStr(gs);
-						querySql = "select " + gpstr + " from ";//.append(" group by ").append("\"").append(group).append("\"");
+						querySql = "select " + gpstr + (extra.empty() ? "" : ","+extra) + " from ";//.append(" group by ").append("\"").append(group).append("\"");
 						querySql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"");
 						querySql.append(" group by ").append(gpstr);
 					}
@@ -566,7 +566,7 @@ namespace ZORM {
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
 				}
 				sdint2 num_fields;
 				rt = dpi_number_columns(con->hstmt, &num_fields);
@@ -599,7 +599,7 @@ namespace ZORM {
 					if (!DSQL_SUCCEEDED(rt))
 					{
 						dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+						return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
 					}
 					if (fieldType[i] == DSQL_DOUBLE) {
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_DOUBLE, &outDoubles[i], sizeof(double), &outPtrs[i]);
@@ -659,7 +659,7 @@ namespace ZORM {
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
 				}
 				int vLen = values.size();
 				std::vector<char*> dataInputs;
@@ -708,7 +708,7 @@ namespace ZORM {
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
 				}
 
 				sdint2 num_fields;
@@ -742,7 +742,7 @@ namespace ZORM {
 					if (!DSQL_SUCCEEDED(rt))
 					{
 						dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+						return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
 					}
 					if (fieldType[i] == DSQL_DOUBLE) {
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_DOUBLE, &outDoubles[i], sizeof(double), &outPtrs[i]);
@@ -801,7 +801,7 @@ namespace ZORM {
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
 				}
 				dpi_free_stmt(con->hstmt);
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
@@ -819,7 +819,7 @@ namespace ZORM {
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
 				}
 				int vLen = values.size();
 				std::vector<char*> dataInputs;
@@ -868,7 +868,7 @@ namespace ZORM {
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);;
+					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
 				}
 				dpi_free_stmt(con->hstmt);
 				for (auto el : dataInputs)
