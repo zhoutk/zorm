@@ -7,7 +7,7 @@ using namespace ZORM;
 
 TEST(TestTest, test_mysql) {
 	Json options;
-	options.add("db_host", "192.168.0.12");
+	options.add("db_host", "192.168.5.12");
 	options.add("db_port", 3306);
 	options.add("db_name", "dbtest");
 	options.add("db_user", "root");

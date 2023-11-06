@@ -81,7 +81,7 @@ endif()
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
 ##--------------------- Build unit tests -----------------------------------##
-option(CMAKE_ZJSON_ENABLE_TEST "Whether to enable unit tests" OFF)
+option(CMAKE_ZJSON_ENABLE_TEST "Whether to enable unit tests" ON)
 if (CMAKE_ZJSON_ENABLE_TEST)
     message(STATUS "Unit tests enabled")
     enable_testing()

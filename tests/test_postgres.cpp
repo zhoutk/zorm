@@ -7,7 +7,7 @@ using namespace ZORM;
 
 TEST(TestTest, test_postgres) {
 	Json options;
-	options.add("db_host", "192.168.0.12");
+	options.add("db_host", "192.168.5.12");
 	options.add("db_port", 5432);
 	options.add("db_name", "dbtest");
 	options.add("db_user", "root");
@@ -159,14 +159,13 @@ TEST(TestTest, test_postgres) {
 	rs = db->select("table_for_test", qObj);
 	EXPECT_EQ(rs["data"][0]["agesum"].toInt(), 39);
 
-	// qObj = Json{{"id", "a4b5c6d7"}};
-	// qObj.add("age", 22);
-	// rs = db->update("table_for_test", qObj);
+	 qObj = Json{{"id", "a4b5c6d7"}};
+	 qObj.add("age", 22);
+	 rs = db->update("table_for_test", qObj);
 
-	// qObj = Json{{"group", "age"}, {"count", "*,total"}, {"sort", "total desc"}};
-	// vs.clear();
-	// vs.push_back("age");
-	// rs = db->select("table_for_test", qObj, vs);
-	// EXPECT_EQ(rs["data"][0]["total"].toInt(), 2);
+	 qObj = Json{{"group", "age"}, {"count", "*,total"}, {"sort", "total desc"}};
+	 std::vector<string> vs{ "id", "age"};
+	 rs = db->select("table_for_test", qObj, vs);
+	 EXPECT_EQ(rs["data"][0]["total"].toInt(), 2);
 
 }
