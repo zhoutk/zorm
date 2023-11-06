@@ -10,14 +10,14 @@
 本人姓名拼音第一个字母z加上orm，即得本项目名称zorm，没有其它任何意义。我将编写一系列以z开头的相关项目，命名是个很麻烦的事，因此采用了这种简单粗暴的方式。
 
 ## 设计思路 
-ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges三种关系数据库，同时支持windows、linux和macOS。
+ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges,达梦8 四种关系数据库，同时支持windows、linux和macOS。
 
 ## 项目特点
 本系列项目采用单头文件形式开发，使用简单，需要什么，你只要把它下载到你的项目中，include进你的代码，直接使用就好。
 
 ## 项目进度
   现在已经实现了基本目标的所有功能。  
-  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；postgres - c api(pgsql14)；pqxx分支实现了libpqxx7.7.4的封装，linux和macos上运行正常，windows上运行有问题，待解决。
+  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；达梦8 - dpi；postgres - c api(pgsql14)；pqxx分支实现了libpqxx7.7.4的封装，linux和macos上运行正常，windows上运行有问题，待解决。
 
 任务列表：
 - [x] Sqlite3 实现
@@ -32,6 +32,10 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
   - [x] linux 
   - [x] windows
   - [x] macos
+- [x] Dm8 实现
+  - [x] linux 
+  - [x] windows
+  - [x] macos
 
 ## 数据库通用接口
   > 应用类直接操作这个通用接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。
@@ -40,14 +44,14 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     class ZORM_API Idb
     {
     public:
-        virtual Json select(string tablename, Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) = 0;
-        virtual Json create(string tablename, Json& params) = 0;
-        virtual Json update(string tablename, Json& params) = 0;
-        virtual Json remove(string tablename, Json& params) = 0;
-        virtual Json querySql(string sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) = 0;
-        virtual Json execSql(string sql, Json params = Json(), Json values = Json(JsonType::Array)) = 0;
-        virtual Json insertBatch(string tablename, Json& elements, string constraint = "id") = 0;
-        virtual Json transGo(Json& sqls, bool isAsync = false) = 0;
+        virtual Json select(const string& tablename, const Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) = 0;
+        virtual Json create(const string& tablename, const Json& params) = 0;
+        virtual Json update(const string& tablename, constJson& params) = 0;
+        virtual Json remove(const string& tablename, const Json& params) = 0;
+        virtual Json querySql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) = 0;
+        virtual Json execSql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array)) = 0;
+        virtual Json insertBatch(const string& tablename, const Json& elements, string constraint = "id") = 0;
+        virtual Json transGo(const Json& sqls, bool isAsync = false) = 0;
     };
   ```
 
