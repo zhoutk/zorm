@@ -46,7 +46,7 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     public:
         virtual Json select(const string& tablename, const Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) = 0;
         virtual Json create(const string& tablename, const Json& params) = 0;
-        virtual Json update(const string& tablename, constJson& params) = 0;
+        virtual Json update(const string& tablename, const Json& params) = 0;
         virtual Json remove(const string& tablename, const Json& params) = 0;
         virtual Json querySql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) = 0;
         virtual Json execSql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array)) = 0;
