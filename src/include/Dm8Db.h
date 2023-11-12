@@ -563,6 +563,7 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 				dpi_alloc_stmt(con->hcon, &con->hstmt);
 				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
@@ -639,7 +640,6 @@ namespace ZORM {
 					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 				rs.add("data", arr);
 				dpi_free_stmt(con->hstmt);
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				for (auto el : dataOuts)
 					delete[] el;
 				for (auto el : fieldNames)
@@ -656,6 +656,7 @@ namespace ZORM {
 				dpi_alloc_stmt(con->hcon, &con->hstmt);
 				
 				DPIRETURN rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
@@ -782,7 +783,6 @@ namespace ZORM {
 					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 				rs.add("data", arr);
 				dpi_free_stmt(con->hstmt);
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				for (auto el : dataOuts)
 					delete[] el;
 				for (auto el : fieldNames)
@@ -798,13 +798,13 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 				dpi_alloc_stmt(con->hcon, &con->hstmt); 
 				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
 					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
 				}
 				dpi_free_stmt(con->hstmt);
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
 
@@ -816,6 +816,7 @@ namespace ZORM {
 					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 				dpi_alloc_stmt(con->hcon, &con->hstmt);
 				DPIRETURN rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
@@ -873,7 +874,6 @@ namespace ZORM {
 				dpi_free_stmt(con->hstmt);
 				for (auto el : dataInputs)
 					delete[] el;
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return rs;
 			}
 
@@ -894,6 +894,7 @@ namespace ZORM {
 			bool ExecSqlForTransGo(Dm8Con* con, string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
 				DPIRETURN rt = dpi_alloc_stmt(con->hcon, &con->hstmt);
 				rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
+				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				if (!DSQL_SUCCEEDED(rt))
 				{
 					string err;
@@ -956,7 +957,6 @@ namespace ZORM {
 				rt = dpi_free_stmt(con->hstmt);
 				for (auto el : dataInputs)
 					delete[] el;
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
 				return true;
 			}
 
