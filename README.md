@@ -7,13 +7,13 @@ The basic models of ORM use to be separated from the database. Almost all of the
 This project relies on my other project Zjson, which provides a simple, convenient and efficient Json library. The library is easy to use, a single file library, you only need to download and import the project. Please move to [gitee-Zjson](https://gitee.com/zhoutk/zjson.git) or [github-Zjson](https://github.com/zhoutk/zjson.git).
 
 ## Design ideas
-ZORM data transmission using json, so that data style can be unified from the front to the end. This project aims to be used not only in C++, but also as a dynamic link library used by node.js etc. So we hope to operate json concisely and conveniently like javascript. Therefore, the zjson library was established before this. The general operation interface of database is designed separating from the databases. This interface provides CURD standard api, as well as batch insert and transaction operations, which can basically cover more than 90% of normal database operations. The basic goal of the project is to support Sqlite 3, MySQL, and Postges. Can running on Windows, Linux, or MacOS.
+ZORM data transmission using json, so that data style can be unified from the front to the end. This project aims to be used not only in C++, but also as a dynamic link library used by node.js etc. So we hope to operate json concisely and conveniently like javascript. Therefore, the zjson library was established before this. The general operation interface of database is designed separating from the databases. This interface provides CURD standard api, as well as batch insert and transaction operations, which can basically cover more than 90% of normal database operations. The basic goal of the project is to support Sqlite 3, MySQL, Postges and dm8. Can running on Windows, Linux, or MacOS.
 
 ## Project characteristics
 This series of projects are developed in the form of a single header file. It is simple to use. If you need something, just download it to your project, include it into your codes, and use it directly.
 
 ## Project progress
-Now all functions of using sqlit3, mysql and postgres have been implemented. The technologies I used is sqlit3 - sqllit3.h（c api）；mysql - c api （MySQL Connector C 6.1）；postgres - c api(pgsql14). The pqxx branch implements the encapsulation of libpqxx 7.7.4. It's runs normally on Linux and Macos, but there are problems running on Windows, which need to be solved.
+Now all functions of using sqlit3, mysql and postgres have been implemented. The technologies I used is sqlit3 - sqllit3.h（c api）；mysql - c api （MySQL Connector C 6.1）；dm8 - dpi；postgres - c api(pgsql14). The pqxx branch implements the encapsulation of libpqxx 7.7.4. It's runs normally on Linux and Macos, but there are problems running on Windows, which need to be solved.
 
 task list：
 - [x] Sqlite3
