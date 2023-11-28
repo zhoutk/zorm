@@ -1,6 +1,12 @@
 #include "Idb.h"
 #include "DbBase.h"
+#ifdef __QJSON
+#include "qjson.h"
+#define ZJSON QJSON
+#else
 #include "zjson.hpp"
+#define ZJSON ZJSON
+#endif // __QJSON
 
 using namespace ZJSON;
 
@@ -12,7 +18,7 @@ int main()
 	options.add("db_port", 5236);
 	options.add("db_name", "dbtest");
 	options.add("db_user", "SYSDBA");
-	options.add("db_pass", "SYSDBA001");
+	options.add("db_pass", "123456");
 	options.add("db_char", "utf8mb4");
 	options.add("db_conn", 1);
 	options.add("DbLogClose", false);

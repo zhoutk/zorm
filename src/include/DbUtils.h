@@ -1,5 +1,11 @@
 #pragma once
+#ifdef __QJSON
+#include "qjson.h"
+#define ZJSON QJSON
+#else
 #include "zjson.hpp"
+#define ZJSON ZJSON
+#endif // __QJSON
 #include <sstream>
 #include <time.h>
 #include "GlobalConstants.h"

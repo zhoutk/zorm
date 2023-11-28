@@ -539,7 +539,7 @@ namespace ZORM {
 						MYSQL_ROW row;
 						int num_fields = mysql_num_fields(result);
 						MYSQL_FIELD *fields = mysql_fetch_fields(result);
-						vector<Json> arr;
+						Json arr(JsonType::Array);
 						while ((row = mysql_fetch_row(result)) && row != NULL)
 						{
 							Json al;
@@ -552,7 +552,7 @@ namespace ZORM {
 							}
 							arr.push_back(al);
 						}
-						if (arr.empty())
+						if (arr.isEmpty())
 							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 						rs.add("data", arr);
 					}
@@ -658,7 +658,7 @@ namespace ZORM {
 							}
 							arr.push_back(al);
 						}
-						if (arr.size() == 0)
+						if (arr.isEmpty())
 							rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 						rs.add("data", arr);
 						delete [] ps;
