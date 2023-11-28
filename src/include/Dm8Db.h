@@ -43,6 +43,17 @@ namespace ZORM {
 					dpi_free_stmt(hndl);
 				sprintf(err, "err_msg = %s, err_code = %d\n", err_msg, err_code);
 				errOut = string(err);
+				if(err_code == -70028 || err_code == -70019){
+					while (pool.size())
+					{
+						Dm8Con* con = pool.back();
+						dpi_logout(con->hcon);
+						dpi_free_con(con->hcon);
+						dpi_free_env(con->henv);
+						pool.pop_back();
+						delete con;
+					}
+				}
 			}
 
 			Dm8Con* GetConnection(string& err) {
@@ -52,11 +63,15 @@ namespace ZORM {
 					DPIRETURN rt; 
 					rt = dpi_alloc_env(&dmCon->henv);
 					rt = dpi_alloc_con(dmCon->henv, &dmCon->hcon);
-					dbhost.append(":").append(DbUtils::IntTransToString(dbport));
-					rt = dpi_login(dmCon->hcon, (sdbyte*)dbhost.c_str(), (sdbyte*)dbuser.c_str(), (sdbyte*)dbpwd.c_str());
+					string theHost = dbhost;
+					theHost.append(":").append(DbUtils::IntTransToString(dbport));
+					rt = dpi_login(dmCon->hcon, (sdbyte*)theHost.c_str(), (sdbyte*)dbuser.c_str(), (sdbyte*)dbpwd.c_str());
 					if (!DSQL_SUCCEEDED(rt))
 					{
 						dpi_err_msg_print(DSQL_HANDLE_DBC, dmCon->hcon, err);
+						dpi_free_con(dmCon->hcon);
+						dpi_free_env(dmCon->henv);
+						delete dmCon;
 						return nullptr;
 					}
 					pool.push_back(dmCon);
@@ -358,7 +373,7 @@ namespace ZORM {
 					string fieldsJoinStr = "*";
 
 					if (!fields.empty()) {
-						fieldsJoinStr = DbUtils::GetVectorJoinStr(fields);
+						fieldsJoinStr = DbUtils::GetVectorJoinStrArroundQuots(fields);
 					}
 
 					string fuzzy = params.take("fuzzy").toString();
@@ -539,7 +554,10 @@ namespace ZORM {
 					}
 
 					if (!sort.empty()) {
-						querySql.append(" order by ").append(sort);
+						vector<string> ss = DbUtils::MakeVector(sort, ' ');
+						querySql.append(" order by ").append(DbUtils::GetVectorJoinStrArroundQuots(DbUtils::MakeVector(ss[0])));
+						if(ss.size() > 1)
+							querySql.append(" ").append(ss[1]);
 					}
 
 					if (page > 0) {

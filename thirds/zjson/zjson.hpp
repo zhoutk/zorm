@@ -208,7 +208,7 @@ namespace ZJSON {
 			return rs;
 		}
 
-		Json slice(int start, int end = 0) {
+		Json slice(int start, int end = 0) const {
 			Json rs(Type::Array);
 			if (this->type == Type::Array) {
 				if (end == 0)
@@ -219,14 +219,14 @@ namespace ZJSON {
 			return rs;
 		}
 
-		Json first() {
+		Json first() const {
 			if (this->type == Type::Array && this->size() > 0)
 				return (*this)[0];
 			else
 				return Json(Type::Error);
 		}
 
-		Json last() {
+		Json last() const {
 			if (this->type == Type::Array && this->size() > 0)
 				return (*this)[this->size() - 1];
 			else
@@ -856,12 +856,12 @@ namespace ZJSON {
 			else if (json->type == Type::Number) {
 				string intOrDoub = "";
 				double temp = std::get<double>(json->data);
-				if (temp == (long long)temp)
+				if(std::abs(temp) < 0.000001)
+					intOrDoub = "0";
+				else if (temp == (long long)temp)
 					intOrDoub = std::to_string((long long)temp);
-				else {
+				else 
 					intOrDoub = std::to_string(temp);
-					intOrDoub.erase(intOrDoub.find_last_not_of('0') + 1);
-				}
 
 				result += (isObj ? "\"" + json->name + "\":" : "") + intOrDoub + ",";
 			}
