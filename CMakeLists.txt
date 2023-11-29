@@ -35,7 +35,7 @@ add_definitions(-DZORM_LIB)
 add_definitions(-DSQLITE_OMIT_TEMPDB)
 add_definitions(-DDM64)
 
-option(CMAKE_QJSON_ENABLE "Whether to use QJSON (default use ZJSON)" OFF)
+option(CMAKE_QJSON_ENABLE "Whether to use QJSON (default use ZJSON)" ON)
 if (CMAKE_QJSON_ENABLE)
     add_definitions(-D__QJSON)
     set(CMAKE_PREFIX_PATH $ENV{QTDIR})
