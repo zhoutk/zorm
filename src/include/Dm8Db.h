@@ -853,15 +853,15 @@ namespace ZORM {
 				{
 					for (int i = 0; i < vLen; i++)
 					{
-						if (values[i].isString()) {
+						if (values[i].isString() || values[i].isObject() || values[i].isArray()) {
 							string ele = values[i].toString();
 							int eleLen = ele.length() + 1;
 							dataInputs[i] = new char[eleLen];
 							memset(dataInputs[i], 0, eleLen);
 							memcpy(dataInputs[i], ele.c_str(), eleLen);
 							in_ptrs[i] = eleLen - 1;
-							rt = dpi_bind_param(con->hstmt, i + 1, 
-								DSQL_PARAM_INPUT, DSQL_C_NCHAR, DSQL_VARCHAR, 
+							rt = dpi_bind_param(con->hstmt, i + 1,
+								DSQL_PARAM_INPUT, DSQL_C_NCHAR, DSQL_VARCHAR,
 								in_ptrs[i], 0, (void*)dataInputs[i], in_ptrs[i], &in_ptrs[i]);
 						}
 						else {
@@ -978,7 +978,12 @@ namespace ZORM {
 				return true;
 			}
 
-			bool escapeString(string& dest)
+			bool escapeString(string& pStr)
+			{
+				return true;
+			}
+
+			bool escapeString2(string& dest)
 			{
 				string sql = dest;
 				dest = "";
