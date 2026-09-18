@@ -91,6 +91,13 @@ endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
+# Output all generated binaries to ${CMAKE_SOURCE_DIR}/bin
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+)
+
 ##--------------------- Build unit tests -----------------------------------##
 option(CMAKE_ZJSON_ENABLE_TEST "Whether to enable unit tests" ON)
 if (CMAKE_ZJSON_ENABLE_TEST)
@@ -105,6 +112,11 @@ if (CMAKE_ZJSON_ENABLE_TEST)
     add_executable(test_mysql tests/test_mysql.cpp "./thirds/sqlit3/sqlite3.h")
     add_executable(test_postgres tests/test_postgres.cpp "./thirds/sqlit3/sqlite3.h")
     add_executable(test_dm8 tests/test_dm8.cpp "./thirds/sqlit3/sqlite3.h")
+    
+    # Output test executables to ${CMAKE_SOURCE_DIR}/bin as well
+    set_target_properties(test_sqlite3 test_mysql test_postgres test_dm8 PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+    )
     
     add_test(NAME test_sqlite3 COMMAND test_sqlite3)
     add_test(NAME test_mysql COMMAND test_mysql)

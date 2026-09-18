@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# run-test - 在 bin 目录下运行 ctest（适配 msys2 clang64 终端环境）
+# 用法: ./run-test [ctest 参数...]
+
+# 脚本所在目录（项目根）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_DIR="$SCRIPT_DIR/bin"
+BUILD_DIR="$SCRIPT_DIR/build"
+
+# 1) 可执行文件依赖 thirds/bin/win10 下的 DLL（sqlite3.dll, libmysql.dll, libpq.dll, dmdpi.dll 等）
+# 2) msys2 clang64 编译的可执行文件还依赖 UCRT 运行库（api-ms-win-crt-*.dll）
+export PATH="$SCRIPT_DIR/thirds/bin/win10:$PATH"
+
+if [ ! -d "$BIN_DIR" ]; then
+    echo "错误: 未找到 bin 目录 ($BIN_DIR)，请先执行 cmake --build build 完成构建。" >&2
+    exit 1
+fi
+
+cd "$BIN_DIR" || exit 1
+
+# ctest 测试注册表在构建目录中，用 --test-dir 指向 build
+# --output-on-failure 便于失败时直接看到断言输出
+exec ctest --test-dir "$BUILD_DIR" --output-on-failure "$@"

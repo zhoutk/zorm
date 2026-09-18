@@ -1,6 +1,7 @@
 ﻿Debug/
 Release/
 build/
+bin/
 .vs/
 ipch/
 vs19/

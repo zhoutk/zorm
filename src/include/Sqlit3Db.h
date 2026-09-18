@@ -95,7 +95,7 @@ namespace ZORM {
 					string execSql = "insert into ";
 					execSql.append(tablename).append(" ");
 
-					vector<string> allKeys = params.getAllKeys();
+					vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
 					size_t len = allKeys.size();
 					string fields = "", vs = "";
 					for (size_t i = 0; i < len; i++) {
@@ -134,7 +134,7 @@ namespace ZORM {
 					string execSql = "update ";
 					execSql.append(tablename).append(" set ");
 
-					vector<string> allKeys = params.getAllKeys();
+					vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
 
 					vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 					if (iter == allKeys.end()) {
@@ -258,9 +258,9 @@ namespace ZORM {
 				else {
 					Json values = Json(JsonType::Array);
 					string keyStr = " (";
-					keyStr.append(DbUtils::GetVectorJoinStr(elements[0].getAllKeys())).append(" ) ");
+					keyStr.append(DbUtils::GetVectorJoinStr(DbUtils::GetVectorFromJson(elements[0].getAllKeys()))).append(" ) ");
 					for (int i = 0; i < elements.size(); i++) {
-						vector<string> keys = elements[i].getAllKeys();
+						vector<string> keys = DbUtils::GetVectorFromJson(elements[i].getAllKeys());
 						string valueStr = " select ";
 						for (int j = 0; j < keys.size(); j++) {
 							bool vIsString = elements[i][keys[j]].isString() || elements[i][keys[j]].isArray() || elements[i][keys[j]].isObject();
@@ -348,7 +348,7 @@ namespace ZORM {
 					string count = params.take("count").toString();
 					string group = params.take("group").toString();
 
-					vector<string> allKeys = params.getAllKeys();
+					vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
 					size_t len = allKeys.size();
 					for (size_t i = 0; i < len; i++) {
 						string k = allKeys[i];

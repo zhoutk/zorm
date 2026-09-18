@@ -151,6 +151,17 @@ namespace ZORM {
 			return ss.str();
 		}
 
+		static vector<string> GetVectorFromJson(const Json& js) {
+			vector<string> rs;
+			if (js.isArray()) {
+				std::vector<Json> items = js.toVector();
+				for (auto& item : items) {
+					rs.push_back(item.toString());
+				}
+			}
+			return rs;
+		}
+
 		static string GetVectorJoinStr(vector<string> v) {
 			std::stringstream ss;
 			for (size_t i = 0; i < v.size(); ++i)
