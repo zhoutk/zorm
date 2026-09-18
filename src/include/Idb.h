@@ -1,7 +1,6 @@
 #pragma once
 #include "dll_global.h"
 #include "zjson.hpp"
-#define JSONCHOICE ZJSON
 #include <vector>
 #include <iostream>
 
@@ -10,7 +9,7 @@ namespace ZORM
 
 	using std::string;
 	using std::vector;
-	using namespace JSONCHOICE;
+	using namespace ZJSON;
 
 	class ZORM_API Idb
 	{

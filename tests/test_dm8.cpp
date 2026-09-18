@@ -3,7 +3,7 @@
 #include "DbBase.h"
 
 using namespace ZORM;
-using namespace JSONCHOICE;
+using namespace ZJSON;
 
 TEST(Dm8Test, testDm8) {
 	Json options;
