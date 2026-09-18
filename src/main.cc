@@ -1,12 +1,6 @@
 #include "Idb.h"
 #include "DbBase.h"
-#ifdef __QJSON
-#include "qjson.h"
-#define ZJSON QJSON
-#else
 #include "zjson.hpp"
-#define ZJSON ZJSON
-#endif // __QJSON
 
 using namespace ZJSON;
 

@@ -1,12 +1,7 @@
 #pragma once
 #include "dll_global.h"
-#ifdef __QJSON
-#include "qjson.h"
-#define JSONCHOICE QJSON
-#else
 #include "zjson.hpp"
 #define JSONCHOICE ZJSON
-#endif // __QJSON
 #include <vector>
 #include <iostream>
 

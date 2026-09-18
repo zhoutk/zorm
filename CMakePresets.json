@@ -2,61 +2,42 @@
     "version": 3,
     "configurePresets": [
         {
-            "name": "linux-base",
-            "displayName": "Linux Debug",
-            "description": "面向适用于 Linux 的 Windows 子系统(WSL)或远程 Linux 系统。",
-            "hidden": true,
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/out/build/${presetName}",
-            "installDir": "${sourceDir}/out/install/${presetName}",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            },
-            "environment": {
-                "LD_LIBRARY_PATH": "/opt/dm8/dpi"
-            },
-            "vendor": { "microsoft.com/VisualStudioRemoteSettings/CMake/1.0": { "sourceDir": "$env{HOME}/vs/$ms{projectDirName}" } }
-        },
-        {
-            "name": "linux-debug",
-            "displayName": "Linux Debug",
-            "description": "Linux (64 位)(Debug)",
-            "inherits": "linux-base",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-        },
-        {
-            "name": "windows-base",
+            "name": "msys2-base",
             "description": "面向具有 Visual Studio 开发环境的 Windows。",
             "hidden": true,
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/out/build/${presetName}",
-            "installDir": "${sourceDir}/out/install/${presetName}",
+            "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "cl.exe",
-                "CMAKE_CXX_COMPILER": "cl.exe"
+                "CMAKE_MAKE_PROGRAM": "D:/msys64/clang64/bin/ninja.exe",
+                "CMAKE_CXX_COMPILER": "D:/msys64/clang64/bin/clang++.exe"
             },
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
-            },
-            "environment": {
-                "QTDIR": "D:\\libs\\Qt\\5.12.12\\msvc2017_64",
-                "PATH": "D:\\libs\\ormdlls;$penv{PATH}"
             }
         },
         {
-            "name": "x64-debug",
-            "displayName": "x64 Debug",
-            "description": "使用 Visual Studio 开发环境定向到 Windows (64 位)。(Debug)",
-            "inherits": "windows-base",
+            "name": "clang-dbg",
+            "displayName": "clang Debug",
+            "description": "使用 msys2-clang64 开发环境定向到 Windows (64 位)。(Debug)",
+            "inherits": "msys2-base",
             "architecture": {
                 "value": "x64",
                 "strategy": "external"
             },
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "clang-rlz",
+            "displayName": "clang Release",
+            "description": "使用 msys2-clang64 开发环境定向到 Windows (64 位)。(RelWithDebInfo)",
+            "inherits": "msys2-base",
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            },
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         }
     ]
 }
