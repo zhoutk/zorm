@@ -36,6 +36,10 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
   - [x] linux 
   - [x] windows
   - [x] macos
+- [x] JsonFile 实现（文件型存储，无需数据库服务器）
+  - [x] linux 
+  - [x] windows
+  - [x] macos
 
 ## 数据库通用接口
   > 应用类直接操作这个通用接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。
@@ -97,6 +101,18 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
     options.add("parameterized", true);
     DbBase* db = new DbBase("postgres", options);
 ```
+
+> JsonFile:
+```
+    Json options;
+    options.add("connString", "./data.json");  //数据文件位置，留空则为"程序目录/data.json"
+    options.add("DbLogClose", true);           //不显示查询语句
+    DbBase* db = new DbBase("jsonfile", options);
+```
+  > 数据以JSON数组形式存储在单个文件中：`[{"table":"t1","columns":["id",...],"rows":[{...},...]}]`。
+  > 支持全部通用接口（CRUD、批量插入、事务、智能查询），内建跨进程文件锁、原子写入、
+  > 损坏文件自动备份与按 id 的 O(1) 索引；也可直接使用 `JsonFileDb` 类
+  > （`ZORM::JsonFile::JsonFileDb`，提供 `createShared` 工厂方法）。
 
 ## 智能查询方式设计
 > 查询保留字：page, size, sort, fuzzy, lks, ins, ors, count, sum, group

@@ -4,6 +4,7 @@
 #include "MysqlDb.h"
 #include "PostgresDb.h"
 #include "Dm8Db.h"
+#include "JsonFileDb.h"
 #include <algorithm>
 
 namespace ZORM
@@ -17,6 +18,10 @@ namespace ZORM
 			bool DbLogClose = options["DbLogClose"].toBool();
 			if (dbType.compare("sqlite3") == 0)
 				db = new Sqlit3::Sqlit3Db(options["connString"].toString(), DbLogClose, options["parameterized"].toBool());
+			else if(dbType.compare("jsonfile") == 0){
+				// connString: path of the JSON data file (empty -> <exe dir>/data.json)
+				db = new JsonFile::JsonFileDb(options["connString"].toString(), DbLogClose);
+			}
 			else if(dbType.compare("mysql") == 0){
 				string dbhost = options.take("db_host").toString();
 				string dbuser = options.take("db_user").toString();

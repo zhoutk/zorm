@@ -14,6 +14,11 @@ namespace ZORM
 	class ZORM_API Idb
 	{
 	public:
+		// Polymorphic base: without this, `delete` through an Idb* (as DbBase
+		// does) is undefined behaviour and derived backends' members (e.g.
+		// Sqlit3Db's sqlite handle) are never destroyed. Adding it keeps every
+		// existing signature and call site unchanged.
+		virtual ~Idb() = default;
 		virtual Json select(const string& tablename, const Json &params,
 							vector<string> fields = vector<string>(),
 							Json values = Json(JsonType::Array)) = 0;

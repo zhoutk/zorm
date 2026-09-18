@@ -108,34 +108,39 @@ if (CMAKE_ZJSON_ENABLE_TEST)
     include_directories(./thirds/googletest-1.18.0/googletest/include)
     include_directories(./thirds/googletest-1.18.0/googlemock/include)
 
-    add_executable(test_sqlite3 tests/test_sqlite3.cpp "./thirds/sqlit3/sqlite3.h")
-    add_executable(test_mysql tests/test_mysql.cpp "./thirds/sqlit3/sqlite3.h")
-    add_executable(test_postgres tests/test_postgres.cpp "./thirds/sqlit3/sqlite3.h")
-    add_executable(test_dm8 tests/test_dm8.cpp "./thirds/sqlit3/sqlite3.h")
-    
+    add_executable(test_sqlite3 tests/test_sqlite3.cpp src/JsonFileDb.cc)
+    add_executable(test_mysql tests/test_mysql.cpp src/JsonFileDb.cc)
+    add_executable(test_postgres tests/test_postgres.cpp src/JsonFileDb.cc)
+    add_executable(test_dm8 tests/test_dm8.cpp src/JsonFileDb.cc)
+    add_executable(test_jsonfile tests/test_jsonfile.cpp src/JsonFileDb.cc)
+
     # Output test executables to ${CMAKE_SOURCE_DIR}/bin as well
-    set_target_properties(test_sqlite3 test_mysql test_postgres test_dm8 PROPERTIES
+    set_target_properties(test_sqlite3 test_mysql test_postgres test_dm8 test_jsonfile PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
     )
-    
+
     add_test(NAME test_sqlite3 COMMAND test_sqlite3)
     add_test(NAME test_mysql COMMAND test_mysql)
     add_test(NAME test_postgres COMMAND test_postgres)
     add_test(NAME test_dm8 COMMAND test_dm8)
+    add_test(NAME test_jsonfile COMMAND test_jsonfile)
     if(MSVC)
         target_link_libraries(test_sqlite3 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
         target_link_libraries(test_mysql ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
         target_link_libraries(test_postgres ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
         target_link_libraries(test_dm8 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
+        target_link_libraries(test_jsonfile ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
     elseif(MINGW)
         target_link_libraries(test_sqlite3 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
         target_link_libraries(test_mysql ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
         target_link_libraries(test_postgres ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
         target_link_libraries(test_dm8 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
+        target_link_libraries(test_jsonfile ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
     elseif(UNIX)
         target_link_libraries(test_sqlite3 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
         target_link_libraries(test_mysql ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
         target_link_libraries(test_postgres ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
         target_link_libraries(test_dm8 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
+        target_link_libraries(test_jsonfile gtest gtest_main pthread dl)
     endif()
 endif()

@@ -32,6 +32,10 @@ task list：
   - [x] linux 
   - [x] windows
   - [x] macos
+- [x] JsonFile (file-based storage, no database server required)
+  - [x] linux 
+  - [x] windows
+  - [x] macos
 
 ## Database interface
   > The interface was designed to separate operations from databases. 
@@ -93,6 +97,19 @@ task list：
     options.add("parameterized", true);
     DbBase* db = new DbBase("postgres", options);
 ```
+
+> JsonFile:
+```
+    Json options;
+    options.add("connString", "./data.json");  //data file location, empty -> "<exe dir>/data.json"
+    options.add("DbLogClose", true);           //not show sql
+    DbBase* db = new DbBase("jsonfile", options);
+```
+  > Data is stored in a single file as a JSON array: `[{"table":"t1","columns":["id",...],"rows":[{...},...]}]`.
+  > All common operations are supported (CRUD, batch insert, transactions, smart query), with a
+  > cross-process file lock, atomic writes, corrupt-file backup and an O(1) per-table id index.
+  > The backend is also available directly as `ZORM::JsonFile::JsonFileDb` (with a `createShared`
+  > factory method).
 
 ## Design of intelligent query use Json
 > Query reserved words：page, size, sort, fuzzy, lks, ins, ors, count, sum, group

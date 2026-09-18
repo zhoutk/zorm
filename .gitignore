@@ -5,6 +5,7 @@ bin/
 .vs/
 ipch/
 vs19/
+refer/
 *.sdf
 *.user
 *.opensdf
