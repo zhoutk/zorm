@@ -1,9 +1,27 @@
 #!/usr/bin/env bash
 # run-test - 在 bin 目录下运行 ctest（适配 msys2 clang64 终端环境）
-# 用法: ./run-test [ctest 参数...]
+#
+# 用法（参照 gels 的 run-tests 模式）:
+#   ./run-test                  # 默认: 本地测试（sqlite 内存库 + json 文件库）
+#   ./run-test <name>...        # 按名字选择: sqlite | json | mysql | pg | dm
+#                               # 可组合: ./run-test sqlite json
+#   ./run-test remote           # 远程数据库: mysql + pg + dm
+#   ./run-test all              # 全部
+#   其余参数透传给 ctest，如: ./run-test -V 或 ./run-test json -R test_jsonfile
+#
+# 名字与测试目标的对应关系:
+#   sqlite -> test_sqlite3     json -> test_jsonfile
+#   mysql  -> test_mysql       pg   -> test_postgres
+#   dm     -> test_dm8
 
-# 脚本所在目录（项目根）
+# 脚本所在目录（项目根），并规范化为 POSIX 风格路径：
+# 当从 Windows 风格的工作目录启动时 pwd 会给出 "D:/x/y"，该形式拼入 MSYS 的
+# PATH 后无法被转换为 Windows 搜索路径，导致测试进程找不到 DLL（0xc0000135）。
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${SCRIPT_DIR//\\//}"
+case "$SCRIPT_DIR" in
+    [A-Za-z]:*) SCRIPT_DIR="/$(echo "$SCRIPT_DIR" | cut -c1 | tr 'A-Z' 'a-z')${SCRIPT_DIR:2}" ;;
+esac
 BIN_DIR="$SCRIPT_DIR/bin"
 BUILD_DIR="$SCRIPT_DIR/build"
 
@@ -16,8 +34,72 @@ if [ ! -d "$BIN_DIR" ]; then
     exit 1
 fi
 
-cd "$BIN_DIR" || exit 1
+# 解析参数: 已知名字收集为测试目标，其余透传给 ctest
+NAMES=()
+PASSTHROUGH=()
+for arg in "$@"; do
+    case "$arg" in
+        sqlite|json|mysql|pg|dm|all|remote)
+            NAMES+=("$arg") ;;
+        -*)
+            PASSTHROUGH+=("$arg") ;;
+        *)
+            echo "警告: '$arg' 不是有效的测试名（sqlite|json|mysql|pg|dm|all|remote），将原样传给 ctest。" >&2
+            PASSTHROUGH+=("$arg") ;;
+    esac
+done
+
+# 名字 -> ctest 测试正则
+map_name() {
+    case "$1" in
+        sqlite|sqlite3) echo "test_sqlite3" ;;
+        json|jsonfile)  echo "test_jsonfile" ;;
+        mysql)          echo "test_mysql" ;;
+        pg|postgres)    echo "test_postgres" ;;
+        dm|dm8)         echo "test_dm8" ;;
+        *)              return 1 ;;
+    esac
+}
+
+REGEX=""
+SELECTED=()
+if [ ${#NAMES[@]} -eq 0 ]; then
+    # 默认: 内存型 + 文件型，不需要数据库服务器
+    SELECTED=(test_sqlite3 test_jsonfile)
+else
+    for n in "${NAMES[@]}"; do
+        if [ "$n" = "all" ]; then
+            SELECTED=()   # 空 = 不加 -R，跑全部
+            break
+        fi
+        if [ "$n" = "remote" ]; then
+            SELECTED+=(test_mysql test_postgres test_dm8)
+            continue
+        fi
+        t=$(map_name "$n") || t="$n"
+        SELECTED+=("$t")
+    done
+fi
+
+# 去重（保持顺序）
+UNIQ=()
+for t in "${SELECTED[@]}"; do
+    dup=0
+    for u in "${UNIQ[@]}"; do
+        [ "$u" = "$t" ] && dup=1 && break
+    done
+    [ $dup -eq 0 ] && UNIQ+=("$t")
+done
+
+# 组装 ctest 命令
+CMD=(ctest --test-dir "$BUILD_DIR" --output-on-failure)
+if [ ${#UNIQ[@]} -gt 0 ]; then
+    REGEX=$(IFS='|'; echo "${UNIQ[*]}")
+    CMD+=(-R "$REGEX")
+fi
+CMD+=("${PASSTHROUGH[@]}")
 
 # ctest 测试注册表在构建目录中，用 --test-dir 指向 build
 # --output-on-failure 便于失败时直接看到断言输出
-exec ctest --test-dir "$BUILD_DIR" --output-on-failure "$@"
+cd "$BIN_DIR" || exit 1
+exec "${CMD[@]}"
