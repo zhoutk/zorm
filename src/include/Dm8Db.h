@@ -504,7 +504,9 @@ namespace ZORM {
 							return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
 						else {
 							for (size_t i = 0; i < ele.size(); i += 2) {
-								extra.append("sum(\"").append(ele.at(i)).append("\") as ").append(ele.at(i + 1)).append(" ");
+								// Quote the alias: DM8 folds unquoted identifiers to
+								// upper case, which would break result-key lookups.
+								extra.append("sum(\"").append(ele.at(i)).append("\") as \"").append(ele.at(i + 1)).append("\" ");
 							}
 						}
 					}
@@ -514,7 +516,12 @@ namespace ZORM {
 							return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
 						else {
 							for (size_t i = 0; i < ele.size(); i += 2) {
-								extra.append("count(").append(ele.at(i)).append(") as ").append(ele.at(i + 1)).append(" ");
+								// "1" / "*" are not column names; quote real columns
+								// so they match lower-case-quoted table definitions.
+								string src = ele.at(i);
+								if (src != "1" && src != "*")
+									src = "\"" + src + "\"";
+								extra.append("count(").append(src).append(") as \"").append(ele.at(i + 1)).append("\" ");
 							}
 						}
 					}

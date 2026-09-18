@@ -1,15 +1,7 @@
-// Unit tests for the JSON file backend (ZORM::JsonFile::JsonFileDb).
-//
-// Coverage follows the contracts proven by our reference projects:
-//   * refer/orm/tests/orm_contract_tests.cpp  - read/write/query/dao/edge/
-//     memory(order, corrupt-file, cross-process lock, encoding) contracts;
-//   * refer/gels/test - the cross-language semantics of the query parameters
-//     (fuzzy/ins/lks/ors, pagination, aggregates, group, sort, transactions).
-//
-// Passing this suite is the gate for committing changes: every behaviour the
-// other backends expose through Idb.h is exercised here against the file
-// backend, including the {"text": sql, "values": [...]} style used by
-// transGo/execSql throughout ZORM.
+// jsonfile backend: shared contract suite + jsonfile-specific behaviour
+// (auto-generated ids, upsert semantics, affectedRows/records/pages, the SQL
+// text shims, structured transactions and all file-hardening guarantees:
+// corrupt-file protection, cross-process lock, atomic write, id index).
 
 #include <algorithm>
 #include <atomic>
@@ -18,10 +10,12 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "ContractSuite.h"
 #include "FileLock.h"
 #include "JsonFileDb.h"
 #include "DbBase.h"
@@ -44,7 +38,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr const char* kTableName = "table_for_test";
+constexpr const char* kTableName = contract::kTable;
 constexpr const char* kCreateTableSql =
 	"CREATE TABLE table_for_test (id text NOT NULL, name text DEFAULT NULL, "
 	"age integer DEFAULT NULL, score real DEFAULT NULL, PRIMARY KEY (id))";
@@ -144,18 +138,7 @@ bool hasCorruptionBackup(const std::string& filePath) {
 	return false;
 }
 
-Json makeSeedRows() {
-	Json rows(JsonType::Array);
-	rows.add(Json{{"id", "a1b2c3d4"}, {"name", "Kevin 凯文"}, {"age", 18}, {"score", 99.99}});
-	rows.add(Json{{"id", "a2b3c4d5"}, {"name", "test001"}, {"age", 19}, {"score", 98.88}});
-	rows.add(Json{{"id", "a3b4c5d6"}, {"name", "test002"}, {"age", 20}, {"score", 97.77}});
-	rows.add(Json{{"id", "a4b5c6d7"}, {"name", "test003"}, {"age", 21}, {"score", 96.66}});
-	rows.add(Json{{"id", "a5b6c7d8"}, {"name", "test004"}, {"age", 22}, {"score", 95.55}});
-	rows.add(Json{{"id", "a6b7c8d9"}, {"name", "test005"}, {"age", 23}, {"score", 94.44}});
-	return rows;
-}
-
-// - Fixture ------------------------------------------------------------------
+// - Fixture for jsonfile-specific tests --------------------------------------
 
 class JsonFileDbTest : public ::testing::Test {
 protected:
@@ -174,7 +157,7 @@ protected:
 		removeDatabaseFiles(filePath_);
 		db_ = JsonFileDb::createShared(filePath_);
 		ASSERT_EQ(db_->execSql(kCreateTableSql)["status"].toInt(), 200);
-		Json insertResult = db_->insertBatch(kTableName, makeSeedRows());
+		Json insertResult = db_->insertBatch(kTableName, contract::seedRows());
 		ASSERT_EQ(insertResult["status"].toInt(), 200);
 		ASSERT_EQ(insertResult["affectedRows"].toInt(), 6);
 	}
@@ -201,460 +184,129 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Read contract
+// jsonfile-only write semantics: auto id, upsert, affectedRows/insertId,
+// records/pages, schema null defaults, single-element batches, swap-pop order
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_F(JsonFileDbTest, ReadContract) {
+TEST_F(JsonFileDbTest, JsonFileOnlyWriteContract) {
 	reset();
 	Idb& idb = *db();
 
-	// Select by id
-	Json result = idb.select(kTableName, Json{{"id", "a1b2c3d4"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["name"].toString(), "Kevin 凯文");
-	EXPECT_EQ(result["data"][0]["age"].toInt(), 18);
-	EXPECT_DOUBLE_EQ(result["data"][0]["score"].toDouble(), 99.99);
-
-	// Select with multiple conditions
-	result = idb.select(kTableName, Json{{"id", "a1b2c3d4"}, {"age", 18}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 1);
-
-	// Reject wrong exact match
-	result = idb.select(kTableName, Json{{"id", "a1b2c3d4"}, {"age", 18}, {"name", "Kevin"}});
-	EXPECT_EQ(result["status"].toInt(), 202);
-
-	// Accept correct exact match
-	result = idb.select(kTableName, Json{{"id", "a1b2c3d4"}, {"age", 18}, {"name", "Kevin 凯文"}});
-	EXPECT_EQ(result["status"].toInt(), 200);
-
-	// Field projection (fields as a JSON array inside params)
-	Json fieldsParam{{"id", "a2b3c4d5"}};
-	Json fields(JsonType::Array);
-	fields.add("name");
-	fields.add("score");
-	fieldsParam.add("fields", fields);
-	result = idb.select(kTableName, fieldsParam);
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["name"].toString(), "test001");
-	EXPECT_DOUBLE_EQ(result["data"][0]["score"].toDouble(), 98.88);
-	EXPECT_TRUE(result["data"][0]["id"].isError());
-
-	// Field projection (fields as the vector<string> argument)
-	std::vector<string> fieldVector{"name", "score"};
-	result = idb.select(kTableName, Json{{"id", "a2b3c4d5"}}, fieldVector);
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["name"].toString(), "test001");
-	EXPECT_TRUE(result["data"][0]["id"].isError());
-
-	// Invalid fields definition
-	Json badFields{{"id", "a2b3c4d5"}};
-	Json badFieldArray(JsonType::Array);
-	badFieldArray.add(1);
-	badFieldArray.add(2);
-	badFields.add("fields", badFieldArray);
-	result = idb.select(kTableName, badFields);
-	EXPECT_EQ(result["status"].toInt(), 301);
-
-	// Fuzzy search
-	result = idb.select(kTableName, Json{{"name", "Kevin"}, {"fuzzy", 1}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["name"].toString(), "Kevin 凯文");
-
-	// Select all (no conditions)
-	result = idb.select(kTableName, Json(JsonType::Object));
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 6);
-	EXPECT_EQ(result["records"].toInt(), 6);
-	EXPECT_EQ(result["pages"].toInt(), 1);
-
-	// Select by non-existent id
-	result = idb.select(kTableName, Json{{"id", "nonexistent"}});
-	EXPECT_EQ(result["status"].toInt(), 202);
-
-	// Fuzzy with non-existent pattern
-	result = idb.select(kTableName, Json{{"name", "ZZZZ_NOT_FOUND"}, {"fuzzy", 1}});
-	EXPECT_EQ(result["status"].toInt(), 202);
-
-	// Select from a non-existent table
-	result = idb.select("no_such_table", Json(JsonType::Object));
-	EXPECT_EQ(result["status"].toInt(), 202);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Write contract
-// ─────────────────────────────────────────────────────────────────────────────
-
-TEST_F(JsonFileDbTest, WriteContract) {
-	reset();
-	Idb& idb = *db();
-
-	// Update score
-	Json result = idb.update(kTableName, Json{{"id", "a1b2c3d4"}, {"score", 6.6}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["affectedRows"].toInt(), 1);
-	Json row = idb.select(kTableName, Json{{"id", "a1b2c3d4"}});
-	EXPECT_DOUBLE_EQ(row["data"][0]["score"].toDouble(), 6.6);
-
-	// Delete row
-	result = idb.remove(kTableName, Json{{"id", "a1b2c3d4"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["affectedRows"].toInt(), 1);
-	row = idb.select(kTableName, Json{{"id", "a1b2c3d4"}});
-	EXPECT_EQ(row["status"].toInt(), 202);
-
-	// Delete non-existent row
-	result = idb.remove(kTableName, Json{{"id", "already_deleted"}});
-	EXPECT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["affectedRows"].toInt(), 0);
-
-	// Update multiple fields
-	result = idb.update(kTableName, Json{{"id", "a5b6c7d8"}, {"name", "test888"}, {"score", 23.27}, {"age", 22}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", "a5b6c7d8"}});
-	EXPECT_EQ(row["data"][0]["name"].toString(), "test888");
-	EXPECT_DOUBLE_EQ(row["data"][0]["score"].toDouble(), 23.27);
-	EXPECT_EQ(row["data"][0]["age"].toInt(), 22);
-
-	// Update non-existent id
-	result = idb.update(kTableName, Json{{"id", "no_such_id"}, {"name", "ghost"}});
-	EXPECT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["affectedRows"].toInt(), 0);
+	// Row order after a delete: swap-pop (last row moves into the hole).
+	// Checked first, while the table still holds exactly the seed rows.
+	Json all = idb.select(kTableName, Json(JsonType::Object));
+	ASSERT_EQ(all["status"].toInt(), 200);
+	ASSERT_EQ(all["data"].size(), 6);
+	ASSERT_EQ(idb.remove(kTableName, Json{{"id", "a1b2c3d4"}})["status"].toInt(), 200);
+	all = idb.select(kTableName, Json(JsonType::Object));
+	ASSERT_EQ(all["data"].size(), 5);
+	EXPECT_EQ(all["data"][0]["id"].toString(), "a6b7c8d9");  // last row swapped in
+	EXPECT_EQ(all["data"][1]["id"].toString(), "a2b3c4d5");  // second row untouched
 
 	// Create with auto-generated id
-	result = idb.create(kTableName, Json{{"name", "zhoutk"}});
+	Json result = idb.create(kTableName, Json{{"name", "zhoutk"}});
 	ASSERT_EQ(result["status"].toInt(), 200);
 	const std::string createdId = result["id"].toString();
 	ASSERT_EQ(createdId.size(), static_cast<size_t>(8));
 	EXPECT_TRUE(createdId.find_first_not_of("0123456789abcdef") == std::string::npos);
-	row = idb.select(kTableName, Json{{"id", createdId}});
+	Json row = idb.select(kTableName, Json{{"id", createdId}});
 	ASSERT_EQ(row["status"].toInt(), 200);
 	EXPECT_EQ(row["data"][0]["name"].toString(), "zhoutk");
-	// With schema, missing fields default to null
+	// With schema, missing fields default to null (SQL backends default to '')
 	EXPECT_TRUE(row["data"][0]["age"].isNull());
-	EXPECT_TRUE(row["data"][0]["score"].isNull());
 	EXPECT_EQ(row["data"][0]["id"].toString(), createdId);
 
-	// Create with manual id
+	// Create with duplicate id (upsert, not a PK violation)
 	result = idb.create(kTableName, Json{{"id", "manual001"}, {"name", "manual-row"}});
 	ASSERT_EQ(result["status"].toInt(), 200);
 	EXPECT_EQ(result["id"].toString(), "manual001");
-	row = idb.select(kTableName, Json{{"id", "manual001"}});
-	EXPECT_EQ(row["data"][0]["name"].toString(), "manual-row");
-	EXPECT_TRUE(row["data"][0]["age"].isNull());
-
-	// Create with duplicate id (upsert)
 	result = idb.create(kTableName, Json{{"id", "manual001"}, {"name", "upserted-name"}});
 	ASSERT_EQ(result["status"].toInt(), 200);
 	row = idb.select(kTableName, Json{{"id", "manual001"}});
 	EXPECT_EQ(row["data"][0]["name"].toString(), "upserted-name");
 
-	// Reject empty create
-	EXPECT_EQ(idb.create(kTableName, Json(JsonType::Object))["status"].toInt(), 301);
-
-	// Reject update without id
-	EXPECT_EQ(idb.update(kTableName, Json{{"score", 1}})["status"].toInt(), 301);
-
-	// Reject delete without id
-	EXPECT_EQ(idb.remove(kTableName, Json(JsonType::Object))["status"].toInt(), 301);
-
-	// Create with zero / negative / unicode values
-	result = idb.create(kTableName, Json{{"name", "edge-case"}, {"age", 0}, {"score", 0.0}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", result["id"].toString()}});
-	EXPECT_EQ(row["data"][0]["age"].toInt(), 0);
-	EXPECT_DOUBLE_EQ(row["data"][0]["score"].toDouble(), 0.0);
-
-	result = idb.create(kTableName, Json{{"name", "negative"}, {"age", -5}, {"score", -3.14}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", result["id"].toString()}});
-	EXPECT_EQ(row["data"][0]["age"].toInt(), -5);
-	EXPECT_DOUBLE_EQ(row["data"][0]["score"].toDouble(), -3.14);
-
-	result = idb.create(kTableName, Json{{"name", "中文测试 🌊 ⛵"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", result["id"].toString()}});
-	EXPECT_EQ(row["data"][0]["name"].toString(), "中文测试 🌊 ⛵");
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Query contract (fuzzy / ins / lks / ors / pagination / aggregates / sort)
-// ─────────────────────────────────────────────────────────────────────────────
-
-TEST_F(JsonFileDbTest, QueryContract) {
-	reset();
-	Idb& idb = *db();
-
-	// Multi-row fuzzy query
-	Json result = idb.select(kTableName, Json{{"name", "test"}, {"fuzzy", 1}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 5);
-
-	// IN query
-	result = idb.select(kTableName, Json{{"ins", "age,20,21,23"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 3);
-
-	// LIKE query (lks)
-	result = idb.select(kTableName, Json{{"lks", "name,001,age,23"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 2);
-
-	// OR query
-	result = idb.select(kTableName, Json{{"ors", "age,19,age,23"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 2);
-
-	// Pagination: page 1
-	result = idb.select(kTableName, Json{{"page", 1}, {"size", 3}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 3);
-	EXPECT_EQ(result["pages"].toInt(), 2);
-	EXPECT_EQ(result["records"].toInt(), 6);
-
-	// Pagination: page 2
-	result = idb.select(kTableName, Json{{"page", 2}, {"size", 3}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 3);
-
-	// Pagination: page beyond end
-	result = idb.select(kTableName, Json{{"page", 999}, {"size", 3}});
-	EXPECT_EQ(result["status"].toInt(), 202);
-
-	// Pagination with negative page/size (treated as 0 -> no pagination)
-	result = idb.select(kTableName, Json{{"page", -1}, {"size", -1}});
+	// Delete reports affected rows, including 0 for a missing id
+	result = idb.remove(kTableName, Json{{"id", "already_deleted"}});
 	EXPECT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 6);
+	EXPECT_EQ(result["affectedRows"].toInt(), 0);
 
-	// Count query
-	result = idb.select(kTableName, Json{{"count", "1,total"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["total"].toInt(), 6);
+	// Update of a non-existent id reports 0 affected rows
+	result = idb.update(kTableName, Json{{"id", "no_such_id"}, {"name", "ghost"}});
+	EXPECT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["affectedRows"].toInt(), 0);
 
-	// Sum query with a comparison filter
-	result = idb.select(kTableName, Json{{"sum", "age,agesum"}, {"age", "<=,20"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["agesum"].toInt(), 57);
+	// create() with a single-element array goes through the single-row path
+	Json single = idb.create(kTableName, Json(JsonType::Array).add(Json{{"id", "arr001"}, {"name", "single-array"}}));
+	ASSERT_EQ(single["status"].toInt(), 200);
+	EXPECT_EQ(single["id"].toString(), "arr001");
 
-	// Group query
-	Json updateResult = idb.update(kTableName, Json{{"id", "a4b5c6d7"}, {"age", 22}});
-	ASSERT_EQ(updateResult["status"].toInt(), 200);
-	result = idb.select(kTableName, Json{{"group", "age"}, {"count", "*,total"}, {"sort", "total desc"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["total"].toInt(), 2);
-
-	// Greater-than query
-	result = idb.select(kTableName, Json{{"age", ">,21"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 3);
-
-	// Between query (>=,<=)
-	result = idb.select(kTableName, Json{{"age", ">=,19,<=,22"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 4);
-
-	// Less-than query
-	result = idb.select(kTableName, Json{{"age", "<,20"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 2);
-
-	// Not-equal query
-	result = idb.select(kTableName, Json{{"age", "<>,20"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 5);
-
-	// Sort ascending / descending
-	result = idb.select(kTableName, Json{{"sort", "age asc"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["age"].toInt(), 18);
-	result = idb.select(kTableName, Json{{"sort", "age desc"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"][0]["age"].toInt(), 23);
-
-	// Empty ins query
-	result = idb.select(kTableName, Json{{"ins", "age,999"}});
-	EXPECT_EQ(result["status"].toInt(), 202);
-
-	// lks query with non-matching pattern
-	result = idb.select(kTableName, Json{{"lks", "name,ZZZZ"}});
-	EXPECT_EQ(result["status"].toInt(), 202);
-
-	// Multiple lks conditions
-	result = idb.select(kTableName, Json{{"lks", "name,test,age,2"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 5);
-
-	// ors with overlapping matches (deduplicated rows)
-	result = idb.select(kTableName, Json{{"ors", "age,18,age,18,age,19"}});
-	ASSERT_EQ(result["status"].toInt(), 200);
-	EXPECT_EQ(result["data"].size(), 2);
-
-	// Wrong ins / lks shape is rejected
-	EXPECT_EQ(idb.select(kTableName, Json{{"ins", "age"}})["status"].toInt(), 301);
-	EXPECT_EQ(idb.select(kTableName, Json{{"lks", "name"}})["status"].toInt(), 301);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DAO contract: execSql / insertBatch / transGo
-// ─────────────────────────────────────────────────────────────────────────────
-
-TEST_F(JsonFileDbTest, DaoContract) {
-	reset();
-	Idb& idb = *db();
-
-	// execSql UPDATE with ?? table placeholder (orm style)
-	Json values(JsonType::Array);
-	values.add(kTableName);
-	values.add(77.77);
-	values.add("dao001");
-	ASSERT_EQ(idb.create(kTableName, Json{{"id", "dao001"}, {"name", "dao-row"}, {"age", 31}, {"score", 11.11}})["status"].toInt(), 200);
-	Json execResult = idb.execSql("UPDATE ?? SET score = ? WHERE id = ?", Json(), values);
-	ASSERT_EQ(execResult["status"].toInt(), 200);
-	EXPECT_EQ(execResult["affectedRows"].toInt(), 1);
-	Json row = idb.select(kTableName, Json{{"id", "dao001"}});
-	EXPECT_DOUBLE_EQ(row["data"][0]["score"].toDouble(), 77.77);
-
-	// execSql UPDATE with plain table name and ? placeholders (zorm style)
-	values = Json(JsonType::Array);
-	values.add("dao-row-2");
-	values.add("dao001");
-	execResult = idb.execSql("update table_for_test set name = ? where id = ?", Json(), values);
-	ASSERT_EQ(execResult["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", "dao001"}});
-	EXPECT_EQ(row["data"][0]["name"].toString(), "dao-row-2");
-
-	// execSql UPDATE with literal values (no placeholders)
-	execResult = idb.execSql("update table_for_test set age = 33 where id = 'dao001'");
-	ASSERT_EQ(execResult["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", "dao001"}});
-	EXPECT_EQ(row["data"][0]["age"].toInt(), 33);
-
-	// execSql INSERT with ?? + row-object payload (orm style)
-	values = Json(JsonType::Array);
-	values.add(kTableName);
-	values.add(Json{{"id", "exec001"}, {"name", "exec-sql-row"}, {"age", 99}});
-	execResult = idb.execSql("INSERT INTO ?? ?", Json(), values);
-	ASSERT_EQ(execResult["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", "exec001"}});
-	EXPECT_EQ(row["data"][0]["name"].toString(), "exec-sql-row");
-
-	// execSql INSERT with column list + placeholders (zorm style)
-	values = Json(JsonType::Array);
-	values.add("exec002");
-	values.add("exec-sql-row-2");
-	values.add(44);
-	values.add(4.4);
-	execResult = idb.execSql("insert into table_for_test (id,name,age,score) values (?,?,?,?)", Json(), values);
-	ASSERT_EQ(execResult["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", "exec002"}});
-	EXPECT_EQ(row["data"][0]["name"].toString(), "exec-sql-row-2");
-	EXPECT_EQ(row["data"][0]["age"].toInt(), 44);
-
-	// execSql INSERT with literal values
-	execResult = idb.execSql("insert into table_for_test (id,name,age,score) values ('exec003','literal-row',55,5.5)");
-	ASSERT_EQ(execResult["status"].toInt(), 200);
-	row = idb.select(kTableName, Json{{"id", "exec003"}});
-	EXPECT_EQ(row["data"][0]["name"].toString(), "literal-row");
-	EXPECT_EQ(row["data"][0]["age"].toInt(), 55);
-
-	// execSql DELETE
-	values = Json(JsonType::Array);
-	values.add("exec003");
-	execResult = idb.execSql("delete from table_for_test where id = ?", Json(), values);
-	ASSERT_EQ(execResult["status"].toInt(), 200);
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "exec003"}})["status"].toInt(), 202);
-
-	// execSql with unsupported / empty SQL
-	EXPECT_NE(idb.execSql("", Json(), Json(JsonType::Array))["status"].toInt(), 200);
-	EXPECT_NE(idb.execSql("select * from nowhere", Json(), Json(JsonType::Array))["status"].toInt(), 200);
-
-	// insertBatch
-	Json batchRows(JsonType::Array);
-	batchRows.add(Json{{"id", "batch001"}, {"name", "batch-one"}, {"age", 40}, {"score", 1.11}});
-	batchRows.add(Json{{"id", "batch002"}, {"name", "batch-two"}, {"age", 41}, {"score", 2.22}});
-	Json batchResult = idb.insertBatch(kTableName, batchRows);
+	// insertBatch with exactly one element is accepted
+	Json one(JsonType::Array);
+	one.add(Json{{"id", "one001"}, {"name", "one-row"}});
+	Json batchResult = idb.insertBatch(kTableName, one);
 	ASSERT_EQ(batchResult["status"].toInt(), 200);
-	EXPECT_EQ(batchResult["affectedRows"].toInt(), 2);
+	EXPECT_EQ(batchResult["affectedRows"].toInt(), 1);
 
-	// insertBatch with empty array should fail
+	// Empty / malformed input
+	EXPECT_EQ(idb.create(kTableName, Json(JsonType::Object))["status"].toInt(), 301);
 	EXPECT_EQ(idb.insertBatch(kTableName, Json(JsonType::Array))["status"].toInt(), 301);
 
-	// transGo structured style (async + sync flags are accepted)
-	Json txElements(JsonType::Array);
-	txElements.add(Json{{"table", kTableName}, {"method", "Insert"}, {"params", Json{{"id", "txa001"}, {"name", "tx-a-one"}, {"age", 50}, {"score", 5.01}}}});
-	txElements.add(Json{{"table", kTableName}, {"method", "Insert"}, {"params", Json{{"id", "txa002"}, {"name", "tx-a-two"}, {"age", 51}, {"score", 5.02}}}});
-	Json txResult = idb.transGo(txElements, true);
-	ASSERT_EQ(txResult["status"].toInt(), 200);
-
-	Json syncElements(JsonType::Array);
-	syncElements.add(Json{{"table", kTableName}, {"method", "Insert"}, {"params", Json{{"id", "txs001"}, {"name", "tx-s-one"}, {"age", 60}, {"score", 6.01}}}});
-	syncElements.add(Json{{"table", kTableName}, {"method", "Insert"}, {"params", Json{{"id", "txs002"}, {"name", "tx-s-two"}, {"age", 61}, {"score", 6.02}}}});
-	txResult = idb.transGo(syncElements, false);
-	ASSERT_EQ(txResult["status"].toInt(), 200);
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "txa001"}})["data"][0]["name"].toString(), "tx-a-one");
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "txs002"}})["data"][0]["name"].toString(), "tx-s-two");
-
-	// transGo with Update method (id is top-level, not inside params)
-	Json txUpdate(JsonType::Array);
-	txUpdate.add(Json{{"table", kTableName}, {"method", "Update"}, {"id", "batch001"}, {"params", Json{{"name", "tx-updated"}}}});
-	txResult = idb.transGo(txUpdate, false);
-	ASSERT_EQ(txResult["status"].toInt(), 200);
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "batch001"}})["data"][0]["name"].toString(), "tx-updated");
-
-	// transGo with Delete method
-	Json txDelete(JsonType::Array);
-	txDelete.add(Json{{"table", kTableName}, {"method", "Delete"}, {"id", "batch002"}});
-	txResult = idb.transGo(txDelete, false);
-	ASSERT_EQ(txResult["status"].toInt(), 200);
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "batch002"}})["status"].toInt(), 202);
-
-	// transGo with zorm SQL-text style ({"text": ..., "values": [...]})
-	Json sqlArr(JsonType::Array);
-	sqlArr.add(Json("{\"text\":\"insert into table_for_test (id,name,age,score) values ('txt001','text-1',21,78.48)\"}"));
-	sqlArr.add(Json("{\"text\":\"insert into table_for_test (id,name,age,score) values (?,?,?,?)\",\"values\":[\"txt002\",\"text-2\",22,23.27]}"));
-	txResult = idb.transGo(sqlArr);
-	ASSERT_EQ(txResult["status"].toInt(), 200);
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "txt001"}})["data"][0]["name"].toString(), "text-1");
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "txt002"}})["data"][0]["age"].toInt(), 22);
-
-	// transGo rollback: a failing step rolls back the whole transaction
-	Json rollbackArr(JsonType::Array);
-	rollbackArr.add(Json("{\"text\":\"insert into table_for_test (id,name,age,score) values ('rb001','will-not-stay',1,1.0)\"}"));
-	rollbackArr.add(Json("{\"text\":\"this is not sql\"}"));
-	txResult = idb.transGo(rollbackArr);
-	EXPECT_NE(txResult["status"].toInt(), 200);
-	EXPECT_EQ(idb.select(kTableName, Json{{"id", "rb001"}})["status"].toInt(), 202);
-
-	// transGo with empty array is rejected
-	EXPECT_EQ(idb.transGo(Json(JsonType::Array))["status"].toInt(), 301);
-
-	// Multiple tables
-	ASSERT_EQ(idb.create("second_table", Json{{"id", "s001"}, {"value", "second-data"}})["status"].toInt(), 200);
-	Json secondSelect = idb.select("second_table", Json{{"id", "s001"}});
-	ASSERT_EQ(secondSelect["status"].toInt(), 200);
-	EXPECT_EQ(secondSelect["data"][0]["value"].toString(), "second-data");
+	// Empty string id is replaced by a generated one
+	result = idb.create(kTableName, Json{{"id", ""}, {"name", "empty-id"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["id"].toString().size(), static_cast<size_t>(8));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// querySql contract: metadata shims + plain select routing
+// jsonfile-only response shape: records / pages on select results
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(JsonFileDbTest, ResponseShapeContract) {
+	reset();
+	Idb& idb = *db();
+
+	Json all = idb.select(kTableName, Json(JsonType::Object));
+	EXPECT_EQ(all["records"].toInt(), 6);
+	EXPECT_EQ(all["pages"].toInt(), 1);
+
+	Json paged = idb.select(kTableName, Json{{"page", 1}, {"size", 3}});
+	EXPECT_EQ(paged["records"].toInt(), 6);
+	EXPECT_EQ(paged["pages"].toInt(), 2);
+
+	Json empty = idb.select(kTableName, Json{{"id", "missing"}});
+	EXPECT_EQ(empty["records"].toInt(), 0);
+	EXPECT_EQ(empty["pages"].toInt(), 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jsonfile querySql semantics: metadata shims and plain-select routing
 // ─────────────────────────────────────────────────────────────────────────────
 
 TEST_F(JsonFileDbTest, QuerySqlContract) {
 	reset();
 	Idb& idb = *db();
 
-	// sqlite_master existence check: table exists
-	Json result = idb.querySql("SELECT name FROM sqlite_master WHERE type='table' AND name=?", Json(), Json(JsonType::Array).add(kTableName));
+	// sqlite_master existence check: table exists / missing -> 202
+	Json values(JsonType::Array);
+	values.add(kTableName);
+	Json result = idb.querySql("SELECT name FROM sqlite_master WHERE type='table' AND name=?", Json(), values);
 	ASSERT_EQ(result["status"].toInt(), 200);
 	ASSERT_EQ(result["data"].size(), 1);
 	EXPECT_EQ(result["data"][0]["TABLE_NAME"].toString(), kTableName);
 
-	// sqlite_master existence check: table missing -> 202
 	result = idb.querySql("SELECT name FROM sqlite_master WHERE type='table' AND name=?", Json(), Json(JsonType::Array).add("no_such_table"));
 	EXPECT_EQ(result["status"].toInt(), 202);
 
 	// information_schema.views / columns are not supported -> empty
-	result = idb.querySql("SELECT * FROM information_schema.views");
+	EXPECT_EQ(idb.querySql("SELECT * FROM information_schema.views")["status"].toInt(), 202);
+
+	// information_schema.tables with the table name as the last bound value
+	result = idb.querySql("SELECT * FROM information_schema.tables WHERE table_name = ?", Json(), values);
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"].size(), 1);
+
+	// Without a bound table name nothing matches -> empty result
+	result = idb.querySql("SELECT * FROM information_schema.tables WHERE table_name = 'table_for_test'");
 	EXPECT_EQ(result["status"].toInt(), 202);
 
 	// Plain select without WHERE routes to the table with params as conditions
@@ -662,12 +314,10 @@ TEST_F(JsonFileDbTest, QuerySqlContract) {
 	ASSERT_EQ(result["status"].toInt(), 200);
 	EXPECT_EQ(result["data"][0]["name"].toString(), "Kevin 凯文");
 
-	// Plain select all
 	result = idb.querySql("select * from table_for_test");
 	ASSERT_EQ(result["status"].toInt(), 200);
 	EXPECT_EQ(result["data"].size(), 6);
 
-	// select ... from a missing table -> 202
 	result = idb.querySql("select * from missing_table");
 	EXPECT_EQ(result["status"].toInt(), 202);
 
@@ -677,51 +327,299 @@ TEST_F(JsonFileDbTest, QuerySqlContract) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Edge cases
+// jsonfile-only SQL shims: literals, drop table, placeholders, rejections
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_F(JsonFileDbTest, EdgeCases) {
-	resetEmpty();
+TEST_F(JsonFileDbTest, SqlEdgeContract) {
+	reset();
 	Idb& idb = *db();
 
-	// Create in an empty table
-	Json createResult = idb.create("empty_table", Json{{"name", "first"}});
-	ASSERT_EQ(createResult["status"].toInt(), 200);
-	const std::string firstId = createResult["id"].toString();
-	ASSERT_EQ(firstId.size(), static_cast<size_t>(8));
+	// Transaction control shims are no-ops that report success
+	EXPECT_EQ(idb.execSql("begin")["status"].toInt(), 200);
+	EXPECT_EQ(idb.execSql("COMMIT")["status"].toInt(), 200);
+	EXPECT_EQ(idb.execSql("  rollback ")["status"].toInt(), 200);
 
-	// Verify round-trip
-	Json selectResult = idb.select("empty_table", Json{{"id", firstId}});
-	ASSERT_EQ(selectResult["status"].toInt(), 200);
-	EXPECT_EQ(selectResult["data"][0]["name"].toString(), "first");
+	// String literals with doubled-quote escaping, boolean and null literals
+	Json result = idb.execSql(
+		"insert into table_for_test (id,name,age,score) values ('lit001','it''s ok',true,null)");
+	ASSERT_EQ(result["status"].toInt(), 200);
+	Json row = idb.select(kTableName, Json{{"id", "lit001"}});
+	ASSERT_EQ(row["status"].toInt(), 200);
+	EXPECT_EQ(row["data"][0]["name"].toString(), "it's ok");
+	EXPECT_TRUE(row["data"][0]["age"].isTrue());
+	EXPECT_TRUE(row["data"][0]["score"].isNull());
 
-	// Create with array (batch insert via create)
-	Json batchViaCreate(JsonType::Array);
-	batchViaCreate.add(Json{{"id", "bc01"}, {"name", "batch-create-1"}});
-	batchViaCreate.add(Json{{"id", "bc02"}, {"name", "batch-create-2"}});
-	Json batchResult = idb.create("empty_table", batchViaCreate);
-	ASSERT_EQ(batchResult["status"].toInt(), 200);
-	EXPECT_EQ(batchResult["affectedRows"].toInt(), 2);
-	EXPECT_EQ(idb.select("empty_table", Json(JsonType::Object))["data"].size(), 3);
+	// insert with fewer bound values than placeholders is rejected
+	EXPECT_NE(idb.execSql("insert into table_for_test (id,name) values (?,?)",
+						  Json(), Json(JsonType::Array).add("x"))["status"].toInt(), 200);
 
-	// Create with empty string id (should auto-generate)
-	createResult = idb.create("empty_table", Json{{"id", ""}, {"name", "empty-id"}});
-	ASSERT_EQ(createResult["status"].toInt(), 200);
-	EXPECT_EQ(createResult["id"].toString().size(), static_cast<size_t>(8));
+	// INSERT INTO t ? with a non-object payload is rejected
+	EXPECT_NE(idb.execSql("INSERT INTO table_for_test ?", Json(),
+						  Json(JsonType::Array).add("not-an-object"))["status"].toInt(), 200);
 
-	// Sort without explicit direction
-	Json sortResult = idb.select("empty_table", Json{{"sort", "name"}});
-	EXPECT_EQ(sortResult["status"].toInt(), 200);
+	// Garbled literal is rejected
+	EXPECT_NE(idb.execSql("insert into table_for_test (id,name) values ('lit002','unterminated)"
+						  )["status"].toInt(), 200);
 
-	// Row order after a delete: swap-pop (last row moves into the hole)
-	reset();
-	ASSERT_EQ(idb.remove(kTableName, Json{{"id", "a1b2c3d4"}})["status"].toInt(), 200);
-	Json all = idb.select(kTableName, Json(JsonType::Object));
+	// DELETE with ?? table placeholder
+	result = idb.execSql("DELETE FROM ?? WHERE id = ?", Json(),
+						 Json(JsonType::Array).add(kTableName).add("lit001"));
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["affectedRows"].toInt(), 1);
+	EXPECT_EQ(idb.select(kTableName, Json{{"id", "lit001"}})["status"].toInt(), 202);
+
+	// UPDATE / DELETE against a missing table report 0 affected rows
+	result = idb.execSql("update missing_table set name = 'x' where id = 'y'");
+	EXPECT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["affectedRows"].toInt(), 0);
+	result = idb.execSql("delete from missing_table where id = 'y'");
+	EXPECT_EQ(result["affectedRows"].toInt(), 0);
+
+	// drop table removes it entirely; dropping again reports 0
+	ASSERT_EQ(idb.create("temp_table", Json{{"id", "t1"}, {"v", 1}})["status"].toInt(), 200);
+	result = idb.execSql("DROP TABLE temp_table");
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["affectedRows"].toInt(), 1);
+	EXPECT_EQ(idb.select("temp_table", Json(JsonType::Object))["status"].toInt(), 202);
+	EXPECT_EQ(idb.execSql("DROP TABLE temp_table")["affectedRows"].toInt(), 0);
+	EXPECT_EQ(idb.execSql("drop table if exists no_such_table")["affectedRows"].toInt(), 0);
+
+	// UPDATE / DELETE without a WHERE clause are not supported
+	EXPECT_EQ(idb.execSql("update table_for_test set name = 'x'")["status"].toInt(), 701);
+	EXPECT_EQ(idb.execSql("delete from table_for_test")["status"].toInt(), 701);
+
+	// INSERT without column list / values section is not supported
+	EXPECT_EQ(idb.execSql("insert into table_for_test")["status"].toInt(), 701);
+
+	// ?? placeholders demand the table name as the first bound value
+	EXPECT_EQ(idb.execSql("INSERT INTO ?? (id) values ('x')")["status"].toInt(), 701);
+	EXPECT_EQ(idb.execSql("UPDATE ?? SET id = 'x' WHERE id = 'y'")["status"].toInt(), 701);
+	EXPECT_EQ(idb.execSql("DELETE FROM ?? WHERE id = 'y'")["status"].toInt(), 701);
+
+	// CREATE TABLE / DROP TABLE with a ?? table placeholder
+	Json phValues(JsonType::Array);
+	phValues.add("ph_table");
+	ASSERT_EQ(idb.execSql("CREATE TABLE ?? (id text NOT NULL, val real DEFAULT NULL)", Json(), phValues)["status"].toInt(), 200);
+	ASSERT_EQ(idb.create("ph_table", Json{{"id", "p1"}, {"val", false}})["status"].toInt(), 200);
+	// boolean false literal survives a round-trip
+	row = idb.select("ph_table", Json{{"id", "p1"}});
+	ASSERT_EQ(row["status"].toInt(), 200);
+	EXPECT_TRUE(row["data"][0]["val"].isFalse());
+	ASSERT_EQ(idb.execSql("DROP TABLE ??", Json(), Json(JsonType::Array).add("ph_table"))["status"].toInt(), 200);
+	EXPECT_EQ(idb.select("ph_table", Json(JsonType::Object))["status"].toInt(), 202);
+}
+
+// A hand-crafted data file (no CREATE TABLE) is indexed on load: rows with
+// ids are fully mutable through the SQL shims.
+TEST_F(JsonFileDbTest, HandcraftedStoreContract) {
+	const std::string dbPath = scratchPath("handcrafted");
+	removeDatabaseFiles(dbPath);
+	writeFile(dbPath, R"([{"table":"t","rows":[{"id":"a","n":1},{"id":"b","n":2}]}])");
+	auto db = JsonFileDb::createShared(dbPath);
+
+	// select-all works without any schema
+	Json all = db->select("t", Json(JsonType::Object));
 	ASSERT_EQ(all["status"].toInt(), 200);
-	ASSERT_EQ(all["data"].size(), 5);
-	EXPECT_EQ(all["data"][0]["id"].toString(), "a6b7c8d9");
-	EXPECT_EQ(all["data"][1]["id"].toString(), "a2b3c4d5");
-	EXPECT_EQ(all["data"][4]["id"].toString(), "a5b6c7d8");
+	EXPECT_EQ(all["data"].size(), 2);
+
+	// the id -> row index was rebuilt from the file: indexed update works
+	Json result = db->execSql("update t set n = 9 where id = 'b'");
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["affectedRows"].toInt(), 1);
+	all = db->select("t", Json{{"id", "b"}});
+	ASSERT_EQ(all["status"].toInt(), 200);
+	EXPECT_EQ(all["data"][0]["n"].toInt(), 9);
+
+	// indexed delete works on the hand-crafted store
+	result = db->execSql("delete from t where id = 'a'");
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["affectedRows"].toInt(), 1);
+	EXPECT_EQ(db->select("t", Json{{"id", "a"}})["status"].toInt(), 202);
+	EXPECT_EQ(db->select("t", Json(JsonType::Object))["data"].size(), 1);
+
+	removeDatabaseFiles(dbPath);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jsonfile-only structured transactions: Batch / Update / Delete methods
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(JsonFileDbTest, TransGoStructuredContract) {
+	reset();
+	Idb& idb = *db();
+
+	// Batch method upserts every element
+	Json batchTx(JsonType::Array);
+	batchTx.add(Json{{"table", kTableName}, {"method", "Batch"}, {"params", Json(JsonType::Array)
+		.add(Json{{"id", "bt01"}, {"name", "batch-tx-1"}, {"age", 1}, {"score", 0.1}})
+		.add(Json{{"id", "bt02"}, {"name", "batch-tx-2"}, {"age", 2}, {"score", 0.2}})}});
+	Json txResult = idb.transGo(batchTx);
+	ASSERT_EQ(txResult["status"].toInt(), 200);
+	EXPECT_EQ(idb.select(kTableName, Json{{"id", "bt01"}})["data"][0]["name"].toString(), "batch-tx-1");
+	EXPECT_EQ(idb.select(kTableName, Json{{"id", "bt02"}})["data"][0]["age"].toInt(), 2);
+
+	// Update method (id is top-level, not inside params)
+	Json txUpdate(JsonType::Array);
+	txUpdate.add(Json{{"table", kTableName}, {"method", "Update"}, {"id", "bt01"}, {"params", Json{{"name", "tx-updated"}}}});
+	txResult = idb.transGo(txUpdate, false);
+	ASSERT_EQ(txResult["status"].toInt(), 200);
+	EXPECT_EQ(idb.select(kTableName, Json{{"id", "bt01"}})["data"][0]["name"].toString(), "tx-updated");
+
+	// Delete method
+	Json txDelete(JsonType::Array);
+	txDelete.add(Json{{"table", kTableName}, {"method", "Delete"}, {"id", "bt02"}});
+	txResult = idb.transGo(txDelete, false);
+	ASSERT_EQ(txResult["status"].toInt(), 200);
+	EXPECT_EQ(idb.select(kTableName, Json{{"id", "bt02"}})["status"].toInt(), 202);
+
+	// A structured element that matches no method fails and rolls back
+	Json badTx(JsonType::Array);
+	badTx.add(Json{{"table", kTableName}, {"method", "Insert"}, {"params", Json{{"id", "bt03"}, {"name", "ok"}}}});
+	badTx.add(Json{{"table", kTableName}, {"method", "Nonsense"}, {"params", Json{{"x", 1}}}});
+	txResult = idb.transGo(badTx);
+	EXPECT_NE(txResult["status"].toInt(), 200);
+	EXPECT_EQ(idb.select(kTableName, Json{{"id", "bt03"}})["status"].toInt(), 202);
+
+	// transGo with empty array is rejected
+	EXPECT_EQ(idb.transGo(Json(JsonType::Array))["status"].toInt(), 301);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jsonfile-only value types: null / boolean / numeric-string rows
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(JsonFileDbTest, ValueTypesContract) {
+	reset();
+	Idb& idb = *db();
+
+	ASSERT_EQ(idb.create(kTableName, Json{{"id", "vt01"}, {"name", "nuller"}, {"age", nullptr}, {"score", nullptr}})["status"].toInt(), 200);
+	ASSERT_EQ(idb.create(kTableName, Json{{"id", "vt02"}, {"name", "boolean"}, {"age", true}, {"score", false}})["status"].toInt(), 200);
+	ASSERT_EQ(idb.create(kTableName, Json{{"id", "vt03"}, {"name", "numeric-string"}, {"age", "20"}, {"score", nullptr}})["status"].toInt(), 200);
+
+	// SQL-style "null" condition matches the explicit-null row
+	// (vt03's age is the string "20", which does not match the null check).
+	Json result = idb.select(kTableName, Json{{"age", "null"}, {"ins", "id,vt01,vt03"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	ASSERT_EQ(result["data"].size(), 1);
+	EXPECT_EQ(result["data"][0]["id"].toString(), "vt01");
+
+	// Numeric cross-type comparison: string "20" equals number 20
+	result = idb.select(kTableName, Json{{"age", 20}, {"ins", "id,vt03"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"].size(), 1);
+
+	// Boolean round-trips and is queryable
+	result = idb.select(kTableName, Json{{"id", "vt02"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_TRUE(result["data"][0]["age"].isTrue());
+	EXPECT_TRUE(result["data"][0]["score"].isFalse());
+
+	// sum skips null/boolean rows and accepts numeric strings
+	result = idb.select(kTableName, Json{{"sum", "age,agesum"}, {"ins", "id,vt01,vt03"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["agesum"].toInt(), 20);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jsonfile-only query parameter validation and string-range comparisons
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(JsonFileDbTest, QueryValidationContract) {
+	reset();
+	Idb& idb = *db();
+
+	// Wrong aggregate shapes are rejected
+	EXPECT_EQ(idb.select(kTableName, Json{{"count", "age"}})["status"].toInt(), 301);
+	EXPECT_EQ(idb.select(kTableName, Json{{"sum", "age"}})["status"].toInt(), 301);
+
+	// Wrong comparison shape (3 parts) is rejected
+	EXPECT_EQ(idb.select(kTableName, Json{{"age", ">,1,2"}})["status"].toInt(), 301);
+
+	// Lexicographic comparison on string fields
+	Json result = idb.select(kTableName, Json{{"name", ">,test002"}, {"ins", "id,a3b4c5d6,a4b5c6d7,a5b6c7d8,a6b7c8d9"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"].size(), 3);  // test003, test004, test005
+
+	result = idb.select(kTableName, Json{{"name", "<=,test001"}, {"ins", "id,a1b2c3d4,a2b3c4d5"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"].size(), 2);  // "Kevin 凯文" (K < t) and "test001" itself
+
+	// group + explicit fields projection keeps the group field
+	result = idb.select(kTableName, Json{{"group", "age"}, {"count", "*,total"}}, vector<string>{"total"});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_FALSE(result["data"][0]["age"].isError());
+	EXPECT_FALSE(result["data"][0]["total"].isError());
+
+	// sum over rows where the column is missing/null yields null
+	result = idb.select(kTableName, Json{{"sum", "nonexistent,s"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_TRUE(result["data"][0]["s"].isNull());
+
+	// Field projection through a "fields" key inside params (jsonfile
+	// extension ported from the orm project; SQL backends only take the
+	// vector<string> argument).
+	Json fieldsParam{{"id", "a2b3c4d5"}};
+	Json fields(JsonType::Array);
+	fields.add("name");
+	fields.add("score");
+	fieldsParam.add("fields", fields);
+	result = idb.select(kTableName, fieldsParam);
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), "test001");
+	EXPECT_TRUE(result["data"][0]["id"].isError());
+
+	// Invalid fields definition is rejected
+	Json badFields{{"id", "a2b3c4d5"}};
+	Json badFieldArray(JsonType::Array);
+	badFieldArray.add(1);
+	badFieldArray.add(2);
+	badFields.add("fields", badFieldArray);
+	EXPECT_EQ(idb.select(kTableName, badFields)["status"].toInt(), 301);
+
+	// remove with an empty object is rejected (SQL backends would run
+	// "delete ... where id = ''" and report success)
+	EXPECT_EQ(idb.remove(kTableName, Json(JsonType::Object))["status"].toInt(), 301);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// File hygiene: empty file is an empty database; stale temp files of dead
+// processes are swept; corrupt file reports through querySql as first call
+// ─────────────────────────────────────────────────────────────────────────────
+
+TEST_F(JsonFileDbTest, FileHygieneContract) {
+	const std::string dbPath = scratchPath("hygiene");
+
+	// An empty file is treated as an empty database (not corruption)
+	removeDatabaseFiles(dbPath);
+	writeFile(dbPath, "");
+	{
+		auto db = JsonFileDb::createShared(dbPath);
+		EXPECT_EQ(db->select("t", Json(JsonType::Object))["status"].toInt(), 202);
+		EXPECT_EQ(db->create("t", Json{{"id", "e1"}})["status"].toInt(), 200);
+	}
+	removeDatabaseFiles(dbPath);
+
+	// Stale temp files whose writer is gone are removed by a fresh instance
+	const std::string staleTemp = dbPath + ".tmp.999999999.deadbeef";
+	writeFile(staleTemp, "junk");
+	const std::string liveTemp = dbPath + ".tmp." + std::to_string(jfd::currentProcessId()) + ".cafebabe";
+	writeFile(liveTemp, "junk");
+	{
+		auto db = JsonFileDb::createShared(dbPath);
+		(void)db;
+	}
+	EXPECT_FALSE(fileExists(staleTemp));   // dead writer -> swept
+	EXPECT_TRUE(fileExists(liveTemp));     // live writer (this process) -> kept
+	removePath(liveTemp);
+	removeDatabaseFiles(dbPath);
+
+	// querySql as the very first call on a corrupt file reports 701
+	writeFile(dbPath, "{ broken");
+	{
+		auto db = JsonFileDb::createShared(dbPath);
+		EXPECT_EQ(db->querySql("select * from t")["status"].toInt(), 701);
+	}
+	removeDatabaseFiles(dbPath);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -950,42 +848,14 @@ TEST(WriteWaitTest, ReaderNotBlockedByWaitingWriter) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DbBase integration: dbType "jsonfile" routes to the file backend
+// DbBase integration: routing and error rejection
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST(DbBaseTest, JsonFileRouting) {
-	const std::string dbPath = scratchPath("dbbase");
-	removeDatabaseFiles(dbPath);
-	{
-		Json options;
-		options.add("connString", dbPath);
-		options.add("DbLogClose", true);
-		Idb* db = new DbBase("jsonfile", options);
-		ASSERT_EQ(db->execSql(kCreateTableSql)["status"].toInt(), 200);
-		ASSERT_EQ(db->create(kTableName, Json{{"id", "bb001"}, {"name", "via-dbbase"}, {"age", 7}, {"score", 0.5}})["status"].toInt(), 200);
-		Json result = db->select(kTableName, Json{{"id", "bb001"}});
-		ASSERT_EQ(result["status"].toInt(), 200);
-		EXPECT_EQ(result["data"][0]["name"].toString(), "via-dbbase");
-
-		// insertBatch + query + update through the same surface
-		Json rows(JsonType::Array);
-		rows.add(Json{{"id", "bb002"}, {"name", "batch"}, {"age", 8}, {"score", 1.5}});
-		ASSERT_EQ(db->insertBatch(kTableName, rows)["status"].toInt(), 200);
-		result = db->select(kTableName, Json{{"age", ">,7"}});
-		ASSERT_EQ(result["status"].toInt(), 200);
-		EXPECT_EQ(result["data"].size(), 1);
-
-		ASSERT_EQ(db->update(kTableName, Json{{"id", "bb001"}, {"age", 9}})["status"].toInt(), 200);
-		result = db->select(kTableName, Json{{"id", "bb001"}});
-		EXPECT_EQ(result["data"][0]["age"].toInt(), 9);
-
-		ASSERT_EQ(db->remove(kTableName, Json{{"id", "bb001"}})["status"].toInt(), 200);
-
-		// Unknown dbType is still rejected (DbBase throws a const char*)
-		EXPECT_THROW(DbBase("no_such_db", options), const char*);
-		delete db;
-	}
-	removeDatabaseFiles(dbPath);
+TEST(DbBaseTest, UnknownDbTypeRejected) {
+	Json options;
+	options.add("connString", scratchPath("dbbase"));
+	// DbBase throws a const char* for unsupported db types.
+	EXPECT_THROW(DbBase("no_such_db", options), const char*);
 }
 
 TEST(DefaultPathTest, UsesExecutableDirectory) {
@@ -993,10 +863,44 @@ TEST(DefaultPathTest, UsesExecutableDirectory) {
 	EXPECT_EQ(JsonFileDb::defaultStoragePath(), jfd::genericUtf8(jfd::fsPath(expected).lexically_normal()));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared contract suite: the jsonfile backend accessed through DbBase, exactly
+// like the SQL backends exercise it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class JsonFileContractEnv final : public contract::Env {
+public:
+	~JsonFileContractEnv() override {
+		removeDatabaseFiles(path_);
+	}
+
+	Idb* connect() override {
+		Json options;
+		options.add("connString", path_);
+		options.add("DbLogClose", true);
+		return new DbBase("jsonfile", options);
+	}
+
+	vector<string> schemaSqls() const override {
+		return {
+			"DROP TABLE IF EXISTS table_for_test",
+			kCreateTableSql,
+		};
+	}
+
+private:
+	std::string path_ = scratchPath("contract");
+};
+
+// Instantiate the shared contract suite against the jsonfile backend.
+ZORM_CONTRACT_TESTS()
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
 	::testing::InitGoogleTest(&argc, argv);
 	gExecutableDirectory = executableDirectoryFromArgv(argc > 0 ? argv[0] : nullptr);
+	static JsonFileContractEnv env;
+	contract::env = &env;
 	return RUN_ALL_TESTS();
 }
