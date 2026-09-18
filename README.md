@@ -73,6 +73,13 @@ task list：
 ```
     Json options;
     options.add("db_host", "192.168.6.6");   //mysql service IP
+    // SSL/TLS (optional): the client negotiates TLS automatically when the
+    // server offers it; configure the options below as needed
+    //options.add("db_ssl_ca", "./ca.pem");        //CA cert to verify the server
+    //options.add("db_ssl_cert", "./client.pem");  //client cert (mutual TLS)
+    //options.add("db_ssl_key", "./client.key");   //client private key
+    //options.add("db_ssl_verify", true);          //verify server cert (default false)
+    //options.add("db_ssl_required", true);        //require TLS: fail when the server cannot encrypt
     options.add("db_port", 3306);            //port
     options.add("db_name", "dbtest");        //database's name
     options.add("db_user", "root");          //username

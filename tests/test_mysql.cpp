@@ -84,6 +84,24 @@ TEST(MysqlExtra, PlaceholderSql) {
 	EXPECT_EQ(rs["data"][0]["name"].toString(), "ph-name");
 }
 
+TEST(MysqlExtra, ConnectionInfo) {
+	contract::env->connectOnce();
+	Idb& db = contract::env->db();
+
+	// Informational: client identity and TLS state of this connection. The
+	// client prefers TLS (ssl-mode=PREFERRED); against a skip_ssl server the
+	// connection falls back to plain text (empty Ssl_version).
+	std::cout << "client library: " << mysql_get_client_info() << std::endl;
+	const char* statusNames[] = {"Ssl_version", "Ssl_cipher"};
+	for (const char* name : statusNames) {
+		Json rs = db.querySql(std::string("SHOW STATUS LIKE '") + name + "'");
+		if (rs["status"].toInt() == 200 && rs["data"].size() > 0) {
+			std::cout << name << ": '" << rs["data"][0]["Value"].toString() << "'" << std::endl;
+		}
+	}
+	SUCCEED();
+}
+
 int main(int argc, char* argv[]) {
 	::testing::InitGoogleTest(&argc, argv);
 	static MysqlEnv env;

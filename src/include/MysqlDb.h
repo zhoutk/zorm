@@ -29,6 +29,33 @@ namespace ZORM {
 					if (pmysql != nullptr)
 					{
 					 	!charsetName.empty() && mysql_options(pmysql, MYSQL_SET_CHARSET_NAME, charsetName.c_str());
+						// TLS/SSL, default ssl-mode=PREFERRED: mysql_ssl_set()
+						// switches the client into TLS negotiation - WITHOUT it
+						// MariaDB Connector/C connects in plain text even to
+						// TLS-capable servers. NULL arguments keep client-side
+						// certificates optional; the db_ssl_ca/cert/key/...
+						// options apply real files when set.
+						//   db_ssl_verify=true   verify the server certificate
+						//                        (needs db_ssl_ca for self-signed)
+						//   db_ssl_required=true fail the connection when the
+						//                        server cannot do TLS (strict
+						//                        mode for third-party deploys)
+						mysql_ssl_set(pmysql,
+									  sslKey.empty() ? nullptr : sslKey.c_str(),
+									  sslCert.empty() ? nullptr : sslCert.c_str(),
+									  sslCa.empty() ? nullptr : sslCa.c_str(),
+									  sslCapath.empty() ? nullptr : sslCapath.c_str(),
+									  sslCipher.empty() ? nullptr : sslCipher.c_str());
+						char verifyFlag = sslVerify ? 1 : 0;
+						mysql_options(pmysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verifyFlag);
+						// NOTE: only set ENFORCE when actually required - setting
+						// it to 0 after mysql_ssl_set() clears the TLS flag again
+						// and the connection degrades to plain text.
+						if (sslRequired)
+						{
+							char enforceFlag = 1;
+							mysql_options(pmysql, MYSQL_OPT_SSL_ENFORCE, &enforceFlag);
+						}
 						if (mysql_real_connect(pmysql, dbhost.c_str(), dbuser.c_str(), dbpwd.c_str(), dbname.c_str(), dbport, nullptr, 0))
 						{
 							pool.push_back(pmysql);
@@ -59,6 +86,20 @@ namespace ZORM {
 					DbLogClose = options["DbLogClose"].toBool();
 				if(!options["parameterized"].isError())
 					queryByParameter = options["parameterized"].toBool();
+				if (!options["db_ssl_key"].isError())
+					sslKey = options["db_ssl_key"].toString();
+				if (!options["db_ssl_cert"].isError())
+					sslCert = options["db_ssl_cert"].toString();
+				if (!options["db_ssl_ca"].isError())
+					sslCa = options["db_ssl_ca"].toString();
+				if (!options["db_ssl_capath"].isError())
+					sslCapath = options["db_ssl_capath"].toString();
+				if (!options["db_ssl_cipher"].isError())
+					sslCipher = options["db_ssl_cipher"].toString();
+				if (!options["db_ssl_verify"].isError())
+					sslVerify = options["db_ssl_verify"].toBool();
+				if (!options["db_ssl_required"].isError())
+					sslRequired = options["db_ssl_required"].toBool();
 			}
 
 			Json create(const string& tablename, const Json& params) override
@@ -900,6 +941,14 @@ namespace ZORM {
 			string charsetName;
 			bool DbLogClose;
 			bool queryByParameter;
+			// TLS/SSL configuration (delivery to third parties): when any of
+			// the file options is set the client uses TLS; sslVerify controls
+			// server-certificate verification (off by default so the
+			// self-signed certificates common on intranet servers work; turn
+			// on together with db_ssl_ca pointing at a trusted CA).
+			string sslKey, sslCert, sslCa, sslCapath, sslCipher;
+			bool sslVerify = false;
+			bool sslRequired = false;
 		};
 
 	}

@@ -77,6 +77,12 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 ```
     Json options;
     options.add("db_host", "192.168.6.6");   //mysql服务IP
+    // SSL/TLS（可选）：服务器开启SSL时客户端自动协商TLS；以下选项按需配置
+    //options.add("db_ssl_ca", "./ca.pem");        //CA证书，用于校验服务器证书
+    //options.add("db_ssl_cert", "./client.pem");  //客户端证书（双向认证）
+    //options.add("db_ssl_key", "./client.key");   //客户端私钥
+    //options.add("db_ssl_verify", true);          //校验服务器证书（默认false，自签名证书环境可不开）
+    //options.add("db_ssl_required", true);        //强制TLS：服务器不支持加密连接时直接失败
     options.add("db_port", 3306);            //端口
     options.add("db_name", "dbtest");        //数据库名称
     options.add("db_user", "root");          //登记用户名
