@@ -243,7 +243,29 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
  具体使用方法，请参看uint test。 
 
 ## 单元测试
-有完整功能的单元测试用例，请参见tests目录下的测试用例。
+采用配置驱动的契约测试套件（gels 风格）：一套测试，六个后端。被测后端由
+`tests/dbconfig.json` 中的 `db_dialect` 或 `--dialect` 参数决定——切换被测
+数据库就是切换一个配置值，与 refer/gels 完全一致。
+
+同一套测试覆盖的后端：
+- `sqlite3-mem` — 内存型 SQLite（无需服务器）
+- `sqlite3` — 文件型 SQLite（无需服务器）
+- `jsonfile` — JSON 文件型后端（无需服务器）
+- `mysql`、`postgres`、`dm8` — 远程服务器（见 dbconfig.json）
+
+运行方式：
+```
+./run-test                 # 默认: sqlitemem + jsonfile 加固测试
+./run-test local           # sqlitemem + sqlite(文件) + json(文件) + 加固
+./run-test remote          # mysql + postgres + dm8
+./run-test all             # 全部
+./run-test sqlitemem       # 仅内存型 sqlite
+./run-test sqlite          # 仅文件型 sqlite
+./run-test json            # jsonfile 契约 + 加固（两者一起跑）
+```
+jsonfile 后端拥有独立的存储引擎加固测试（损坏文件备份、跨进程锁、原子写、
+内存与磁盘一致性、UTF-8 校验）。`./run-test json` 会把它与共享契约套件一起运行。
+> 详见 [docs/jsonfile-design.md](docs/jsonfile-design.md)：设计思想与测试详解。
 > 测试用例运行结果样例
 ![输入图片说明](tests/uniTest.PNG)
 

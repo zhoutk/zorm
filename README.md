@@ -228,7 +228,33 @@ The supported operators are : >, >=, <, <=, <>, = . Comma is the separator. One 
  Details in unit test, thanks! 
 
 ## Unit test
-Detailed description, please move to tests catalogue.
+Config-driven contract suite (gels-style): ONE suite, SIX backends. The backend
+under test is selected by a single config value in `tests/dbconfig.json`
+(`db_dialect`) or the `--dialect` argument — switching the database under test
+is switching one config value, exactly like refer/gels.
+
+Backends covered by the same suite:
+- `sqlite3-mem` — in-memory SQLite (no server needed)
+- `sqlite3` — file-backed SQLite (no server needed)
+- `jsonfile` — JSON file backend (no server needed)
+- `mysql`, `postgres`, `dm8` — remote servers (see dbconfig.json)
+
+Run:
+```
+./run-test                 # default: sqlitemem + jsonfile hardening
+./run-test local           # sqlitemem + sqlite(file) + json(file) + hardening
+./run-test remote          # mysql + postgres + dm8
+./run-test all             # everything
+./run-test sqlitemem       # memory sqlite only
+./run-test sqlite          # file sqlite only
+./run-test json            # jsonfile contract + hardening (both)
+```
+
+The jsonfile backend has its own storage-engine hardening suite (corrupt-file
+backup, cross-process lock, atomic write, memory-vs-disk consistency, UTF-8
+validation). `./run-test json` runs it together with the shared contract suite.
+> See [docs/jsonfile-design.md](docs/jsonfile-design.md) for the design and
+> the full test breakdown.
 > Example of test case running results
 ![test result](tests/uniTest.PNG)
 

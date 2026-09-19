@@ -2,17 +2,22 @@
 # run-test - 在 bin 目录下运行 ctest（适配 msys2 clang64 终端环境）
 #
 # 用法（参照 gels 的 run-tests 模式）:
-#   ./run-test                  # 默认: 本地测试（sqlite 内存库 + json 文件库）
-#   ./run-test <name>...        # 按名字选择: sqlite | json | mysql | pg | dm
-#                               # 可组合: ./run-test sqlite json
+#   ./run-test                  # 默认: 本地测试（sqlitemem 内存库 + json 文件库加固）
+#   ./run-test <name>...        # 按名字选择: sqlitemem | sqlite | json | mysql | pg | dm
+#                               # 可组合: ./run-test sqlitemem sqlite json
+#   ./run-test local            # 本地: sqlitemem + sqlite(文件) + json(文件) + jsonfile 加固
 #   ./run-test remote           # 远程数据库: mysql + pg + dm
 #   ./run-test all              # 全部
-#   其余参数透传给 ctest，如: ./run-test -V 或 ./run-test json -R test_jsonfile
+#   其余参数透传给 ctest，如: ./run-test -V 或 ./run-test json -R test_contract_jsonfile
 #
-# 名字与测试目标的对应关系:
-#   sqlite -> test_sqlite3     json -> test_jsonfile
-#   mysql  -> test_mysql       pg   -> test_postgres
-#   dm     -> test_dm8
+# 名字与测试目标的对应关系 (config-driven suite):
+#   sqlitemem -> test_contract_sqlite3_mem   (内存型 SQLite)
+#   sqlite    -> test_contract_sqlite3       (文件型 SQLite)
+#   json      -> test_contract_jsonfile + test_jsonfile (JSON 文件型契约 + 加固)
+#   mysql     -> test_contract_mysql
+#   pg        -> test_contract_postgres
+#   dm        -> test_contract_dm8
+#   jsonfile-hardening -> test_jsonfile (文件型后端加固测试)
 
 # 脚本所在目录（项目根），并规范化为 POSIX 风格路径：
 # 当从 Windows 风格的工作目录启动时 pwd 会给出 "D:/x/y"，该形式拼入 MSYS 的
@@ -39,12 +44,12 @@ NAMES=()
 PASSTHROUGH=()
 for arg in "$@"; do
     case "$arg" in
-        sqlite|json|mysql|pg|dm|all|remote)
+        sqlitemem|sqlite|json|mysql|pg|dm|local|remote|all)
             NAMES+=("$arg") ;;
         -*)
             PASSTHROUGH+=("$arg") ;;
         *)
-            echo "警告: '$arg' 不是有效的测试名（sqlite|json|mysql|pg|dm|all|remote），将原样传给 ctest。" >&2
+            echo "警告: '$arg' 不是有效的测试名（sqlitemem|sqlite|json|mysql|pg|dm|local|remote|all），将原样传给 ctest。" >&2
             PASSTHROUGH+=("$arg") ;;
     esac
 done
@@ -52,28 +57,33 @@ done
 # 名字 -> ctest 测试正则
 map_name() {
     case "$1" in
-        sqlite|sqlite3) echo "test_sqlite3" ;;
-        json|jsonfile)  echo "test_jsonfile" ;;
-        mysql)          echo "test_mysql" ;;
-        pg|postgres)    echo "test_postgres" ;;
-        dm|dm8)         echo "test_dm8" ;;
-        *)              return 1 ;;
+        sqlitemem)         echo "test_contract_sqlite3_mem" ;;
+        sqlite)            echo "test_contract_sqlite3" ;;
+        json|jsonfile)     echo "test_contract_jsonfile|test_jsonfile" ;;
+        mysql)             echo "test_contract_mysql" ;;
+        pg|postgres)       echo "test_contract_postgres" ;;
+        dm|dm8)            echo "test_contract_dm8" ;;
+        *)                 return 1 ;;
     esac
 }
 
 REGEX=""
 SELECTED=()
 if [ ${#NAMES[@]} -eq 0 ]; then
-    # 默认: 内存型 + 文件型，不需要数据库服务器
-    SELECTED=(test_sqlite3 test_jsonfile)
+    # 默认: 内存型 sqlite + json 文件库加固，不需要数据库服务器
+    SELECTED=(test_contract_sqlite3_mem test_jsonfile)
 else
     for n in "${NAMES[@]}"; do
         if [ "$n" = "all" ]; then
             SELECTED=()   # 空 = 不加 -R，跑全部
             break
         fi
+        if [ "$n" = "local" ]; then
+            SELECTED+=(test_contract_sqlite3_mem test_contract_sqlite3 test_contract_jsonfile test_jsonfile)
+            continue
+        fi
         if [ "$n" = "remote" ]; then
-            SELECTED+=(test_mysql test_postgres test_dm8)
+            SELECTED+=(test_contract_mysql test_contract_postgres test_contract_dm8)
             continue
         fi
         t=$(map_name "$n") || t="$n"

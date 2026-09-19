@@ -103,142 +103,93 @@ namespace ZORM {
 
 			Json create(const string& tablename, const Json& params) override
 			{
-				if (!params.isError()) {
-					Json values(JsonType::Array);
-					string execSql = "insert into ";
-					execSql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(" ");
-
-					vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
-					size_t len = allKeys.size();
-					string fields = "", vs = "";
-					for (size_t i = 0; i < len; i++) {
-						string k = allKeys[i];
-						fields.append("\"").append(k).append("\"");
-						bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
-						string v = params[k].toString();
-						!queryByParameter && vIsString && escapeString(v);
-						if(queryByParameter){
-							vs.append("?");
-							vIsString ? values.add(v) : values.add(params[k].toDouble());
-						}else{
-							if (vIsString)
-								vs.append("'").append(v).append("'");
-							else
-								vs.append(v);
-						}
-						if (i < len - 1) {
-							fields.append(",");
-							vs.append(",");
-						}
-					}
-					execSql.append("(").append(fields).append(") values (").append(vs).append(")");
-					return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
-				}
-				else {
+				if (params.isError())
 					return DbUtils::MakeJsonObject(STPARAMERR);
+				if (params.isArray()) {
+					if (params.size() == 0)
+						return DbUtils::MakeJsonObject(STPARAMERR);
+					if (params.size() > 1)
+						return insertBatch(tablename, params, "id");
+					return create(tablename, params[0]);
 				}
+				// Upsert parity: a provided id overwrites the row. DM8 has no
+				// INSERT ... ON CONFLICT and its DPI does not bind `?` inside
+				// a MERGE ... USING (SELECT ? FROM DUAL), so use a read-then-
+				// write: SELECT the id, then UPDATE (exists) or INSERT.
+				const Json providedId = params["id"];
+				const bool hasId = !providedId.isError() && !DbUtils::Trim(providedId.toString()).empty();
+				if (hasId) {
+					Json check = select(tablename, Json{{"id", providedId.toString()}});
+					if (check["status"].toInt() == STSUCCESS) {
+						// Row exists: UPDATE all provided non-id columns.
+						Json updateParams(params);
+						Json updateResult = update(tablename, updateParams);
+						if (updateResult["status"].toInt() != STSUCCESS)
+							return updateResult;
+						updateResult.add("id", providedId.toString());
+						updateResult.add("insertId", providedId.toString());
+						updateResult.add("affectedRows", 1);
+						return updateResult;
+					}
+				}
+				string sql;
+				Json values(JsonType::Array);
+				string generatedId;
+				if (!buildInsertSql(tablename, params, sql, values, generatedId))
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				Json rs = queryByParameter ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
+				if (rs["status"].toInt() != STSUCCESS)
+					return rs;
+				const string id = generatedId.empty()
+					? params["id"].toString()
+					: generatedId;
+				if (!id.empty()) {
+					rs.add("id", id);
+					rs.add("insertId", id);
+				}
+				rs.add("affectedRows", 1);
+				return rs;
 			}
 
 			Json update(const string& tablename, const Json& params) override
 			{
-				if (!params.isError()) {
-					Json values(JsonType::Array);
-					string execSql = "update ";
-					execSql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(" set ");
-
-					vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
-					vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
-					if (iter == allKeys.end()) {
-						return DbUtils::MakeJsonObject(STPARAMERR);
-					}
-					else {
-						size_t len = allKeys.size();
-						size_t conditionLen = len - 2;
-						string fields = "", where = " where \"id\" = ";
-						Json idJson;
-						for (size_t i = 0; i < len; i++) {
-							string k = allKeys[i];
-							bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
-							string v = params[k].toString();
-							!queryByParameter && vIsString&& escapeString(v);
-							if (k.compare("id") == 0) {
-								conditionLen++;
-								if (queryByParameter) {
-									where.append(" ? ");
-									idJson = params[k];
-								}
-								else {
-									if (vIsString)
-										where.append("'").append(v).append("'");
-									else
-										where.append(v);
-								}
-							}
-							else {
-								fields.append("\"").append(k).append("\"").append(" = ");
-								if (queryByParameter)
-								{
-									fields.append(" ? ");
-									vIsString ? values.add(v) : values.add(params[k].toDouble());
-								}
-								else
-								{
-									if (vIsString)
-										fields.append("'").append(v).append("'");
-									else
-										fields.append(v);
-								}
-								if (i < conditionLen) {
-									fields.append(",");
-								}
-							}
-						}
-						values.concat(idJson);
-						execSql.append(fields).append(where);
-						return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
-					}
-				}
-				else {
+				if (params.isError())
 					return DbUtils::MakeJsonObject(STPARAMERR);
-				}
+				string sql;
+				Json values(JsonType::Array);
+				if (!buildUpdateSql(tablename, params, sql, values))
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				Json rs = queryByParameter ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
+				if (rs["status"].toInt() == STSUCCESS)
+					rs.add("affectedRows", 1);
+				return rs;
 			}
 
 			Json remove(const string& tablename, const Json& params) override
 			{
-				if (!params.isError()) {
-					Json values(JsonType::Array);
-					string execSql = "delete from ";
-					execSql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(" where \"id\" = ");
-
-					string k = "id";
-					bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
-					string v = params[k].toString();
-					!queryByParameter && vIsString&& escapeString(v);
-					if (queryByParameter) {
-						execSql.append(" ? ");
-						vIsString ? values.add(v) : values.add(params[k].toDouble());
-					}
-					else {
-						if (vIsString)
-							execSql.append("'").append(v).append("'");
-						else
-							execSql.append(v);
-					}
-					return queryByParameter ? ExecNoneQuerySql(execSql, values) : ExecNoneQuerySql(execSql);
-				}
-				else {
+				if (params.isError())
 					return DbUtils::MakeJsonObject(STPARAMERR);
-				}
+				string sql;
+				Json values(JsonType::Array);
+				if (!buildDeleteSql(tablename, params, sql, values))
+					return DbUtils::MakeJsonObject(STPARAMERR);
+				Json rs = queryByParameter ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
+				if (rs["status"].toInt() == STSUCCESS)
+					rs.add("affectedRows", 1);
+				return rs;
 			}
 
 			Json select(const string& tbname, const Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
 			{
 				string tablename = tbname;
-				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter);
-				if(rs["status"].toInt() == 200)
-					return queryByParameter ? ExecQuerySql(tablename, fields, values) : ExecQuerySql(tablename, fields);
-				else
+				string countSql;
+				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter, &countSql);
+				if (rs["status"].toInt() != 200)
 					return rs;
+				Json result = queryByParameter ? ExecQuerySql(tablename, fields, values) : ExecQuerySql(tablename, fields);
+				if (result["status"].toInt() == 200)
+					attachRecordsPages(result, params, countSql, values);
+				return result;
 			}
 
 			Json querySql(const string& sqlstr, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
@@ -266,7 +217,7 @@ namespace ZORM {
 			Json insertBatch(const string& tablename, const Json& elements, string constraint) override
 			{
 				string sql = "insert into ";
-				if (elements.size() < 2) {
+				if (!elements.isArray() || elements.size() < 1) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 				else {
@@ -300,13 +251,75 @@ namespace ZORM {
 						keyStr.append(valueStr);
 					}
 					sql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(keyStr);
-					return queryByParameter ? ExecNoneQuerySql(sql,values) : ExecNoneQuerySql(sql);
+					Json rs = queryByParameter ? ExecNoneQuerySql(sql,values) : ExecNoneQuerySql(sql);
+					if (rs["status"].toInt() == STSUCCESS)
+						rs.add("affectedRows", elements.size());
+					return rs;
 				}
+			}
+
+			// Structured element -> SQL text + values.
+			bool buildStructuredSql(const Json& element, const string& table, const string& method,
+									const Json& params, bool hasId, const Json& idValue,
+									string& sql, Json& values) {
+				if (method == "Insert") {
+					if (!params.isObject())
+						return false;
+					string generatedId;
+					return buildInsertSql(table, params, sql, values, generatedId);
+				}
+				if (method == "Update") {
+					if (!params.isObject() || !hasId)
+						return false;
+					Json merged(params);
+					ZJSON::setChild(merged, "id", idValue);
+					return buildUpdateSql(table, merged, sql, values);
+				}
+				if (method == "Delete") {
+					if (!hasId)
+						return false;
+					return buildDeleteSql(table, Json{{"id", idValue}}, sql, values);
+				}
+				if (method == "Batch") {
+					if (!params.isArray() || params.size() == 0)
+						return false;
+					Json batchValues(JsonType::Array);
+					string keyStr = " ( ";
+					keyStr.append(DbUtils::GetVectorJoinStrArroundQuots(DbUtils::GetVectorFromJson(params[0].getAllKeys()))).append(" ) values ");
+					for (int i = 0; i < params.size(); i++) {
+						vector<string> keys = DbUtils::GetVectorFromJson(params[i].getAllKeys());
+						string valueStr = " ( ";
+						for (int j = 0; j < keys.size(); j++) {
+							bool vIsString = params[i][keys[j]].isString() || params[i][keys[j]].isArray() || params[i][keys[j]].isObject();
+							string v = params[i][keys[j]].toString();
+							!queryByParameter && vIsString && escapeString(v);
+							if (queryByParameter) {
+								valueStr.append("?");
+								batchValues.add(v);
+							} else {
+								if (vIsString)
+									valueStr.append("'").append(v).append("'");
+								else
+									valueStr.append(v);
+							}
+							if (j < keys.size() - 1)
+								valueStr.append(",");
+						}
+						valueStr.append(" )");
+						if (i < params.size() - 1)
+							valueStr.append(",");
+						keyStr.append(valueStr);
+					}
+					sql = "insert into \"" + dbname + "\".\"" + table + "\"" + keyStr;
+					values = batchValues;
+					return true;
+				}
+				return false;
 			}
 
 			Json transGo(const Json& sqls, bool isAsync = false) override
 			{
-				if (sqls.size() < 2) {
+				if (!sqls.isArray() || sqls.size() == 0) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
 				else {
@@ -323,8 +336,26 @@ namespace ZORM {
 					}
 
 					for (size_t i = 0; i < sqls.size(); i++) {
-						string sql = sqls[i]["text"].toString();
-						Json values = sqls[i]["values"].isError() ? Json(JsonType::Array) : sqls[i]["values"];
+						const Json element = sqls[i];
+						const bool hasText = ZJSON::hasChild(element, "text");
+						const bool hasSql = !hasText && ZJSON::hasChild(element, "sql");
+						Json values = element["values"].isError() ? Json(JsonType::Array) : element["values"];
+						string sql;
+						if (hasText || hasSql) {
+							const Json text = hasText ? element["text"] : element["sql"];
+							sql = text.toString();
+						} else {
+							const string table = element["table"].toString();
+							const string method = element["method"].toString();
+							const Json params = element["params"];
+							const Json idValue = element["id"];
+							if (!buildStructuredSql(element, table, method, params,
+													!idValue.isError(), idValue, sql, values)) {
+								errmsg += "transaction element is wrong.";
+								isExecSuccess = false;
+								break;
+							}
+						}
 						isExecSuccess = ExecSqlForTransGo(con, sql, values, &errmsg);
 						if (!isExecSuccess)
 							break;
@@ -362,7 +393,7 @@ namespace ZORM {
 			}
 
 		private:
-			Json genSql(string& querySql, Json& values, const Json& ps, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false)
+			Json genSql(string& querySql, Json& values, const Json& ps, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false, string* countSql = nullptr)
 			{
 				if (!ps.isError()) {
 					Json params(ps);
@@ -567,6 +598,13 @@ namespace ZORM {
 							querySql.append(" ").append(ss[1]);
 					}
 
+					if (countSql != nullptr && queryType == 1 && page > 0) {
+						// DM8 folds unquoted identifiers to upper case; quote
+						// the alias so the result column keeps its case and the
+						// JSON key lookup below stays lowercase.
+						*countSql = DbUtils::CountSqlFromSelect(querySql, "\"" + countAlias_ + "\"");
+					}
+
 					if (page > 0) {
 						page--;
 						size = size < 1 ? 10 : size;
@@ -577,6 +615,32 @@ namespace ZORM {
 				else {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
+			}
+
+			// Runs the count query; returns -1 on failure.
+			long long runCountQuery(const string& countSql, Json& values) {
+				if (countSql.empty())
+					return -1;
+				Json rs = queryByParameter ? ExecQuerySql(countSql, vector<string>(), values) : ExecQuerySql(countSql, vector<string>());
+				if (rs["status"].toInt() != 200 || rs["data"].size() == 0)
+					return -1;
+				return static_cast<long long>(rs["data"][0][countAlias_].toDouble());
+			}
+
+			void attachRecordsPages(Json& result, const Json& params, const string& countSql, Json& values) {
+				long long records = -1;
+				const string pageText = params["page"].toString();
+				const string sizeText = params["size"].toString();
+				const int page = atoi(pageText.c_str());
+				const int size = atoi(sizeText.c_str());
+				if (page > 0 && size > 0 && !countSql.empty())
+					records = runCountQuery(countSql, values);
+				if (records < 0)
+					records = result["data"].size();
+				result.add("records", records);
+				result.add("pages", (page > 0 && size > 0)
+					? (records == 0 ? 0 : static_cast<int>(std::ceil(static_cast<double>(records) / size)))
+					: (records > 0 ? 1 : 0));
 			}
 
 			Json ExecQuerySql(string aQuery, vector<string> fields)
@@ -648,6 +712,12 @@ namespace ZORM {
 					Json al;
 					for (int i = 0; i < num_fields; ++i)
 					{
+						// NULL-aware decoding: a negative indicator length
+						// (DM8's NULL marker) becomes a real JSON null.
+						if (outPtrs[i] < 0) {
+							al.add(string((char*)(fieldNames[i])), nullptr);
+							continue;
+						}
 						if (fieldType[i] == DSQL_DOUBLE) {
 							al.add(string((char*)(fieldNames[i])), outDoubles[i]);
 						}
@@ -791,6 +861,13 @@ namespace ZORM {
 					Json al;
 					for (int i = 0; i < num_fields; ++i)
 					{
+						// NULL-aware decoding: a negative indicator length
+						// (DM8's NULL marker) becomes a real JSON null, so
+						// partial-create rows match the jsonfile contract.
+						if (outPtrs[i] < 0) {
+							al.add(string((char*)(fieldNames[i])), nullptr);
+							continue;
+						}
 						if (fieldType[i] == DSQL_DOUBLE) {
 							al.add(string((char*)(fieldNames[i])), outDoubles[i]);
 						}
@@ -1043,6 +1120,127 @@ namespace ZORM {
 			string charsetName;
 			bool DbLogClose;
 			bool queryByParameter;
+			std::string countAlias_ = "_zorm_total";
+
+			// Qualified table reference for generated SQL: "schema"."table".
+			string qualified(const string& tablename) const {
+				return "\"" + dbname + "\".\"" + tablename + "\"";
+			}
+
+			// SQL builders (shared by create/update/remove/transGo).
+			bool buildInsertSql(const string& tablename, const Json& params,
+								string& sql, Json& values, string& generatedId) {
+				if (!params.isObject())
+					return false;
+				if (ZJSON::memberCount(params) == 0)
+					return false;
+				Json row(params);
+				const Json id = params["id"];
+				if (id.isError() || DbUtils::Trim(id.toString()).empty()) {
+					generatedId = DbUtils::GenerateId();
+					ZJSON::setChild(row, "id", generatedId);
+				}
+				vector<string> allKeys = DbUtils::GetVectorFromJson(row.getAllKeys());
+				if (allKeys.empty())
+					return false;
+				sql = "insert into " + qualified(tablename) + " (";
+				string vs = "";
+				values = Json(JsonType::Array);
+				for (size_t i = 0; i < allKeys.size(); i++) {
+					string k = allKeys[i];
+					sql.append("\"").append(k).append("\"");
+					bool vIsString = row[k].isString() || row[k].isArray() || row[k].isObject();
+					string v = row[k].toString();
+					!queryByParameter && vIsString && escapeString(v);
+					if (queryByParameter) {
+						vs.append("?");
+						vIsString ? values.add(v) : values.add(row[k].toDouble());
+					} else {
+						if (vIsString)
+							vs.append("'").append(v).append("'");
+						else
+							vs.append(v);
+					}
+					if (i < allKeys.size() - 1) {
+						sql.append(",");
+						vs.append(",");
+					}
+				}
+				sql.append(") values (").append(vs).append(")");
+				return true;
+			}
+
+			bool buildUpdateSql(const string& tablename, const Json& params,
+								string& sql, Json& values) {
+				if (!params.isObject())
+					return false;
+				vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
+				vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
+				if (iter == allKeys.end())
+					return false;
+				sql = "update " + qualified(tablename) + " set ";
+				string where = " where \"id\" = ";
+				Json idJson;
+				values = Json(JsonType::Array);
+				bool first = true;
+				for (size_t i = 0; i < allKeys.size(); i++) {
+					string k = allKeys[i];
+					if (k.compare("id") == 0) {
+						idJson = params[k];
+						continue;
+					}
+					bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
+					string v = params[k].toString();
+					!queryByParameter && vIsString && escapeString(v);
+					if (!first)
+						sql.append(",");
+					first = false;
+					sql.append("\"").append(k).append("\" = ");
+					if (queryByParameter) {
+						sql.append(" ? ");
+						vIsString ? values.add(v) : values.add(params[k].toDouble());
+					} else {
+						if (vIsString)
+							sql.append("'").append(v).append("'");
+						else
+							sql.append(v);
+					}
+				}
+				if (queryByParameter) {
+					where.append(" ? ");
+					values.concat(idJson);
+				} else {
+					bool vIsString = idJson.isString() || idJson.isArray() || idJson.isObject();
+					if (vIsString)
+						where.append("'").append(idJson.toString()).append("'");
+					else
+						where.append(idJson.toString());
+				}
+				sql.append(where);
+				return true;
+			}
+
+			bool buildDeleteSql(const string& tablename, const Json& params,
+								string& sql, Json& values) {
+				if (!params.isObject())
+					return false;
+				const Json id = params["id"];
+				if (id.isError())
+					return false;
+				sql = "delete from " + qualified(tablename) + " where \"id\" = ";
+				values = Json(JsonType::Array);
+				bool vIsString = id.isString() || id.isArray() || id.isObject();
+				if (queryByParameter) {
+					sql.append(" ? ");
+					vIsString ? values.add(id.toString()) : values.add(id.toDouble());
+				} else {
+					if (vIsString)
+						sql.append("'").append(id.toString()).append("'");
+					else
+						sql.append(id.toString());
+				}
+				return true;
+			}
 		};
 
 	}

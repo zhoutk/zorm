@@ -1,0 +1,149 @@
+{
+  "_comment": "Config-driven test backend selection (gels-style, see refer/gels/src/config/configs.ts). Change db_dialect to run the SAME contract suite against another backend. Backend is chosen by --dialect <name>, ZORM_DB_DIALECT, or this field. sqlite3-mem = in-memory SQLite; sqlite3 = file-backed SQLite (connString is a file path).",
+  "db_dialect": "sqlite3-mem",
+  "backends": {
+    "sqlite3-mem": {
+      "name": "sqlite3-mem",
+      "type": "sqlite3",
+      "options": {
+        "connString": ":memory:",
+        "DbLogClose": true,
+        "parameterized": true
+      },
+      "schema": [
+        "DROP TABLE IF EXISTS \"table_for_test\";",
+        "CREATE TABLE \"table_for_test\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, \"age\" integer DEFAULT NULL, \"score\" real DEFAULT NULL, PRIMARY KEY (\"id\"));",
+        "DROP TABLE IF EXISTS \"second_table\";",
+        "CREATE TABLE \"second_table\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, PRIMARY KEY (\"id\"));",
+        "DROP TABLE IF EXISTS \"third_table\";",
+        "CREATE TABLE \"third_table\" (\"id\" char(64) NOT NULL, \"value\" TEXT DEFAULT NULL, PRIMARY KEY (\"id\"));"
+      ],
+      "rawTable": "table_for_test",
+      "placeholder": "?",
+      "catalogSql": "SELECT name FROM sqlite_master WHERE type = 'view' AND name = 'v_table_name_not_exist_in_db'",
+      "nullRendering": "empty"
+    },
+    "sqlite3": {
+      "name": "sqlite3",
+      "type": "sqlite3",
+      "options": {
+        "connString": "zorm_test_sqlite3.db",
+        "DbLogClose": true,
+        "parameterized": true
+      },
+      "schema": [
+        "DROP TABLE IF EXISTS \"table_for_test\";",
+        "CREATE TABLE \"table_for_test\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, \"age\" integer DEFAULT NULL, \"score\" real DEFAULT NULL, PRIMARY KEY (\"id\"));",
+        "DROP TABLE IF EXISTS \"second_table\";",
+        "CREATE TABLE \"second_table\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, PRIMARY KEY (\"id\"));",
+        "DROP TABLE IF EXISTS \"third_table\";",
+        "CREATE TABLE \"third_table\" (\"id\" char(64) NOT NULL, \"value\" TEXT DEFAULT NULL, PRIMARY KEY (\"id\"));"
+      ],
+      "rawTable": "table_for_test",
+      "placeholder": "?",
+      "catalogSql": "SELECT name FROM sqlite_master WHERE type = 'view' AND name = 'v_table_name_not_exist_in_db'",
+      "nullRendering": "empty"
+    },
+    "jsonfile": {
+      "name": "jsonfile",
+      "type": "jsonfile",
+      "options": {
+        "connString": "zorm_test_contract.json",
+        "DbLogClose": true
+      },
+      "schema": [
+        "DROP TABLE IF EXISTS table_for_test",
+        "CREATE TABLE table_for_test (id text NOT NULL, name text DEFAULT NULL, age integer DEFAULT NULL, score real DEFAULT NULL, PRIMARY KEY (id))"
+      ],
+      "rawTable": "table_for_test",
+      "placeholder": "?",
+      "catalogSql": "SELECT name FROM sqlite_master WHERE type='table' AND name='table_for_test'",
+      "nullRendering": "json-null",
+      "supportsWherePlaceholders": false,
+      "autoCreateTables": true
+    },
+    "mysql": {
+      "name": "mysql",
+      "type": "mysql",
+      "options": {
+        "db_host": "10.0.0.7",
+        "db_port": 3306,
+        "db_name": "dbtest",
+        "db_user": "root",
+        "db_pass": "123456",
+        "db_char": "utf8mb4",
+        "db_conn": 5,
+        "DbLogClose": true,
+        "parameterized": true
+      },
+      "schema": [
+        "DROP TABLE IF EXISTS `table_for_test`;",
+        "CREATE TABLE `table_for_test` (`id` char(64) CHARACTER SET utf8mb4 NOT NULL, `name` varchar(128) CHARACTER SET utf8mb4 NULL DEFAULT NULL, `age` int(0) NULL DEFAULT NULL, `score` double NULL DEFAULT NULL, PRIMARY KEY (`id`) USING BTREE) ENGINE = InnoDB CHARACTER SET = utf8mb4 ROW_FORMAT = Dynamic;",
+        "DROP TABLE IF EXISTS `second_table`;",
+        "CREATE TABLE `second_table` (`id` char(64) NOT NULL, `name` varchar(128) NULL, PRIMARY KEY (`id`)) ENGINE = InnoDB CHARACTER SET = utf8mb4;",
+        "DROP TABLE IF EXISTS `third_table`;",
+        "CREATE TABLE `third_table` (`id` char(64) NOT NULL, `value` varchar(128) NULL, PRIMARY KEY (`id`)) ENGINE = InnoDB CHARACTER SET = utf8mb4;"
+      ],
+      "rawTable": "`table_for_test`",
+      "placeholder": "?",
+      "catalogSql": "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='dbtest' AND TABLE_NAME='v_table_name_not_exist_in_db'",
+      "nullRendering": "null-string"
+    },
+    "postgres": {
+      "name": "postgres",
+      "type": "postgres",
+      "options": {
+        "db_host": "10.0.0.7",
+        "db_port": 5432,
+        "db_name": "dbtest",
+        "db_user": "root",
+        "db_pass": "123456",
+        "db_char": "utf8mb4",
+        "db_conn": 5,
+        "DbLogClose": true,
+        "parameterized": true
+      },
+      "schema": [
+        "DROP TABLE IF EXISTS \"public\".\"table_for_test\";",
+        "CREATE TABLE \"public\".\"table_for_test\" (\"id\" varchar(64) NOT NULL, \"name\" varchar(128) DEFAULT NULL, \"age\" int4 DEFAULT NULL, \"score\" numeric(10,2) DEFAULT NULL)",
+        "ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");",
+        "DROP TABLE IF EXISTS \"public\".\"second_table\";",
+        "CREATE TABLE \"public\".\"second_table\" (\"id\" varchar(64) NOT NULL, \"name\" varchar(128) DEFAULT NULL, PRIMARY KEY (\"id\"));",
+        "DROP TABLE IF EXISTS \"public\".\"third_table\";",
+        "CREATE TABLE \"public\".\"third_table\" (\"id\" varchar(64) NOT NULL, \"value\" varchar(128) DEFAULT NULL, PRIMARY KEY (\"id\"));"
+      ],
+      "rawTable": "table_for_test",
+      "placeholder": "$n",
+      "catalogSql": "select viewname from pg_views where schemaname = 'public' and viewname = 'v_table_name_not_exist_in_db'",
+      "nullRendering": "json-null"
+    },
+    "dm8": {
+      "name": "dm8",
+      "type": "dm8",
+      "options": {
+        "db_host": "10.0.0.7",
+        "db_port": 5236,
+        "db_name": "dbtest",
+        "db_user": "SYSDBA",
+        "db_pass": "123456",
+        "db_conn": 1,
+        "DbLogClose": true,
+        "parameterized": true
+      },
+      "schema": [
+        "SET SCHEMA \"dbtest\";",
+        "DROP TABLE IF EXISTS \"dbtest\".\"table_for_test\"",
+        "CREATE TABLE \"dbtest\".\"table_for_test\" (\"id\" CHAR(64) NOT NULL, \"name\" VARCHAR(128), \"age\" INTEGER, \"score\" DOUBLE, NOT CLUSTER PRIMARY KEY(\"id\")) STORAGE(ON \"MAIN\", CLUSTERBTR) ;",
+        "DROP TABLE IF EXISTS \"dbtest\".\"second_table\"",
+        "CREATE TABLE \"dbtest\".\"second_table\" (\"id\" CHAR(64) NOT NULL, \"name\" VARCHAR(128), PRIMARY KEY(\"id\")) ;",
+        "DROP TABLE IF EXISTS \"dbtest\".\"third_table\"",
+        "CREATE TABLE \"dbtest\".\"third_table\" (\"id\" CHAR(64) NOT NULL, \"value\" VARCHAR(128), PRIMARY KEY(\"id\")) ;"
+      ],
+      "rawTable": "\"dbtest\".\"table_for_test\"",
+      "quoteColumn": "\"",
+      "placeholder": "?",
+      "catalogSql": "select * from user_objects WHERE OBJECT_TYPE = 'VIEW' AND OBJECT_NAME = 'v_table_name_not_exist_in_db'",
+      "nullRendering": "json-null"
+    }
+  }
+}

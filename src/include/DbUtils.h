@@ -4,11 +4,56 @@
 #include <time.h>
 #include "GlobalConstants.h"
 #include <algorithm>
+#include <random>
 
 namespace ZORM {
 
 	class DbUtils {
 	public:
+		// 8 lowercase hex characters - the id shape the ORM/gels contract
+		// expects for auto-generated ids (shared by jsonfile and the SQL
+		// backends so create() with a missing id behaves identically).
+		static std::string GenerateId() {
+			static thread_local std::mt19937_64 engine([]() {
+				std::random_device device;
+				std::seed_seq seed{ device(), device(), device(), device() };
+				return std::mt19937_64(seed);
+			}());
+			std::uniform_int_distribution<std::uint32_t> distribution(0u, 0xFFFFFFFFu);
+			char buffer[16] = { 0 };
+			std::snprintf(buffer, sizeof(buffer), "%08x", static_cast<unsigned int>(distribution(engine)));
+			return std::string(buffer);
+		}
+
+		// Builds "select count(1) as <alias> <tail>" from a select statement,
+		// where tail starts at the first " from " and stops before any
+		// " order by " clause (pagination + count for every backend).
+		static std::string CountSqlFromSelect(const std::string& selectSql, const std::string& alias) {
+			const std::string marker = " from ";
+			const std::string::size_type from = selectSql.find(marker);
+			if (from == std::string::npos) {
+				return std::string();
+			}
+			std::string tail = selectSql.substr(from);
+			const std::string::size_type order = tail.find(" order by ");
+			if (order != std::string::npos) {
+				tail = tail.substr(0, order);
+			}
+			return "select count(1) as " + alias + tail;
+		}
+
+		static std::string Trim(const std::string& text) {
+			std::string::size_type begin = 0;
+			std::string::size_type end = text.size();
+			while (begin < end && std::isspace(static_cast<unsigned char>(text[begin]))) {
+				++begin;
+			}
+			while (end > begin && std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+				--end;
+			}
+			return text.substr(begin, end - begin);
+		}
+
 		static std::string escape(std::string str)
 		{
 			setlocale(LC_CTYPE, "");

@@ -136,39 +136,63 @@ if (CMAKE_ZJSON_ENABLE_TEST)
     include_directories(./thirds/googletest-1.18.0/googletest/include)
     include_directories(./thirds/googletest-1.18.0/googlemock/include)
 
-    add_executable(test_sqlite3 tests/test_sqlite3.cpp src/JsonFileDb.cc)
-    add_executable(test_mysql tests/test_mysql.cpp src/JsonFileDb.cc)
-    add_executable(test_postgres tests/test_postgres.cpp src/JsonFileDb.cc)
-    add_executable(test_dm8 tests/test_dm8.cpp src/JsonFileDb.cc)
-    add_executable(test_jsonfile tests/test_jsonfile.cpp src/JsonFileDb.cc)
+    # Config-driven contract suite: ONE test binary registered once per
+    # backend (gels-style). The backend under test is selected by
+    # --dialect <name> | ZORM_DB_DIALECT | tests/dbconfig.json "db_dialect".
+    # test_jsonfile.cpp keeps the file-hardening suite (corrupt file, lock,
+    # atomic write, persistence, shared instance, encoding).
+    add_executable(test_contract
+        tests/test_contract.cpp
+        tests/TestConfig.cc
+        src/JsonFileDb.cc)
+    add_executable(test_jsonfile
+        tests/test_jsonfile.cpp
+        tests/TestConfig.cc
+        src/JsonFileDb.cc)
 
     # Output test executables to ${CMAKE_SOURCE_DIR}/bin as well
-    set_target_properties(test_sqlite3 test_mysql test_postgres test_dm8 test_jsonfile PROPERTIES
+    set_target_properties(test_contract test_jsonfile PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
     )
 
-    add_test(NAME test_sqlite3 COMMAND test_sqlite3)
-    add_test(NAME test_mysql COMMAND test_mysql)
-    add_test(NAME test_postgres COMMAND test_postgres)
-    add_test(NAME test_dm8 COMMAND test_dm8)
-    add_test(NAME test_jsonfile COMMAND test_jsonfile)
+    # dbconfig.json must live next to the test executable at runtime.
+    add_custom_command(TARGET test_contract POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/tests/dbconfig.json
+            $<TARGET_FILE_DIR:test_contract>/dbconfig.json)
+
+    # One CTest registration per backend: the SAME suite, one config value
+    # switches the database under test.
+    # WORKING_DIRECTORY = the exe dir (bin/), so dbconfig.json (copied next to
+    # the executable) is found and file-backed test DBs land in bin/.
+    # sqlite3-mem: in-memory SQLite; sqlite3: file-backed SQLite.
+    add_test(NAME test_contract_sqlite3_mem COMMAND test_contract --dialect sqlite3-mem
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_sqlite3 COMMAND test_contract --dialect sqlite3
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_jsonfile COMMAND test_contract --dialect jsonfile
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_mysql COMMAND test_contract --dialect mysql
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_postgres COMMAND test_contract --dialect postgres
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_dm8 COMMAND test_contract --dialect dm8
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_jsonfile COMMAND test_jsonfile
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_jsonfile>)
+
+    set(ZORM_TEST_TARGETS test_contract test_jsonfile)
     if(MSVC)
-        target_link_libraries(test_sqlite3 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_mysql ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_postgres ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_dm8 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_jsonfile ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
+        foreach(t ${ZORM_TEST_TARGETS})
+            target_link_libraries(${t} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
+        endforeach()
     elseif(MINGW)
-        target_link_libraries(test_sqlite3 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_mysql ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_postgres ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_dm8 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        target_link_libraries(test_jsonfile ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
+        foreach(t ${ZORM_TEST_TARGETS})
+            target_link_libraries(${t} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
+        endforeach()
     elseif(UNIX)
-        target_link_libraries(test_sqlite3 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
-        target_link_libraries(test_mysql ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
-        target_link_libraries(test_postgres ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
-        target_link_libraries(test_dm8 ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
-        target_link_libraries(test_jsonfile gtest gtest_main pthread dl)
+        foreach(t ${ZORM_TEST_TARGETS})
+            target_link_libraries(${t} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
+        endforeach()
     endif()
 endif()

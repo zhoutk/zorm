@@ -888,6 +888,27 @@ public:
 		};
 	}
 
+	// jsonfile keeps real JSON nulls.
+	string nullRendering() const override {
+		return "json-null";
+	}
+
+	// jsonfile's SQL shim uses "?" placeholders.
+	string rawPlaceholder() const override {
+		return "?";
+	}
+
+	// jsonfile querySql routes plain selects (conditions via params), not
+	// "? " WHERE clauses.
+	bool supportsWherePlaceholders() const override {
+		return false;
+	}
+
+	// jsonfile auto-creates tables on write (implicit schema).
+	bool autoCreateTables() const override {
+		return true;
+	}
+
 private:
 	std::string path_ = scratchPath("contract");
 };
@@ -900,6 +921,12 @@ ZORM_CONTRACT_TESTS()
 int main(int argc, char* argv[]) {
 	::testing::InitGoogleTest(&argc, argv);
 	gExecutableDirectory = executableDirectoryFromArgv(argc > 0 ? argv[0] : nullptr);
+	// Default config for the Env hooks used by the shared suite; the jsonfile
+	// Env above overrides the backend-specific bits.
+	contract::g_config.name = "jsonfile";
+	contract::g_config.type = "jsonfile";
+	contract::g_config.nullRendering = "json-null";
+	contract::g_config.placeholder = "?";
 	static JsonFileContractEnv env;
 	contract::env = &env;
 	return RUN_ALL_TESTS();
