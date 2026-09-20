@@ -224,6 +224,18 @@ inline void Read() {
 	result = db.querySql(env->rawSelectAll(), Json{{"id", "a1b2c3d4"}});
 	ASSERT_EQ(result["status"].toInt(), 200);
 	EXPECT_EQ(result["data"][0]["name"].toString(), "Kevin 凯文");
+
+	// querySql with a fields projection (4th argument of Idb::querySql)
+	result = db.querySql(env->rawSelectAll(), Json{{"id", "a1b2c3d4"}}, Json(JsonType::Array), vector<string>{"name"});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), "Kevin 凯文");
+	EXPECT_TRUE(result["data"][0]["id"].isError());
+
+	// select with an explicit values argument (4th parameter of Idb::select;
+	// SQL backends bind the generated conditions through it, jsonfile ignores it)
+	result = db.select(kTable, Json{{"id", "a1b2c3d4"}}, vector<string>(), Json(JsonType::Array));
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), "Kevin 凯文");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -432,6 +444,16 @@ inline void Dao() {
 	ASSERT_EQ(result["status"].toInt(), 200);
 	EXPECT_EQ(result["affectedRows"].toInt(), 1);
 
+	// insertBatch with an explicit constraint argument (3rd parameter).
+	// Fresh ids: sqlite/dm8 batch inserts have no upsert clause, duplicate
+	// ids would legitimately fail on them.
+	Json constraintRows(JsonType::Array);
+	constraintRows.add(Json{{"id", "batch003"}, {"name", "batch-three"}, {"age", 42}, {"score", 3.33}});
+	constraintRows.add(Json{{"id", "batch004"}, {"name", "batch-four"}, {"age", 43}, {"score", 4.44}});
+	result = db.insertBatch(kTable, constraintRows, "id");
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["affectedRows"].toInt(), 2);
+
 	// insertBatch with an empty array is rejected
 	EXPECT_EQ(db.insertBatch(kTable, Json(JsonType::Array))["status"].toInt(), 301);
 
@@ -515,6 +537,15 @@ inline void Dao() {
 	result = db.transGo(badStruct);
 	EXPECT_NE(result["status"].toInt(), 200);
 	EXPECT_EQ(db.select(kTable, Json{{"id", "rb002"}})["status"].toInt(), 202);
+
+	// transGo with an explicit isAsync=true (2nd parameter of Idb::transGo)
+	Json asyncArr(JsonType::Array);
+	asyncArr.add(Json{{"table", kTable}, {"method", "Insert"}, {"params", Json{{"id", "async01"}, {"name", "async-row"}, {"age", 5}, {"score", 0.5}}}});
+	result = db.transGo(asyncArr, true);
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "async01"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), "async-row");
 
 	// transGo with an empty array is rejected
 	EXPECT_EQ(db.transGo(Json(JsonType::Array))["status"].toInt(), 301);

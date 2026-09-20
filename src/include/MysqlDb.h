@@ -5,6 +5,7 @@
 #include "GlobalConstants.h"
 #include "mysql.h"
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <cmath>
 
@@ -22,8 +23,10 @@ namespace ZORM {
 			 
 		private:
 			MYSQL* GetConnection(string& err) {
-				//srand((unsigned int)(time(nullptr)));
-				size_t index = (rand() % maxConn) + 1;
+				// Round-robin cursor instead of rand(): rand() carries shared
+				// state (not guaranteed thread-safe by POSIX), while
+				// GetConnection runs on every statement in threaded servers.
+				size_t index = (s_poolCursor.fetch_add(1) % static_cast<unsigned int>(maxConn)) + 1;
 				if (index > pool.size()) {
 					MYSQL* pmysql;
 					pmysql = mysql_init((MYSQL*)nullptr);
@@ -652,7 +655,12 @@ namespace ZORM {
 							Json al;
 							for (int i = 0; i < num_fields; ++i)
 							{
-								if(IS_NUM(fields[i].type))
+								// SQL NULL arrives as a NULL row[i]: reading it
+								// through atof() would crash. Decode to a real
+								// JSON null (parity with the parameterized path).
+								if (row[i] == nullptr)
+									al.add(fields[i].name, nullptr);
+								else if (IS_NUM(fields[i].type))
 									al.add(fields[i].name, atof(row[i]));
 								else
 									al.add(fields[i].name, row[i]);
@@ -682,6 +690,7 @@ namespace ZORM {
 					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
 					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+					mysql_stmt_close(stmt);             // was leaked on this path
 					return rs;
 				}
 				else
@@ -710,6 +719,8 @@ namespace ZORM {
 							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
 							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 							rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+							delete [] bind;                 // was leaked on this path
+							mysql_stmt_close(stmt);         // was leaked on this path
 							return rs;
 						}
 						delete [] bind;
@@ -727,6 +738,8 @@ namespace ZORM {
 							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
 							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 							rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+							mysql_free_result(prepare_meta_result);  // was leaked
+							mysql_stmt_close(stmt);                  // was leaked
 							return rs;
 						}
 						ret = mysql_stmt_store_result(stmt);
@@ -756,9 +769,25 @@ namespace ZORM {
 							{
 								if (is_null[i])
 									al.add(fields[i].name, nullptr);
-								else if (fields[i].type == MYSQL_TYPE_LONG || fields[i].type == MYSQL_TYPE_LONGLONG)  //count
-									al.add(fields[i].name, (long)*((int *)dataOuts[i]));
-								else if (fields[i].type == MYSQL_TYPE_DOUBLE || fields[i].type == MYSQL_TYPE_NEWDECIMAL) //sum
+								// Decoding must match the declared buffer width:
+								// the previous (long)*(int*) read truncated
+								// LONGLONG (counts > 2^31) and reinterpreted
+								// TINY/SHORT/FLOAT buffers as raw strings.
+								else if (fields[i].type == MYSQL_TYPE_TINY)
+									al.add(fields[i].name, (long long)*(signed char *)dataOuts[i]);
+								else if (fields[i].type == MYSQL_TYPE_SHORT || fields[i].type == MYSQL_TYPE_YEAR)
+									al.add(fields[i].name, (long long)*(short *)dataOuts[i]);
+								else if (fields[i].type == MYSQL_TYPE_LONG || fields[i].type == MYSQL_TYPE_INT24)
+									al.add(fields[i].name, (long long)*(int *)dataOuts[i]);
+								else if (fields[i].type == MYSQL_TYPE_LONGLONG)  //count
+									al.add(fields[i].name, *(long long *)dataOuts[i]);
+								else if (fields[i].type == MYSQL_TYPE_FLOAT)
+								{
+									float f = 0.0f;
+									std::memcpy(&f, dataOuts[i], sizeof(float));
+									al.add(fields[i].name, (double)f);
+								}
+								else if (fields[i].type == MYSQL_TYPE_DOUBLE || fields[i].type == MYSQL_TYPE_DECIMAL || fields[i].type == MYSQL_TYPE_NEWDECIMAL) //sum
 									al.add(fields[i].name, *((double *)dataOuts[i]));
 								else
 									al.add(fields[i].name, dataOuts[i]);
@@ -772,6 +801,7 @@ namespace ZORM {
 						delete [] is_null;
 						for(auto el : dataOuts)
 							delete [] el;
+						mysql_free_result(prepare_meta_result);  // was leaked per query
 					}
 					for (auto el : dataInputs)
 						delete[] el;
@@ -818,6 +848,7 @@ namespace ZORM {
 					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
 					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+					mysql_stmt_close(stmt);             // was leaked on this path
 					return rs;
 				}
 				else {
@@ -845,6 +876,8 @@ namespace ZORM {
 							errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
 							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 							rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+							delete [] bind;                 // was leaked on this path
+							mysql_stmt_close(stmt);         // was leaked on this path
 							return rs;
 						}
 						delete [] bind;
@@ -855,6 +888,7 @@ namespace ZORM {
 						errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
 						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 						rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg));
+						mysql_stmt_close(stmt);             // was leaked on this path
 						return rs;
 					}
 					int affected = (int)mysql_affected_rows(mysql);
@@ -934,10 +968,11 @@ namespace ZORM {
 				if (mysql_stmt_prepare(stmt, aQuery.c_str(), aQuery.length()))
 				{
 					string errmsg = "";
-					errmsg.append((char*)mysql_error(mysql)).append(". error code: ");
+					errmsg.append((char *)mysql_error(mysql)).append(". error code: ");
 					errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 					if(out)
 						*out += errmsg;
+					mysql_stmt_close(stmt);             // was leaked on this path
 					return false;
 				}
 				else {
@@ -966,6 +1001,8 @@ namespace ZORM {
 							errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 							if (out)
 								*out += errmsg;
+							delete [] bind;                 // was leaked on this path
+							mysql_stmt_close(stmt);         // was leaked on this path
 							return false;
 						}
 						delete [] bind;
@@ -977,6 +1014,7 @@ namespace ZORM {
 						errmsg.append(DbUtils::IntTransToString(mysql_errno(mysql)));
 						if (out)
 							*out += errmsg;
+						mysql_stmt_close(stmt);             // was leaked on this path
 						return false;
 					}
 					for (auto el : dataInputs)
@@ -988,9 +1026,34 @@ namespace ZORM {
 
 			bool escapeString(string& pStr)
 			{
-				char *tStr = new char[pStr.length() * 2 + 1];
 				string err = "";
-				mysql_real_escape_string(GetConnection(err), tStr, pStr.c_str(), pStr.length());
+				MYSQL* mysql = GetConnection(err);
+				if (mysql == nullptr)
+				{
+					// No connection to resolve the charset against: fall back
+					// to plain MySQL-compatible literal escaping instead of
+					// dereferencing a NULL handle.
+					string escaped;
+					escaped.reserve(pStr.length() * 2 + 1);
+					for (char ch : pStr)
+					{
+						switch (ch)
+						{
+						case 0: escaped += "\0"; break;
+						case '\n': escaped += "\n"; break;
+						case '\r': escaped += "\r"; break;
+						case '\\': escaped += "\\"; break;
+						case '\'': escaped += "\'"; break;
+						case '"': escaped += "\""; break;
+						case 26: escaped += "\Z"; break;
+						default: escaped += ch; break;
+						}
+					}
+					pStr = escaped;
+					return true;
+				}
+				char *tStr = new char[pStr.length() * 2 + 1];
+				mysql_real_escape_string(mysql, tStr, pStr.c_str(), pStr.length());
 				pStr = std::string(tStr);
 				delete[] tStr;
 				return true;
@@ -1017,6 +1080,9 @@ namespace ZORM {
 			bool sslRequired = false;
 			// Alias used by the records/pages count query.
 			std::string countAlias_ = "_zorm_total";
+
+			// Thread-safe round-robin cursor shared by the connection pool.
+			inline static std::atomic<unsigned int> s_poolCursor{0};
 
 			// SQL builders (shared by create/update/remove/transGo).
 			bool buildInsertSql(const string& tablename, const Json& params,

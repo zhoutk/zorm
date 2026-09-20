@@ -31,6 +31,13 @@ elseif(UNIX AND NOT APPLE)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
 
+# x86/ARM portability: pin the signedness of `char` (the ARM default is
+# unsigned, x86 signed - code must behave identically on both). MSVC has no
+# such option; its char is always signed.
+if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-fsigned-char)
+endif()
+
 add_definitions(-DZORM_LIB)
 add_definitions(-DSQLITE_OMIT_TEMPDB)
 add_definitions(-DDM64)
