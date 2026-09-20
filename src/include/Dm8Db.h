@@ -1,14 +1,31 @@
 #pragma once
 
+// DM8 backend - dialect + driver only. Shared algorithm layer:
+// SqlBackendBase.h; connections: DbPool::HandlePool with exclusive RAII
+// leases.
+//
+// DM8 specifics handled here:
+//   * identifiers are quoted lower-case everywhere (the server folds
+//     unquoted identifiers to upper case and the generated SQL uses quoted
+//     lower-case names - see docs/code-review-contract-suite.md);
+//   * create() implements upsert as read-then-update/insert (DM8 has no
+//     INSERT ... ON CONFLICT and its DPI cannot bind placeholders inside a
+//     MERGE ... USING (SELECT ? FROM DUAL));
+//   * insertBatch routes rows through create() for the same reason;
+//   * transactions toggle AUTOCOMMIT and restore it afterwards.
+
 #include "Idb.h"
 #include "DbUtils.h"
 #include "GlobalConstants.h"
-#include <algorithm>
-#include <iostream>
+#include "SqlBackendBase.h"
+#include "DbPool.h"
 #include "DPI.h"
 #include "DPIext.h"
 #include "DPItypes.h"
 
+#include <algorithm>
+#include <cmath>
+#include <iostream>
 
 namespace ZORM {
 
@@ -23,73 +40,24 @@ namespace ZORM {
 			Dm8Con() { henv = nullptr; hcon = nullptr; hstmt = nullptr; }
 		};
 
-		class ZORM_API Dm8Db : public Idb {
+		class ZORM_API Dm8Db : public SqlBackendBase<Dm8Db, Dm8Con*> {
 
 		public:
-			const vector<string> QUERY_EXTRA_KEYS { "ins", "lks", "ors"};
-			const vector<string> QUERY_UNEQ_OPERS { ">,", ">=,", "<,", "<=,", "<>,", "=,"};
-			 
-		private:
-			void dpi_err_msg_print(sdint2 hndl_type, dhandle hndl, string& errOut)
-			{
-				sdint4 err_code;
-				sdint2 msg_len;
-				sdbyte err_msg[SDBYTE_MAX];
-				char err[SDBYTE_MAX];
-
-				dpi_get_diag_rec(hndl_type, hndl, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
-				printf("err_msg = %s, err_code = %d\n", err_msg, err_code);
-				if (hndl_type == DSQL_HANDLE_STMT)
-					dpi_free_stmt(hndl);
-				sprintf(err, "err_msg = %s, err_code = %d\n", err_msg, err_code);
-				errOut = string(err);
-				if(err_code == -70028 || err_code == -70019){
-					while (pool.size())
-					{
-						Dm8Con* con = pool.back();
+			Dm8Db(string dbhost, string dbuser, string dbpwd, Json options = Json()) :
+				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(""), dbport(5236),
+				pool(
+					[this](string& err) -> Dm8Con* { return this->connect(err); },
+					[](Dm8Con* con) {
 						dpi_logout(con->hcon);
 						dpi_free_con(con->hcon);
 						dpi_free_env(con->henv);
-						pool.pop_back();
 						delete con;
-					}
-				}
-			}
-
-			Dm8Con* GetConnection(string& err) {
-				size_t index = (rand() % maxConn) + 1;
-				if (index > pool.size()) {
-					Dm8Con* dmCon = new Dm8Con;
-					DPIRETURN rt; 
-					rt = dpi_alloc_env(&dmCon->henv);
-					rt = dpi_alloc_con(dmCon->henv, &dmCon->hcon);
-					string theHost = dbhost;
-					theHost.append(":").append(DbUtils::IntTransToString(dbport));
-					rt = dpi_login(dmCon->hcon, (sdbyte*)theHost.c_str(), (sdbyte*)dbuser.c_str(), (sdbyte*)dbpwd.c_str());
-					if (!DSQL_SUCCEEDED(rt))
-					{
-						dpi_err_msg_print(DSQL_HANDLE_DBC, dmCon->hcon, err);
-						dpi_free_con(dmCon->hcon);
-						dpi_free_env(dmCon->henv);
-						delete dmCon;
-						return nullptr;
-					}
-					pool.push_back(dmCon);
-					return dmCon;
-				}
-				else {
-					return pool.at(index - 1);
-				}
-			}
-
-		public:
-
-			Dm8Db(string dbhost, string dbuser, string dbpwd, Json options = Json()) :
-				dbhost(dbhost), dbuser(dbuser), dbpwd(dbpwd), dbname(""), dbport(5236), maxConn(1), DbLogClose(false), queryByParameter(false)
-			{
-				if(!options["db_conn"].isError() && options["db_conn"].toInt() > 1)
+					},
+					1),
+				maxConn(1) {
+				if (!options["db_conn"].isError() && options["db_conn"].toInt() > 1)
 					maxConn = options["db_conn"].toInt();
-				if(!options["db_char"].isError())
+				if (!options["db_char"].isError())
 					charsetName = options["db_char"].toString();
 				if (!options["db_name"].isError())
 					dbname = options["db_name"].toString();
@@ -97,12 +65,165 @@ namespace ZORM {
 					dbport = options["db_port"].toInt();
 				if (!options["DbLogClose"].isError())
 					DbLogClose = options["DbLogClose"].toBool();
-				if(!options["parameterized"].isError())
+				if (!options["parameterized"].isError())
 					queryByParameter = options["parameterized"].toBool();
+				pool.setMaxConn(maxConn);
 			}
 
-			Json create(const string& tablename, const Json& params) override
-			{
+			// ─────────────────────────────────────────────────────────────────
+			// CRTP hooks: dialect
+			// ─────────────────────────────────────────────────────────────────
+
+			using Handle = Dm8Con*;
+			using Lease = DbPool::HandlePool<Handle>::Lease;
+
+			Lease acquireHandle(string& err) {
+				return pool.acquire(err);
+			}
+
+			std::string placeholder(int) {
+				return "?";
+			}
+			bool numberedPlaceholders() {
+				return false;
+			}
+			// DM8 folds unquoted identifiers to upper case; the generated SQL
+			// always quotes lower-case names so they match the quoted DDL.
+			std::string quoteIdent(const std::string& name) {
+				return "\"" + name + "\"";
+			}
+			std::string qualifiedTable(const std::string& name) {
+				return "\"" + dbname + "\".\"" + name + "\"";
+			}
+			std::string likeColumn(const std::string& name) {
+				return quoteIdent(name);
+			}
+			// "total desc" -> "\"total\" desc"; "age asc,name" -> "\"age\" asc,\"name\""
+			std::string orderClause(const std::string& sort) {
+				vector<string> clauses = DbUtils::MakeVector(sort, ',');
+				string out;
+				for (const string& clause : clauses) {
+					vector<string> words = DbUtils::MakeVector(clause, ' ');
+					string part;
+					bool firstWord = true;
+					for (const string& word : words) {
+						if (word.empty())
+							continue;
+						if (!part.empty())
+							part += " ";
+						part += firstWord ? quoteIdent(word) : word;
+						firstWord = false;
+					}
+					if (part.empty())
+						continue;
+					if (!out.empty())
+						out += ",";
+					out += part;
+				}
+				return out.empty() ? sort : out;
+			}
+			std::string limitClause(int offset, int size) {
+				if (size < 1)
+					size = 10;
+				return " limit " + DbUtils::IntTransToString(offset) + "," + DbUtils::IntTransToString(size);
+			}
+			std::string aggColumn(const std::string& src) {
+				// "1" / "*" are not column names; quote real columns so they
+				// match lower-case-quoted table definitions.
+				if (src == "1" || src == "*")
+					return src;
+				return quoteIdent(src);
+			}
+			std::string aggAlias(const std::string& alias) {
+				return quoteIdent(alias);
+			}
+			std::string countAliasSql() {
+				return quoteIdent(countAlias_);
+			}
+			std::string columnList(const std::vector<std::string>& keys) {
+				return DbUtils::GetVectorJoinStrArroundQuots(keys);
+			}
+			std::string fieldsProjection(const vector<string>& fields) {
+				return DbUtils::GetVectorJoinStrArroundQuots(fields);
+			}
+			std::string excludedRefImpl(const std::string& column) {
+				return "excluded." + column;
+			}
+			bool detectParameterized(const std::string& sql) {
+				return sql.find("?") != std::string::npos;
+			}
+			// Hook required by the base; create() / insertBatch() are
+			// overridden below with the read-then-write upsert, so this is
+			// never reached on the dm8 dialect.
+			std::string upsertClause(const std::string&, const std::vector<std::string>&) {
+				return "";
+			}
+
+			// create() and insertBatch() are overridden below: DM8 has no
+			// INSERT ... ON CONFLICT, so upsert needs the read-then-write path.
+
+			// ─────────────────────────────────────────────────────────────────
+			// CRTP hooks: driver
+			// ─────────────────────────────────────────────────────────────────
+
+			bool escapeString(string& pStr) {
+				(void)pStr;
+				return true;  // DM8 values ride through dpi_bind_param
+			}
+
+			// Parameterized statements go through prepare + bind; plain
+			// statements through dpi_exec_direct.
+			Json execNoneOn(Handle con, const string& aQuery, Json& values) {
+				if (queryByParameter)
+					return prepareExec(con, aQuery, values, nullptr);
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				string err;
+				dpi_alloc_stmt(con->hcon, &con->hstmt);
+				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
+				if (!DbLogClose)
+					std::cout << "SQL: " << aQuery << std::endl;
+				if (!DSQL_SUCCEEDED(rt)) {
+					dpiErr(con->hstmt, err);
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+					dpi_free_stmt(con->hstmt);
+					return rs;
+				}
+				dpi_free_stmt(con->hstmt);
+				return rs;
+			}
+
+			// Query via direct execution (non-parameterized path).
+			Json execQueryOn(Handle con, const string& aQuery, const vector<string>& fields, Json& values) {
+				(void)fields;
+				if (queryByParameter)
+					return prepareExecDecode(con, aQuery, values);
+				return execDirectQuery(con, aQuery);
+			}
+
+			bool execTxOn(Handle con, const string& aQuery, Json& values, string* out) {
+				Json rs = prepareExec(con, aQuery, values, out);
+				return rs["status"].toInt() == STSUCCESS;
+			}
+
+			bool beginTx(Handle con) {
+				// DM8: switch the session to manual commit for the transaction.
+				return DSQL_SUCCEEDED(dpi_set_con_attr(con->hcon, DSQL_ATTR_AUTOCOMMIT, 0, 0));
+			}
+			bool commitTx(Handle con) {
+				const bool ok = DSQL_SUCCEEDED(dpi_commit(con->hcon));
+				dpi_set_con_attr(con->hcon, DSQL_ATTR_AUTOCOMMIT, (dpointer)1, 0);
+				return ok;
+			}
+			void rollbackTx(Handle con) {
+				dpi_rollback(con->hcon);
+				dpi_set_con_attr(con->hcon, DSQL_ATTR_AUTOCOMMIT, (dpointer)1, 0);
+			}
+
+			// ─────────────────────────────────────────────────────────────────
+			// Upsert overrides (O-6)
+			// ─────────────────────────────────────────────────────────────────
+
+			Json create(const string& tablename, const Json& params) override {
 				if (params.isError())
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				if (params.isArray()) {
@@ -112,18 +233,14 @@ namespace ZORM {
 						return insertBatch(tablename, params, "id");
 					return create(tablename, params[0]);
 				}
-				// Upsert parity: a provided id overwrites the row. DM8 has no
-				// INSERT ... ON CONFLICT and its DPI does not bind `?` inside
-				// a MERGE ... USING (SELECT ? FROM DUAL), so use a read-then-
-				// write: SELECT the id, then UPDATE (exists) or INSERT.
+				// Upsert parity: a provided id overwrites the row via a
+				// read-then-update/insert (see the class comment).
 				const Json providedId = params["id"];
 				const bool hasId = !providedId.isError() && !DbUtils::Trim(providedId.toString()).empty();
 				if (hasId) {
 					Json check = select(tablename, Json{{"id", providedId.toString()}});
 					if (check["status"].toInt() == STSUCCESS) {
-						// Row exists: UPDATE all provided non-id columns.
-						Json updateParams(params);
-						Json updateResult = update(tablename, updateParams);
+						Json updateResult = update(tablename, params);
 						if (updateResult["status"].toInt() != STSUCCESS)
 							return updateResult;
 						updateResult.add("id", providedId.toString());
@@ -137,12 +254,13 @@ namespace ZORM {
 				string generatedId;
 				if (!buildInsertSql(tablename, params, sql, values, generatedId))
 					return DbUtils::MakeJsonObject(STPARAMERR);
-				Json rs = queryByParameter ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
-				if (rs["status"].toInt() != STSUCCESS)
-					return rs;
-				const string id = generatedId.empty()
-					? params["id"].toString()
-					: generatedId;
+				string connectErr;
+				Lease lease = acquireHandle(connectErr);
+				Handle con = lease.get();
+				if (con == nullptr)
+					return DbUtils::MakeJsonObject(STDBCONNECTERR, connectErr);
+				Json rs = prepareExec(con, sql, values, nullptr);
+				const string id = generatedId.empty() ? params["id"].toString() : generatedId;
 				if (!id.empty()) {
 					rs.add("id", id);
 					rs.add("insertId", id);
@@ -151,78 +269,11 @@ namespace ZORM {
 				return rs;
 			}
 
-			Json update(const string& tablename, const Json& params) override
-			{
-				if (params.isError())
+			Json insertBatch(const string& tablename, const Json& elements, string constraint) override {
+				if (!elements.isArray() || elements.size() < 1)
 					return DbUtils::MakeJsonObject(STPARAMERR);
-				string sql;
-				Json values(JsonType::Array);
-				if (!buildUpdateSql(tablename, params, sql, values))
-					return DbUtils::MakeJsonObject(STPARAMERR);
-				Json rs = queryByParameter ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
-				if (rs["status"].toInt() == STSUCCESS)
-					rs.add("affectedRows", 1);
-				return rs;
-			}
-
-			Json remove(const string& tablename, const Json& params) override
-			{
-				if (params.isError())
-					return DbUtils::MakeJsonObject(STPARAMERR);
-				string sql;
-				Json values(JsonType::Array);
-				if (!buildDeleteSql(tablename, params, sql, values))
-					return DbUtils::MakeJsonObject(STPARAMERR);
-				Json rs = queryByParameter ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
-				if (rs["status"].toInt() == STSUCCESS)
-					rs.add("affectedRows", 1);
-				return rs;
-			}
-
-			Json select(const string& tbname, const Json &params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) override
-			{
-				string tablename = tbname;
-				string countSql;
-				Json rs = genSql(tablename, values, params, fields, 1, queryByParameter, &countSql);
-				if (rs["status"].toInt() != 200)
-					return rs;
-				Json result = queryByParameter ? ExecQuerySql(tablename, fields, values) : ExecQuerySql(tablename, fields);
-				if (result["status"].toInt() == 200)
-					attachRecordsPages(result, params, countSql, values);
-				return result;
-			}
-
-			Json querySql(const string& sqlstr, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) override
-			{
-				string sql(sqlstr);
-				bool parameterized = sql.find("?") != sql.npos;
-				Json rs = genSql(sql, values, params, fields, 2, parameterized);
-				if(rs["status"].toInt() == 200)
-					return parameterized ? ExecQuerySql(sql, fields, values) : ExecQuerySql(sql, fields);
-				else
-					return rs;
-			}
-
-			Json execSql(const string& sqlstr, Json params = Json(), Json values = Json(JsonType::Array)) override
-			{
-				string sql(sqlstr);
-				bool parameterized = sql.find("?") != sql.npos;
-				Json rs = genSql(sql, values, params, std::vector<string>(), 3, parameterized);
-				if(rs["status"].toInt() == 200)
-					return parameterized ? ExecNoneQuerySql(sql, values) : ExecNoneQuerySql(sql);
-				else
-					return rs;
-			}
-
-			Json insertBatch(const string& tablename, const Json& elements, string constraint) override
-			{
-				if (!elements.isArray() || elements.size() < 1) {
-					return DbUtils::MakeJsonObject(STPARAMERR);
-				}
-				// Upsert parity (O-6): DM8 has no INSERT ... ON CONFLICT and
-				// its DPI cannot bind placeholders inside MERGE, so route
-				// every row through create(), which implements the
-				// read-then-update/insert upsert.
+				// Upsert parity (O-6): route every row through create()'s
+				// read-then-write upsert.
 				long long affected = 0;
 				Json lastInsertId(0);
 				for (int i = 0; i < elements.size(); ++i) {
@@ -240,481 +291,142 @@ namespace ZORM {
 				return rs;
 			}
 
-			// Structured element -> SQL text + values.
-			bool buildStructuredSql(const Json& element, const string& table, const string& method,
-									const Json& params, bool hasId, const Json& idValue,
-									string& sql, Json& values) {
-				if (method == "Insert") {
-					if (!params.isObject())
-						return false;
-					string generatedId;
-					return buildInsertSql(table, params, sql, values, generatedId);
-				}
-				if (method == "Update") {
-					if (!params.isObject() || !hasId)
-						return false;
-					Json merged(params);
-					ZJSON::setChild(merged, "id", idValue);
-					return buildUpdateSql(table, merged, sql, values);
-				}
-				if (method == "Delete") {
-					if (!hasId)
-						return false;
-					return buildDeleteSql(table, Json{{"id", idValue}}, sql, values);
-				}
-				if (method == "Batch") {
-					if (!params.isArray() || params.size() == 0)
-						return false;
-					Json batchValues(JsonType::Array);
-					string keyStr = " ( ";
-					keyStr.append(DbUtils::GetVectorJoinStrArroundQuots(DbUtils::GetVectorFromJson(params[0].getAllKeys()))).append(" ) values ");
-					for (int i = 0; i < params.size(); i++) {
-						vector<string> keys = DbUtils::GetVectorFromJson(params[i].getAllKeys());
-						string valueStr = " ( ";
-						for (int j = 0; j < keys.size(); j++) {
-							bool vIsString = params[i][keys[j]].isString() || params[i][keys[j]].isArray() || params[i][keys[j]].isObject();
-							string v = params[i][keys[j]].toString();
-							!queryByParameter && vIsString && escapeString(v);
-							if (queryByParameter) {
-								valueStr.append("?");
-								batchValues.add(v);
-							} else {
-								if (vIsString)
-									valueStr.append("'").append(v).append("'");
-								else
-									valueStr.append(v);
-							}
-							if (j < keys.size() - 1)
-								valueStr.append(",");
-						}
-						valueStr.append(" )");
-						if (i < params.size() - 1)
-							valueStr.append(",");
-						keyStr.append(valueStr);
-					}
-					sql = "insert into \"" + dbname + "\".\"" + table + "\"" + keyStr;
-					values = batchValues;
-					return true;
-				}
-				return false;
-			}
-
-			Json transGo(const Json& sqls, bool isAsync = false) override
-			{
-				if (!sqls.isArray() || sqls.size() == 0) {
-					return DbUtils::MakeJsonObject(STPARAMERR);
-				}
-				else {
-					bool isExecSuccess = true;
-					string errmsg = "Running transaction error: ";
-					string err = "";
-					Dm8Con* con = GetConnection(err);
-					if (con == nullptr)
-						return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-					DPIRETURN rt = dpi_set_con_attr(con->hcon, DSQL_ATTR_AUTOCOMMIT, 0, 0);
-					if (!DSQL_SUCCEEDED(rt))
-					{
-						dpi_err_msg_print(DSQL_HANDLE_DBC, con->hcon, err);
-					}
-
-					for (size_t i = 0; i < sqls.size(); i++) {
-						const Json element = sqls[i];
-						const bool hasText = ZJSON::hasChild(element, "text");
-						const bool hasSql = !hasText && ZJSON::hasChild(element, "sql");
-						Json values = element["values"].isError() ? Json(JsonType::Array) : element["values"];
-						string sql;
-						if (hasText || hasSql) {
-							const Json text = hasText ? element["text"] : element["sql"];
-							sql = text.toString();
-						} else {
-							const string table = element["table"].toString();
-							const string method = element["method"].toString();
-							const Json params = element["params"];
-							const Json idValue = element["id"];
-							if (!buildStructuredSql(element, table, method, params,
-													!idValue.isError(), idValue, sql, values)) {
-								errmsg += "transaction element is wrong.";
-								isExecSuccess = false;
-								break;
-							}
-						}
-						isExecSuccess = ExecSqlForTransGo(con, sql, values, &errmsg);
-						if (!isExecSuccess)
-							break;
-					}
-					if (isExecSuccess)
-					{
-						rt = dpi_commit(con->hcon);
-						!DbLogClose && std::cout << "Transaction Success: run " << sqls.size() << " sqls." << std::endl;
-					}
-					else
-					{
-						rt = dpi_rollback(con->hcon);
-					}
-					rt = dpi_set_con_attr(con->hcon, DSQL_ATTR_AUTOCOMMIT, (dpointer)1, 0);
-					if (!DSQL_SUCCEEDED(rt))
-					{
-						dpi_err_msg_print(DSQL_HANDLE_DBC, con->hcon, err);
-					}
-					return isExecSuccess ? 
-						DbUtils::MakeJsonObject(STSUCCESS, "Transaction success.") : 
-						DbUtils::MakeJsonObject(STDBOPERATEERR, errmsg);
-				}
-			}
-
-			~Dm8Db()
-			{
-				while (pool.size())
-				{
-					Dm8Con* con = pool.back();
-					dpi_logout(con->hcon);
-					dpi_free_con(con->hcon);
-					dpi_free_env(con->henv);
-					pool.pop_back();
-				}
-			}
-
 		private:
-			Json genSql(string& querySql, Json& values, const Json& ps, vector<string> fields = vector<string>(), int queryType = 1, bool parameterized = false, string* countSql = nullptr)
-			{
-				if (!ps.isError()) {
-					Json params(ps);
-					string tablename = querySql;
-					querySql = "";
-					string where = "";
-					const string AndJoinStr = " and ";
-					string fieldsJoinStr = "*";
+			void dpiErr(dhstmt hstmt, string& err) {
+				sdint4 err_code;
+				sdint2 msg_len;
+				sdbyte err_msg[SDBYTE_MAX];
+				char buf[SDBYTE_MAX];
+				dpi_get_diag_rec(DSQL_HANDLE_STMT, hstmt, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
+				printf("err_msg = %s, err_code = %d\n", err_msg, err_code);
+				snprintf(buf, sizeof(buf), "err_msg = %s, err_code = %d\n", err_msg, err_code);
+				err = string(buf);
+			}
 
-					if (!fields.empty()) {
-						fieldsJoinStr = DbUtils::GetVectorJoinStrArroundQuots(fields);
-					}
-
-					string fuzzy = params.take("fuzzy").toString();
-					string sort = params.take("sort").toString();
-					int page = atoi(params.take("page").toString().c_str());
-					int size = atoi(params.take("size").toString().c_str());
-					string sum = params.take("sum").toString();
-					string count = params.take("count").toString();
-					string group = params.take("group").toString();
-
-					if (!count.empty() || !sum.empty())
-						fieldsJoinStr = " ";
-
-					vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
-					size_t len = allKeys.size();
-					for (size_t i = 0; i < len; i++) {
-						string k = allKeys[i];
-						bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
-						string v = params[k].toString();
-						!parameterized && vIsString && escapeString(v);
-						if (where.length() > 0) {
-							where.append(AndJoinStr);
-						}
-
-						if (DbUtils::FindStringFromVector(QUERY_EXTRA_KEYS, k)) {   // process key
-							string whereExtra = "";
-							vector<string> ele = DbUtils::MakeVector(params[k].toString());
-							if (ele.size() < 2 || ((k.compare("ors") == 0 || k.compare("lks") == 0) && ele.size() % 2 == 1)) {
-								return DbUtils::MakeJsonObject(STPARAMERR, k + " is wrong.");
-							}
-							else {
-								if (k.compare("ins") == 0) {
-									string c = ele.at(0);
-									vector<string>(ele.begin() + 1, ele.end()).swap(ele);
-									if(parameterized){
-										whereExtra.append("\"").append(c).append("\"").append(" in (");
-										int eleLen = ele.size();
-										for (int i = 0; i < eleLen; i++)
-										{
-											string el = ele[i];
-											whereExtra.append("?");
-											if (i < eleLen - 1)
-												whereExtra.append(",");
-											values.add(el);
-										}
-										whereExtra.append(")");
-									}else
-										whereExtra.append("\"").append(c).append("\"").append(" in ( ").append(DbUtils::GetVectorJoinStr(ele)).append(" )");
-								}
-								else if (k.compare("lks") == 0 || k.compare("ors") == 0) {
-									whereExtra.append(" ( ");
-									for (size_t j = 0; j < ele.size(); j += 2) {
-										if (j > 0) {
-											whereExtra.append(" or ");
-										}
-										whereExtra.append("\"").append(ele.at(j)).append("\"").append(" ");
-										string eqStr = parameterized ? (k.compare("lks") == 0 ? " like ?" : " = ?") : (k.compare("lks") == 0 ? " like '" : " = '");
-										string vsStr = ele.at(j + 1);
-										if (k.compare("lks") == 0) {
-											vsStr.insert(0, "%");
-											vsStr.append("%");
-										}
-										whereExtra.append(eqStr);
-										if(parameterized)
-											values.add(vsStr);
-										else{
-											vsStr.append("'");
-											whereExtra.append(vsStr);
-										}
-									}
-									whereExtra.append(" ) ");
-								}
-							}
-							where.append(whereExtra);
-						}
-						else {				// process value
-							if (DbUtils::FindStartsStringFromVector(QUERY_UNEQ_OPERS, v)) {
-								vector<string> vls = DbUtils::MakeVector(v);
-								if (vls.size() == 2) {
-									if(parameterized){
-										where.append("\"").append(k).append("\"").append(vls.at(0)).append(" ? ");
-										values.add(vls.at(1));
-									}else
-										where.append("\"").append(k).append("\"").append(vls.at(0)).append("'").append(vls.at(1)).append("'");
-								}
-								else if (vls.size() == 4) {
-									if(parameterized){
-										where.append("\"").append(k).append("\"").append(vls.at(0)).append(" ? ").append("and ");
-										where.append("\"").append(k).append("\"").append(vls.at(2)).append("? ");
-										values.add(vls.at(1));
-										values.add(vls.at(3));
-									}else{
-										where.append("\"").append(k).append("\"").append(vls.at(0)).append("'").append(vls.at(1)).append("' and ");
-										where.append("\"").append(k).append("\"").append(vls.at(2)).append("'").append(vls.at(3)).append("'");
-									}
-								}
-								else {
-									return DbUtils::MakeJsonObject(STPARAMERR, "not equal value is wrong.");
-								}
-							}
-							else if (fuzzy == "1") {
-								if(parameterized){
-									where.append("\"").append(k).append("\"").append(" like ? ");
-									values.add(v.insert(0, "%").append("%"));
-								}
-								else
-									where.append("\"").append(k).append("\"").append(" like '%").append(v).append("%'");
-								
-							}
-							else {
-								if(parameterized){
-									where.append("\"").append(k).append("\"").append(" = ? ");
-									vIsString ? values.add(v) : values.add(params[k].toDouble());
-								}else{
-									if (vIsString)
-										where.append("\"").append(k).append("\"").append(" = '").append(v).append("'");
-									else
-										where.append("\"").append(k).append("\"").append(" = ").append(v);
-								}
-							}
+			// Values bind as NCHAR strings; numbers bind as DOUBLE / INT
+			// depending on their decimal part (DM8 protocol quirk).
+			DPIRETURN bindParams(dhstmt hstmt, Json& values,
+								 std::vector<char*>& dataInputs,
+								 std::vector<slength>& inPtrs,
+								 std::vector<double>& inDbs,
+								 std::vector<int>& inInts) {
+				const int vLen = values.size();
+				dataInputs.resize(vLen);
+				inPtrs.resize(vLen);
+				inDbs.resize(vLen);
+				inInts.resize(vLen);
+				DPIRETURN rt = DSQL_SUCCESS;
+				for (int i = 0; i < vLen; i++) {
+					if (values[i].isString() || values[i].isObject() || values[i].isArray()) {
+						string ele = values[i].toString();
+						const int eleLen = static_cast<int>(ele.length()) + 1;
+						dataInputs[i] = new char[eleLen];
+						std::memset(dataInputs[i], 0, eleLen);
+						std::memcpy(dataInputs[i], ele.c_str(), eleLen);
+						inPtrs[i] = eleLen - 1;
+						rt = dpi_bind_param(hstmt, i + 1,
+											DSQL_PARAM_INPUT, DSQL_C_NCHAR, DSQL_VARCHAR,
+											inPtrs[i], 0, (void*)dataInputs[i], inPtrs[i], &inPtrs[i]);
+					} else {
+						if (getDecimalCount(values[i].toDouble()) > 0) {
+							inDbs[i] = values[i].toDouble();
+							inPtrs[i] = sizeof(inDbs[i]);
+							rt = dpi_bind_param(hstmt, i + 1,
+												DSQL_PARAM_INPUT, DSQL_C_DOUBLE, DSQL_DOUBLE,
+												inPtrs[i], 0, &inDbs[i], inPtrs[i], &inPtrs[i]);
+						} else {
+							inInts[i] = values[i].toInt();
+							inPtrs[i] = sizeof(inInts[i]);
+							rt = dpi_bind_param(hstmt, i + 1,
+												DSQL_PARAM_INPUT, DSQL_C_SLONG, DSQL_INT,
+												inPtrs[i], 0, &inInts[i], inPtrs[i], &inPtrs[i]);
 						}
 					}
-
-					string extra = "";
-					if (!sum.empty()) {
-						vector<string> ele = DbUtils::MakeVector(sum);
-						if (ele.empty() || ele.size() % 2 == 1)
-							return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
-						else {
-							for (size_t i = 0; i < ele.size(); i += 2) {
-								// Quote the alias: DM8 folds unquoted identifiers to
-								// upper case, which would break result-key lookups.
-								extra.append("sum(\"").append(ele.at(i)).append("\") as \"").append(ele.at(i + 1)).append("\" ");
-							}
-						}
-					}
-					if (!count.empty()) {
-						vector<string> ele = DbUtils::MakeVector(count);
-						if (ele.empty() || ele.size() % 2 == 1)
-							return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
-						else {
-							for (size_t i = 0; i < ele.size(); i += 2) {
-								// "1" / "*" are not column names; quote real columns
-								// so they match lower-case-quoted table definitions.
-								string src = ele.at(i);
-								if (src != "1" && src != "*")
-									src = "\"" + src + "\"";
-								extra.append("count(").append(src).append(") as \"").append(ele.at(i + 1)).append("\" ");
-							}
-						}
-					}
-
-					if (!group.empty()) {
-						vector<string> gs = DbUtils::MakeVector(group);
-						for (int i = 0; i < gs.size(); i++)
-							gs[i] = "\"" + gs[i] + "\"";
-						string gpstr = DbUtils::GetVectorJoinStr(gs);
-						querySql = "select " + gpstr + (extra.empty() ? "" : ","+extra) + " from ";//.append(" group by ").append("\"").append(group).append("\"");
-						querySql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"");
-						querySql.append(" group by ").append(gpstr);
-					}
-					else if (queryType == 1) {
-						querySql.append("select ").append(fieldsJoinStr).append(extra).append(" from ").append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"");
-						if (where.length() > 0){
-							querySql.append(" where ").append(where);
-						}
-					}
-					else {
-						querySql.append(tablename);
-						if (queryType == 2 && !fields.empty()) {
-							size_t starIndex = querySql.find('*');
-							if (starIndex < 10) {
-								querySql.replace(starIndex, 1, fieldsJoinStr.c_str());
-							}
-						}
-						if (where.length() > 0) {
-							size_t whereIndex = querySql.find("where");
-							if (whereIndex == querySql.npos) {
-								querySql.append(" where ").append(where);
-							}
-							else {
-								querySql.append(" and ").append(where);
-							}
-						}
-					}
-
-					if (!sort.empty()) {
-						vector<string> ss = DbUtils::MakeVector(sort, ' ');
-						querySql.append(" order by ").append(DbUtils::GetVectorJoinStrArroundQuots(DbUtils::MakeVector(ss[0])));
-						if(ss.size() > 1)
-							querySql.append(" ").append(ss[1]);
-					}
-
-					if (countSql != nullptr && queryType == 1 && page > 0) {
-						// DM8 folds unquoted identifiers to upper case; quote
-						// the alias so the result column keeps its case and the
-						// JSON key lookup below stays lowercase. Built from the
-						// known parts (O-4) instead of re-parsing the finished
-						// statement; grouped queries count the groups via a
-						// wrapped subquery so records == number of groups.
-						const string quotedTable = "\"" + dbname + "\".\"" + tablename + "\"";
-						const string quotedAlias = "\"" + countAlias_ + "\"";
-						const string wherePart = where.length() > 0 ? " where " + where : "";
-						if (group.empty())
-							*countSql = "select count(1) as " + quotedAlias + " from " + quotedTable + wherePart;
-						else
-							*countSql = "select count(1) as " + quotedAlias + " from (select * from " + quotedTable + wherePart + " group by " + group + ") zorm_cnt";
-					}
-
-					if (page > 0) {
-						page--;
-						size = size < 1 ? 10 : size;
-						querySql.append(" limit ").append(DbUtils::IntTransToString(page * size)).append(",").append(DbUtils::IntTransToString(size));
-					}
-					return DbUtils::MakeJsonObject(STSUCCESS);
 				}
-				else {
-					return DbUtils::MakeJsonObject(STPARAMERR);
-				}
+				return rt;
 			}
 
-			// Runs the count query; returns -1 on failure.
-			long long runCountQuery(const string& countSql, Json& values) {
-				if (countSql.empty())
-					return -1;
-				Json rs = queryByParameter ? ExecQuerySql(countSql, vector<string>(), values) : ExecQuerySql(countSql, vector<string>());
-				if (rs["status"].toInt() != 200 || rs["data"].size() == 0)
-					return -1;
-				return static_cast<long long>(rs["data"][0][countAlias_].toDouble());
-			}
-
-			void attachRecordsPages(Json& result, const Json& params, const string& countSql, Json& values) {
-				long long records = -1;
-				const string pageText = params["page"].toString();
-				const string sizeText = params["size"].toString();
-				const int page = atoi(pageText.c_str());
-				const int size = atoi(sizeText.c_str());
-				if (page > 0 && size > 0 && !countSql.empty())
-					records = runCountQuery(countSql, values);
-				if (records < 0)
-					records = result["data"].size();
-				result.add("records", records);
-				result.add("pages", (page > 0 && size > 0)
-					? (records == 0 ? 0 : static_cast<int>(std::ceil(static_cast<double>(records) / size)))
-					: (records > 0 ? 1 : 0));
-			}
-
-			Json ExecQuerySql(string aQuery, vector<string> fields)
-			{
+			// prepare + bind + exec; decodes rows when the statement returns
+			// any (the DM8 path executes through here for both flavors).
+			Json prepareExecDecode(Handle con, const string& aQuery, Json& values) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				string err = "";
-				Dm8Con* con = GetConnection(err);
-				if (con == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				string err;
 				dpi_alloc_stmt(con->hcon, &con->hstmt);
-				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
+				DPIRETURN rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
+				if (!DbLogClose)
+					std::cout << "SQL: " << aQuery << std::endl;
+				if (!DSQL_SUCCEEDED(rt)) {
+					dpiErr(con->hstmt, err);
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+					dpi_free_stmt(con->hstmt);
+					return rs;
 				}
-				sdint2 num_fields;
+				std::vector<char*> dataInputs;
+				std::vector<slength> inPtrs;
+				std::vector<double> inDbs;
+				std::vector<int> inInts;
+				rt = bindParams(con->hstmt, values, dataInputs, inPtrs, inDbs, inInts);
+				rt = dpi_exec(con->hstmt);
+				if (!DSQL_SUCCEEDED(rt)) {
+					dpiErr(con->hstmt, err);
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+					dpi_free_stmt(con->hstmt);
+					for (auto el : dataInputs)
+						delete[] el;
+					return rs;
+				}
+
+				sdint2 num_fields = 0;
 				rt = dpi_number_columns(con->hstmt, &num_fields);
-
-				std::vector<sdbyte*> fieldNames;
-				fieldNames.resize(num_fields);
-				std::vector<sdint2> fieldType;
-				fieldType.resize(num_fields);
-				std::vector<sdint2> name_len;
-				name_len.resize(num_fields);
-
-				std::vector<slength> outPtrs;
-				outPtrs.resize(num_fields);
-				std::vector<char*> dataOuts;
-				dataOuts.resize(num_fields);
-				std::vector<double> outDoubles;
-				outDoubles.resize(num_fields);
-				std::vector<int> outInts;
-				outInts.resize(num_fields);
-
-				for (int i = 0; i < num_fields; ++i)
-				{
+				std::vector<sdbyte*> fieldNames(num_fields);
+				std::vector<sdint2> fieldType(num_fields);
+				std::vector<sdint2> nameLen(num_fields);
+				std::vector<slength> outPtrs(num_fields);
+				std::vector<char*> dataOuts(num_fields);
+				std::vector<double> outDoubles(num_fields);
+				std::vector<int> outInts(num_fields);
+				for (int i = 0; i < num_fields; ++i) {
 					ulength col_sz;
 					sdint2 dec_digits;
 					sdint2 nullable;
 					fieldNames[i] = new sdbyte[SDBYTE_MAX];
-					memset(fieldNames[i], 0, SDBYTE_MAX);
-					rt = dpi_desc_column(con->hstmt, i + 1, fieldNames[i], SDBYTE_MAX, &name_len[i],
-						&fieldType[i], &col_sz, &dec_digits, &nullable);
-					if (!DSQL_SUCCEEDED(rt))
-					{
-						dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-						return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
+					std::memset(fieldNames[i], 0, SDBYTE_MAX);
+					rt = dpi_desc_column(con->hstmt, i + 1, fieldNames[i], SDBYTE_MAX, &nameLen[i],
+										 &fieldType[i], &col_sz, &dec_digits, &nullable);
+					if (!DSQL_SUCCEEDED(rt)) {
+						dpiErr(con->hstmt, err);
+						rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+						dpi_free_stmt(con->hstmt);
+						for (auto el : dataInputs)
+							delete[] el;
+						return rs;
 					}
-					if (fieldType[i] == DSQL_DOUBLE) {
+					if (fieldType[i] == DSQL_DOUBLE)
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_DOUBLE, &outDoubles[i], sizeof(double), &outPtrs[i]);
-					}
-					else if (fieldType[i] == DSQL_INT) {
+					else if (fieldType[i] == DSQL_INT)
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_SLONG, &outInts[i], sizeof(int), &outPtrs[i]);
-					}
 					else {
 						dataOuts[i] = new char[SDINT2_MAX];
-						memset(dataOuts[i], 0, SDINT2_MAX);
+						std::memset(dataOuts[i], 0, SDINT2_MAX);
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_NCHAR, dataOuts[i], SDINT2_MAX, &outPtrs[i]);
 					}
-
 				}
-				
+
 				Json arr(JsonType::Array);
 				ulength row_num;
-				while (dpi_fetch(con->hstmt, &row_num) != DSQL_NO_DATA)
-				{
+				while (dpi_fetch(con->hstmt, &row_num) != DSQL_NO_DATA) {
 					Json al;
-					for (int i = 0; i < num_fields; ++i)
-					{
+					for (int i = 0; i < num_fields; ++i) {
 						// NULL-aware decoding: a negative indicator length
 						// (DM8's NULL marker) becomes a real JSON null.
 						if (outPtrs[i] < 0) {
 							al.add(string((char*)(fieldNames[i])), nullptr);
 							continue;
 						}
-						if (fieldType[i] == DSQL_DOUBLE) {
+						if (fieldType[i] == DSQL_DOUBLE)
 							al.add(string((char*)(fieldNames[i])), outDoubles[i]);
-						}
-						else if (fieldType[i] == DSQL_INT) {
+						else if (fieldType[i] == DSQL_INT)
 							al.add(string((char*)(fieldNames[i])), outInts[i]);
-						}
 						else {
 							string tmp(dataOuts[i]);
 							al.add(string((char*)(fieldNames[i])), tmp.erase(tmp.find_last_not_of(" ") + 1));
@@ -730,141 +442,109 @@ namespace ZORM {
 					delete[] el;
 				for (auto el : fieldNames)
 					delete[] el;
+				for (auto el : dataInputs)
+					delete[] el;
 				return rs;
 			}
 
-			Json ExecQuerySql(string aQuery, vector<string> fields, Json& values) {
+			// prepare + bind + exec without decoding (write path).
+			Json prepareExec(Handle con, const string& aQuery, Json& values, string* out) {
 				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				string err = "";
-				Dm8Con* con = GetConnection(err);
-				if (con == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
+				string err;
 				dpi_alloc_stmt(con->hcon, &con->hstmt);
-				
 				DPIRETURN rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
+				if (!DbLogClose)
+					std::cout << "SQL: " << aQuery << std::endl;
+				if (!DSQL_SUCCEEDED(rt)) {
+					dpiErr(con->hstmt, err);
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+					dpi_free_stmt(con->hstmt);
+					return rs;
 				}
-				int vLen = values.size();
 				std::vector<char*> dataInputs;
-				dataInputs.resize(vLen);
-				std::vector<slength> in_ptrs;
-				in_ptrs.resize(vLen);
-				std::vector<double> in_dbs;
-				in_dbs.resize(vLen);
-				std::vector<int> in_ints;
-				in_ints.resize(vLen);
-				if (vLen > 0)
-				{
-					for (int i = 0; i < vLen; i++)
-					{
-						if (values[i].isString()) {
-							string ele = values[i].toString();
-							int eleLen = ele.length() + 1;
-							dataInputs[i] = new char[eleLen];
-							memset(dataInputs[i], 0, eleLen);
-							memcpy(dataInputs[i], ele.c_str(), eleLen);
-							in_ptrs[i] = eleLen - 1;
-							rt = dpi_bind_param(con->hstmt, i + 1,
-								DSQL_PARAM_INPUT, DSQL_C_NCHAR, DSQL_VARCHAR,
-								in_ptrs[i], 0, (void*)dataInputs[i], in_ptrs[i], &in_ptrs[i]);
-						}
-						else {
-							if (getDecimalCount(values[i].toDouble()) > 0) {
-								in_dbs[i] = values[i].toDouble();
-								in_ptrs[i] = sizeof(in_dbs[i]);
-								rt = dpi_bind_param(con->hstmt, i + 1,
-									DSQL_PARAM_INPUT, DSQL_C_DOUBLE, DSQL_DOUBLE,
-									in_ptrs[i], 0, &in_dbs[i], in_ptrs[i], &in_ptrs[i]);
-							}
-							else {
-								in_ints[i] = values[i].toInt();
-								in_ptrs[i] = sizeof(in_ints[i]);
-								rt = dpi_bind_param(con->hstmt, i + 1,
-									DSQL_PARAM_INPUT, DSQL_C_SLONG, DSQL_INT,
-									in_ptrs[i], 0, &in_ints[i], in_ptrs[i], &in_ptrs[i]);
-							}
-
-						}
-					}
-				}
+				std::vector<slength> inPtrs;
+				std::vector<double> inDbs;
+				std::vector<int> inInts;
+				bindParams(con->hstmt, values, dataInputs, inPtrs, inDbs, inInts);
 				rt = dpi_exec(con->hstmt);
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
+				if (!DSQL_SUCCEEDED(rt)) {
+					dpiErr(con->hstmt, err);
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+					dpi_free_stmt(con->hstmt);
+					for (auto el : dataInputs)
+						delete[] el;
+					return rs;
+				}
+				dpi_free_stmt(con->hstmt);
+				for (auto el : dataInputs)
+					delete[] el;
+				return rs;
+			}
+
+			// Direct execution without decoding (non-parameterized query path).
+			Json execDirectQuery(Handle con, const string& aQuery) {
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				string err;
+				dpi_alloc_stmt(con->hcon, &con->hstmt);
+				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
+				if (!DbLogClose)
+					std::cout << "SQL: " << aQuery << std::endl;
+				if (!DSQL_SUCCEEDED(rt)) {
+					dpiErr(con->hstmt, err);
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+					dpi_free_stmt(con->hstmt);
+					return rs;
 				}
 
-				sdint2 num_fields;
+				sdint2 num_fields = 0;
 				rt = dpi_number_columns(con->hstmt, &num_fields);
-
-				std::vector<sdbyte*> fieldNames;
-				fieldNames.resize(num_fields);
-				std::vector<sdint2> fieldType;
-				fieldType.resize(num_fields);
-				std::vector<sdint2> name_len;
-				name_len.resize(num_fields);
-
-				std::vector<slength> outPtrs;
-				outPtrs.resize(num_fields);
-				std::vector<char*> dataOuts;
-				dataOuts.resize(num_fields);
-				std::vector<double> outDoubles;
-				outDoubles.resize(num_fields);
-				std::vector<int> outInts;
-				outInts.resize(num_fields);
-
-				for (int i = 0; i < num_fields; ++i)
-				{
+				std::vector<sdbyte*> fieldNames(num_fields);
+				std::vector<sdint2> fieldType(num_fields);
+				std::vector<sdint2> nameLen(num_fields);
+				std::vector<slength> outPtrs(num_fields);
+				std::vector<char*> dataOuts(num_fields);
+				std::vector<double> outDoubles(num_fields);
+				std::vector<int> outInts(num_fields);
+				for (int i = 0; i < num_fields; ++i) {
 					ulength col_sz;
 					sdint2 dec_digits;
 					sdint2 nullable;
 					fieldNames[i] = new sdbyte[SDBYTE_MAX];
-					memset(fieldNames[i], 0, SDBYTE_MAX);
-					rt = dpi_desc_column(con->hstmt, i + 1, fieldNames[i], SDBYTE_MAX, &name_len[i],
-						&fieldType[i], &col_sz, &dec_digits, &nullable);
-					if (!DSQL_SUCCEEDED(rt))
-					{
-						dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-						return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
+					std::memset(fieldNames[i], 0, SDBYTE_MAX);
+					rt = dpi_desc_column(con->hstmt, i + 1, fieldNames[i], SDBYTE_MAX, &nameLen[i],
+										 &fieldType[i], &col_sz, &dec_digits, &nullable);
+					if (!DSQL_SUCCEEDED(rt)) {
+						dpiErr(con->hstmt, err);
+						rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+						dpi_free_stmt(con->hstmt);
+						for (auto el : fieldNames)
+							delete[] el;
+						return rs;
 					}
-					if (fieldType[i] == DSQL_DOUBLE) {
+					if (fieldType[i] == DSQL_DOUBLE)
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_DOUBLE, &outDoubles[i], sizeof(double), &outPtrs[i]);
-					}
-					else if (fieldType[i] == DSQL_INT) {
+					else if (fieldType[i] == DSQL_INT)
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_SLONG, &outInts[i], sizeof(int), &outPtrs[i]);
-					}
 					else {
 						dataOuts[i] = new char[SDINT2_MAX];
-						memset(dataOuts[i], 0, SDINT2_MAX);
+						std::memset(dataOuts[i], 0, SDINT2_MAX);
 						rt = dpi_bind_col(con->hstmt, i + 1, DSQL_C_NCHAR, dataOuts[i], SDINT2_MAX, &outPtrs[i]);
 					}
-
 				}
 
 				Json arr(JsonType::Array);
 				ulength row_num;
-				while (dpi_fetch(con->hstmt, &row_num) != DSQL_NO_DATA)
-				{
+				while (dpi_fetch(con->hstmt, &row_num) != DSQL_NO_DATA) {
 					Json al;
-					for (int i = 0; i < num_fields; ++i)
-					{
-						// NULL-aware decoding: a negative indicator length
-						// (DM8's NULL marker) becomes a real JSON null, so
-						// partial-create rows match the jsonfile contract.
+					for (int i = 0; i < num_fields; ++i) {
 						if (outPtrs[i] < 0) {
 							al.add(string((char*)(fieldNames[i])), nullptr);
 							continue;
 						}
-						if (fieldType[i] == DSQL_DOUBLE) {
+						if (fieldType[i] == DSQL_DOUBLE)
 							al.add(string((char*)(fieldNames[i])), outDoubles[i]);
-						}
-						else if (fieldType[i] == DSQL_INT) {
+						else if (fieldType[i] == DSQL_INT)
 							al.add(string((char*)(fieldNames[i])), outInts[i]);
-						}
 						else {
 							string tmp(dataOuts[i]);
 							al.add(string((char*)(fieldNames[i])), tmp.erase(tmp.find_last_not_of(" ") + 1));
@@ -879,93 +559,6 @@ namespace ZORM {
 				for (auto el : dataOuts)
 					delete[] el;
 				for (auto el : fieldNames)
-					delete[] el;
-				return rs;
-			}
-
-			Json ExecNoneQuerySql(string aQuery) {
-				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				string err = "";
-				Dm8Con* con = GetConnection(err);
-				if (con == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-				dpi_alloc_stmt(con->hcon, &con->hstmt); 
-				DPIRETURN rt = dpi_exec_direct(con->hstmt, (sdbyte*)aQuery.c_str());
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);
-				}
-				dpi_free_stmt(con->hstmt);
-				return rs;
-			}
-
-			Json ExecNoneQuerySql(string aQuery, Json values) {
-				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
-				string err = "";
-				Dm8Con* con = GetConnection(err);
-				if (con == nullptr)
-					return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-				dpi_alloc_stmt(con->hcon, &con->hstmt);
-				DPIRETURN rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
-				}
-				int vLen = values.size();
-				std::vector<char*> dataInputs;
-				dataInputs.resize(vLen); 
-				std::vector<slength> in_ptrs;
-				in_ptrs.resize(vLen);
-				std::vector<double> in_dbs;
-				in_dbs.resize(vLen);
-				std::vector<int> in_ints;
-				in_ints.resize(vLen);
-				if (vLen > 0)
-				{
-					for (int i = 0; i < vLen; i++)
-					{
-						if (values[i].isString() || values[i].isObject() || values[i].isArray()) {
-							string ele = values[i].toString();
-							int eleLen = ele.length() + 1;
-							dataInputs[i] = new char[eleLen];
-							memset(dataInputs[i], 0, eleLen);
-							memcpy(dataInputs[i], ele.c_str(), eleLen);
-							in_ptrs[i] = eleLen - 1;
-							rt = dpi_bind_param(con->hstmt, i + 1,
-								DSQL_PARAM_INPUT, DSQL_C_NCHAR, DSQL_VARCHAR,
-								in_ptrs[i], 0, (void*)dataInputs[i], in_ptrs[i], &in_ptrs[i]);
-						}
-						else {
-							if (getDecimalCount(values[i].toDouble()) > 0) {
-								in_dbs[i] = values[i].toDouble();
-								in_ptrs[i] = sizeof(in_dbs[i]);
-								rt = dpi_bind_param(con->hstmt, i + 1,
-									DSQL_PARAM_INPUT, DSQL_C_DOUBLE, DSQL_DOUBLE,
-									in_ptrs[i], 0, &in_dbs[i], in_ptrs[i], &in_ptrs[i]);
-							}
-							else {
-								in_ints[i] = values[i].toInt();
-								in_ptrs[i] = sizeof(in_ints[i]);
-								rt = dpi_bind_param(con->hstmt, i + 1,
-									DSQL_PARAM_INPUT, DSQL_C_SLONG, DSQL_INT,
-									in_ptrs[i], 0, &in_ints[i], in_ptrs[i], &in_ptrs[i]);
-							}
-							
-						}
-					}
-				}
-				rt = dpi_exec(con->hstmt);
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					return DbUtils::MakeJsonObject(STDBOPERATEERR, err);;
-				}
-				dpi_free_stmt(con->hstmt);
-				for (auto el : dataInputs)
 					delete[] el;
 				return rs;
 			}
@@ -984,124 +577,32 @@ namespace ZORM {
 				return ct;
 			}
 
-			bool ExecSqlForTransGo(Dm8Con* con, string aQuery, Json values = Json(JsonType::Array), string* out = nullptr) {
-				DPIRETURN rt = dpi_alloc_stmt(con->hcon, &con->hstmt);
-				rt = dpi_prepare(con->hstmt, (sdbyte*)aQuery.c_str());
-				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					string err;
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					if (out)
-						*out += err;
-					return false;
+			Dm8Con* connect(string& err) {
+				Dm8Con* dmCon = new Dm8Con;
+				dpi_alloc_env(&dmCon->henv);
+				dpi_alloc_con(dmCon->henv, &dmCon->hcon);
+				string theHost = dbhost;
+				theHost.append(":").append(DbUtils::IntTransToString(dbport));
+				DPIRETURN rt = dpi_login(dmCon->hcon, (sdbyte*)theHost.c_str(), (sdbyte*)dbuser.c_str(), (sdbyte*)dbpwd.c_str());
+				if (!DSQL_SUCCEEDED(rt)) {
+					sdint4 err_code;
+					sdint2 msg_len;
+					sdbyte err_msg[SDBYTE_MAX];
+					char buf[SDBYTE_MAX];
+					dpi_get_diag_rec(DSQL_HANDLE_DBC, dmCon->hcon, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
+					snprintf(buf, sizeof(buf), "err_msg = %s, err_code = %d\n", err_msg, err_code);
+					err = string(buf);
+					std::cout << "Error message : " << err;
+					dpi_free_con(dmCon->hcon);
+					dpi_free_env(dmCon->henv);
+					delete dmCon;
+					return nullptr;
 				}
-				int vLen = values.size();
-				std::vector<char*> dataInputs;
-				dataInputs.resize(vLen);
-				std::vector<slength> in_ptrs;
-				in_ptrs.resize(vLen);
-				std::vector<double> in_dbs;
-				in_dbs.resize(vLen);
-				std::vector<int> in_ints;
-				in_ints.resize(vLen);
-				if (vLen > 0)
-				{
-					for (int i = 0; i < vLen; i++)
-					{
-						if (values[i].isString()) {
-							string ele = values[i].toString();
-							int eleLen = ele.length() + 1;
-							dataInputs[i] = new char[eleLen];
-							memset(dataInputs[i], 0, eleLen);
-							memcpy(dataInputs[i], ele.c_str(), eleLen);
-							in_ptrs[i] = eleLen - 1;
-							rt = dpi_bind_param(con->hstmt, i + 1,
-								DSQL_PARAM_INPUT, DSQL_C_NCHAR, DSQL_VARCHAR,
-								in_ptrs[i], 0, (void*)dataInputs[i], in_ptrs[i], &in_ptrs[i]);
-						}
-						else {
-							if (getDecimalCount(values[i].toDouble()) > 0) {
-								in_dbs[i] = values[i].toDouble();
-								in_ptrs[i] = sizeof(in_dbs[i]);
-								rt = dpi_bind_param(con->hstmt, i + 1,
-									DSQL_PARAM_INPUT, DSQL_C_DOUBLE, DSQL_DOUBLE,
-									in_ptrs[i], 0, &in_dbs[i], in_ptrs[i], &in_ptrs[i]);
-							}
-							else {
-								in_ints[i] = values[i].toInt();
-								in_ptrs[i] = sizeof(in_ints[i]);
-								rt = dpi_bind_param(con->hstmt, i + 1,
-									DSQL_PARAM_INPUT, DSQL_C_SLONG, DSQL_INT,
-									in_ptrs[i], 0, &in_ints[i], in_ptrs[i], &in_ptrs[i]);
-							}
-						}
-					}
-				}
-				rt = dpi_exec(con->hstmt);
-				if (!DSQL_SUCCEEDED(rt))
-				{
-					string err;
-					dpi_err_msg_print(DSQL_HANDLE_STMT, con->hstmt, err);
-					if (out)
-						*out += err;
-					return false;
-				}
-				rt = dpi_free_stmt(con->hstmt);
-				for (auto el : dataInputs)
-					delete[] el;
-				return true;
-			}
-
-			bool escapeString(string& pStr)
-			{
-				return true;
-			}
-
-			bool escapeString2(string& dest)
-			{
-				string sql = dest;
-				dest = "";
-				char escape;
-				for (auto character : sql) {
-					switch (character) {
-					case 0: /* Must be escaped for 'mysql' */
-						escape = '0';
-						break;
-					case '\n': /* Must be escaped for logs */
-						escape = 'n';
-						break;
-					case '\r':
-						escape = 'r';
-						break;
-					case '\\':
-						escape = '\\';
-						break;
-					case '\'':
-						escape = '\'';
-						break;
-					case '"': /* Better safe than sorry */
-						escape = '"';
-						break;
-					case '\032': /* This gives problems on Win32 */
-						escape = 'Z';
-						break;
-					default:
-						escape = 0;
-					}
-					if (escape != 0) {
-						dest += '\\';
-						dest += escape;
-					}
-					else {
-						dest += character;
-					}
-				}
-				return true;
+				return dmCon;
 			}
 
 		private:
-			vector<Dm8Con*> pool;
+			DbPool::HandlePool<Dm8Con*> pool;
 			int maxConn;
 			string dbhost;
 			string dbuser;
@@ -1109,133 +610,6 @@ namespace ZORM {
 			string dbname;
 			int dbport;
 			string charsetName;
-			bool DbLogClose;
-			bool queryByParameter;
-			std::string countAlias_ = "_zorm_total";
-
-			// Qualified table reference for generated SQL: "schema"."table".
-			string qualified(const string& tablename) const {
-				return "\"" + dbname + "\".\"" + tablename + "\"";
-			}
-
-			// SQL builders (shared by create/update/remove/transGo).
-			bool buildInsertSql(const string& tablename, const Json& params,
-								string& sql, Json& values, string& generatedId) {
-				if (!params.isObject())
-					return false;
-				if (ZJSON::memberCount(params) == 0)
-					return false;
-				Json row(params);
-				const Json id = params["id"];
-				if (id.isError() || DbUtils::Trim(id.toString()).empty()) {
-					generatedId = DbUtils::GenerateId();
-					ZJSON::setChild(row, "id", generatedId);
-				}
-				vector<string> allKeys = DbUtils::GetVectorFromJson(row.getAllKeys());
-				if (allKeys.empty())
-					return false;
-				sql = "insert into " + qualified(tablename) + " (";
-				string vs = "";
-				values = Json(JsonType::Array);
-				for (size_t i = 0; i < allKeys.size(); i++) {
-					string k = allKeys[i];
-					sql.append("\"").append(k).append("\"");
-					bool vIsString = row[k].isString() || row[k].isArray() || row[k].isObject();
-					string v = row[k].toString();
-					!queryByParameter && vIsString && escapeString(v);
-					if (queryByParameter) {
-						vs.append("?");
-						vIsString ? values.add(v) : values.add(row[k].toDouble());
-					} else {
-						if (vIsString)
-							vs.append("'").append(v).append("'");
-						else
-							vs.append(v);
-					}
-					if (i < allKeys.size() - 1) {
-						sql.append(",");
-						vs.append(",");
-					}
-				}
-				sql.append(") values (").append(vs).append(")");
-				return true;
-			}
-
-			bool buildUpdateSql(const string& tablename, const Json& params,
-								string& sql, Json& values) {
-				if (!params.isObject())
-					return false;
-				vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
-				vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
-				if (iter == allKeys.end())
-					return false;
-				// O-5 parity: an update carrying only the id (no columns) is
-				// rejected - it would otherwise build "update t set  where ...".
-				if (allKeys.size() < 2)
-					return false;
-				sql = "update " + qualified(tablename) + " set ";
-				string where = " where \"id\" = ";
-				Json idJson;
-				values = Json(JsonType::Array);
-				bool first = true;
-				for (size_t i = 0; i < allKeys.size(); i++) {
-					string k = allKeys[i];
-					if (k.compare("id") == 0) {
-						idJson = params[k];
-						continue;
-					}
-					bool vIsString = params[k].isString() || params[k].isArray() || params[k].isObject();
-					string v = params[k].toString();
-					!queryByParameter && vIsString && escapeString(v);
-					if (!first)
-						sql.append(",");
-					first = false;
-					sql.append("\"").append(k).append("\" = ");
-					if (queryByParameter) {
-						sql.append(" ? ");
-						vIsString ? values.add(v) : values.add(params[k].toDouble());
-					} else {
-						if (vIsString)
-							sql.append("'").append(v).append("'");
-						else
-							sql.append(v);
-					}
-				}
-				if (queryByParameter) {
-					where.append(" ? ");
-					values.concat(idJson);
-				} else {
-					bool vIsString = idJson.isString() || idJson.isArray() || idJson.isObject();
-					if (vIsString)
-						where.append("'").append(idJson.toString()).append("'");
-					else
-						where.append(idJson.toString());
-				}
-				sql.append(where);
-				return true;
-			}
-
-			bool buildDeleteSql(const string& tablename, const Json& params,
-								string& sql, Json& values) {
-				if (!params.isObject())
-					return false;
-				const Json id = params["id"];
-				if (id.isError())
-					return false;
-				sql = "delete from " + qualified(tablename) + " where \"id\" = ";
-				values = Json(JsonType::Array);
-				bool vIsString = id.isString() || id.isArray() || id.isObject();
-				if (queryByParameter) {
-					sql.append(" ? ");
-					vIsString ? values.add(id.toString()) : values.add(id.toDouble());
-				} else {
-					if (vIsString)
-						sql.append("'").append(id.toString()).append("'");
-					else
-						sql.append(id.toString());
-				}
-				return true;
-			}
 		};
 
 	}

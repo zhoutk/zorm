@@ -125,3 +125,49 @@ stmt 系列函数在 `mysql_stmt_prepare/bind_param/execute` 失败时直接 ret
 - 评审修复了 6 处 MySQL 后端缺陷（2 处崩溃级、1 处精度截断、3 处泄漏/并发），全部有针对性且改动局部；
 - 交付第三方前建议优先处理 **O-2（连接池并发语义）** 与 **O-6（insertBatch upsert 统一）**；
 - ARM 迁移的代码侧风险已清零（含 `-fsigned-char` 加固），剩余工作是 dm8/mariadb 客户端库的 ARM 二进制供给。
+
+---
+
+## 七、多数据库封装去重重构（gels 分层思想的 C++17 落地）
+
+### 7.1 设计
+
+参考 gels 的 baseDao / sqlDialect 分层，但**不做类继承树套用**——结合 zorm 自身特点（每个后端是一个自包含单头文件、Idb 八方法契约、零依赖），用 C++17 惯用法实现：
+
+| 组件 | 职责 | 位置 |
+|---|---|---|
+| `DbPool::HandlePool<Handle>` | 连接池模板：槽位懒建连、`mutex`+`condition_variable` 等待、**RAII `Lease` 独占租借**（O-2）；`invalidate()` 在致命连接错误后自愈；`setMaxConn()`。句柄按**值语义**存储（对 `sqlite3*` 这类本身就是指针的句柄，避免了二级指针陷阱） | `src/include/DbPool.h`（160 行） |
+| `SqlBackendBase<Derived, Handle>` | 共享算法单份实现：8 个 Idb 方法骨架、`buildInsert/Update/DeleteSql`、`buildStructuredSql`、`genSql` 智能查询装配、聚合/分页/记录计数、事务循环、`attachRecordsPages`（O-3：主查询与 count 共用同一 Lease）；派生类通过 **CRTP 钩子**提供方言，内部调用零虚函数开销 | `src/include/SqlBackendBase.h`（783 行） |
+| 四个后端 | 只保留驱动层与方言：连接/编解码/转义/方言钩子（占位符、标识符引用、LIMIT 语法、UPSERT 子句、聚合别名、字段投影） | 各 .h 瘦身 |
+| jsonfile | 不受影响（文件型后端本就无 SQL 方言） | — |
+
+方言钩子集合（14 个）：`placeholder / numberedPlaceholders / quoteIdent / qualifiedTable / columnList / fieldsProjection / likeColumn / orderClause / limitClause / upsertClause / aggColumn / aggAlias / countAliasSql / excludedRefImpl` + 驱动钩子 `acquireHandle / execQueryOn / execNoneOn / execTxOn / beginTx / commitTx / rollbackTx / detectParameterized / escapeString`。
+
+### 7.2 效果
+
+| 指标 | 重构前 | 重构后 |
+|---|---|---|
+| 四后端总行数 | 4221（1204+883+1247+887） | 1721（549+276+617+279） |
+| 共享算法 | 4 份近似副本 | 1 份（783 行基座）+ 池 160 行 |
+| 合计 | 4221 | 2664（**净减 1557 行 / 37%**） |
+| 新增后端成本 | 复制 1200 行改方言 | 实现 ~14 个钩子（~250 行） |
+| O-2/O-3 | 池无租借语义、count 可能跨连接 | RAII 独占租借、同连接快照 |
+
+### 7.3 迁移中发现并修复的问题（全部由真实数据库验证）
+
+重构过程中探针/契约测试暴露了一批历史遗留缺陷——它们证明这套共享契约+真实数据库的门槛是有效的：
+
+1. **MySQL DECIMAL 解码错误（严重）**：MariaDB Connector/C 二进制协议中 `NEWDECIMAL` 以**字符串形式**传输，旧代码按 `*(double*)` 读取——`sum()` 结果一直是垃圾值（实测 7.108e-320）。此前契约测试"通过"是因为断言恰好走了另一分支；重构中换上探针后暴露。修复：DECIMAL/NEWDECIMAL 走 `atof` 字符串解码。
+2. **sqlite 列名探测与 fields 耦合**：列探测把传入的 `fields` 预置进结果列名列表，一旦生成 SQL 不再包含这些列（聚合场景）就整体错位。修复：列名完全来自探测结果（`sqlite3_get_table`），`fields` 只由 genSql 负责进 SQL。
+3. **聚合投影的跨引擎可移植规则**：`select id,count(1)` 在 pg / MySQL(ONLY_FULL_GROUP_BY) 下非法。统一规则：有聚合时投影 = 分组列（分组时）或纯聚合；fields 仅在无聚合时生效。三种方言实测一致。
+4. **dm8 `qualifiedTable` 误用**：基座早期版本对 queryType 2/3（用户 SQL）也做表名限定，dm8 会把 `SET SCHEMA ...` 整句包成 `"dbtest"."SET SCHEMA ..."`。修复：限定只作用于 queryType 1 与 count SQL。
+5. **dm8 `execNoneOn` 分派遗漏**：参数化模式（`dbconfig` 默认）下写路径必须走 prepare+bind，否则 `?` 原样发给服务器（`-6804 缺少必要的参数`）。修复：按 `queryByParameter` 分派。
+6. **dm8 `orderClause` 拼接错误**：用逗号 join 了空格分隔的 token，生成 `order by "age",asc`（语法错）。修复：按逗号分句、按空格分词的独立拼接，方向关键字保持不引用。
+7. **dm8 批量列名未引用**：`insertBatch`/结构化 Batch 的列清单早期用裸名 join，DM8 折叠成大写（[ID] 无效）。修复：新增 `columnList` 钩子（dm8 用带引号形式）。
+
+### 7.4 交付说明与遗留
+
+- `HandlePool::acquire()` 在池耗尽时**阻塞等待**（条件变量），比旧实现的"随机复用一个连接"更安全，但调用方需注意长事务会占住槽位；`db_conn` 配置决定上限。
+- dm8 的事务在 `beginTx/commitTx/rollbackTx` 中切换并在结束后**恢复 AUTOCOMMIT**（旧实现恰好也做了）。
+- 偶发观察：`test_jsonfile` 曾在一次全量运行中耗时 30s（FileLock 的 30 秒 stale 窗口），复跑即恢复 <1s——疑与磁盘/杀软瞬时抖动有关，非代码缺陷，记录备查。
+- 仍是后续项：QueryType 2/3 的 `fields` 替换仅支持 `*` 在语句前 10 字符内命中（沿袭旧行为）；如未来要支持 `SELECT a.*` 形式可再扩展。
