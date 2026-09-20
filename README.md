@@ -10,55 +10,152 @@ This project relies on my other project Zjson, which provides a simple, convenie
 ZORM data transmission using json, so that data style can be unified from the front to the end. This project aims to be used not only in C++, but also as a dynamic link library used by node.js etc. So we hope to operate json concisely and conveniently like javascript. Therefore, the zjson library was established before this. The general operation interface of database is designed separating from the databases. This interface provides CURD standard api, as well as batch insert and transaction operations, which can basically cover more than 90% of normal database operations. The basic goal of the project is to support Sqlite 3, MySQL, Postges and dm8. Can running on Windows, Linux, or MacOS.
 
 ## Project characteristics
-The project builds as a small static library (`zormlib`). To use it, add `src/include` to your include path, include `DbBase.h`, and link the library - driver headers (mysql.h, DPI.h, ...) never leak into your code. The whole stack is compiled once; executables and tests link `zormlib` instead of recompiling sources.
+- **One interface, five backends**: `ZORM::Idb` is the public contract; sqlite3, mysql, postgres, dm8 (达梦) and jsonfile (pure-C++ file storage) implement it identically. Switching databases at runtime is switching one constructor argument.
+- **Built as a small static library (`zormlib`)**: add `src/include` to your include path, include `DbBase.h`, link `zormlib` — driver headers (`mysql.h`, `DPI.h`, ...) never leak into your code. The whole stack is compiled once; executables and tests link the library instead of recompiling sources.
+- **Smart query**: query parameters in plain Json are assembled into standard SQL automatically (paging, sorting, fuzzy/in/or matching, aggregates, grouping) — no model classes, no query builder DSL.
+- **Upsert parity**: `create()` auto-generates an 8-hex `id` when missing and overwrites an existing row when the id is provided — the same semantics on every backend.
+- **Real connection pooling**: every SQL backend pools its connections behind exclusive RAII leases (a connection belongs to exactly one statement/transaction at a time, blocking checkout, self-healing after connection failures).
+- **Config-driven contract tests**: ONE test suite runs against all six backends, selected by a single config value.
 
 ## Project progress
-Now all functions of using sqlit3, mysql and postgres have been implemented. The technologies I used is sqlit3 - sqllit3.h（c api）；mysql - c api （MySQL Connector C 6.1）；dm8 - dpi；postgres - c api(pgsql14). The pqxx branch implements the encapsulation of libpqxx 7.7.4. It's runs normally on Linux and Macos, but there are problems running on Windows, which need to be solved.
+All planned features are implemented and tested. The technical choices are the lowest-level efficient ones: sqlite3 - the official C api; mysql - C api (MINGW uses MariaDB Connector/C from pacman with an OpenSSL 3 TLS backend supporting TLSv1.2/1.3; MSVC still uses the bundled MySQL Connector C 6.1); dm8 - DPI; postgres - C api (pgsql14). The pqxx branch implements libpqxx 7.7.4, working on Linux and macOS, still problematic on Windows.
 
-Architecture: the SQL backends share `SqlBackendBase` (an abstract base whose statement builders, smart-query assembly, pagination counters and transaction loop are compiled once in `SqlBackendBase.cpp`) and `DbPool` (exclusive RAII connection leases over an `IDbConnection` interface); each backend overrides only the virtual dialect hooks that differ - sqlite3 needs zero overrides, postgres five. On MINGW the MySQL client is MariaDB Connector/C from pacman (OpenSSL 3, TLSv1.2/1.3); MSVC still uses the bundled Connector C 6.1.
+### Architecture
 
-task list：
-- [x] Sqlite3
-  - [x] linux 
-  - [x] windows
-  - [x] macos
-- [x] Mysql
-  - [x] linux 
-  - [x] windows
-  - [x] macos
-- [x] Postgre
-  - [x] linux 
-  - [x] windows
-  - [x] macos
-- [x] Dm8
-  - [x] linux 
-  - [x] windows
-  - [x] macos
-- [x] JsonFile (file-based storage, no database server required)
-  - [x] linux 
-  - [x] windows
-  - [x] macos
+```
+                ┌──────────────────────────────┐
+   your code →  │  DbBase (factory + facade)   │   src/include + src/DbBase.cpp
+                └──────────────┬───────────────┘
+                               │ Idb (8 methods, frozen)
+        ┌──────────────────────┼──────────────────────────┐
+        ▼                      ▼                          ▼
+┌───────────────────┐  ┌───────────────────┐    ┌──────────────────┐
+│  SqlBackendBase   │  │   JsonFileDb      │    │                  │
+│  (abstract base)  │  │   + FileLock      │    │   (sqlfile is    │
+│  builders/genSql  │  │   file storage,   │    │    independent   │
+│  tx loop, ONCE    │  │   own code path   │    │    of the SQL    │
+└─────────┬─────────┘  └───────────────────┘    │    stack)        │
+          │ virtual dialect hooks               │                  │
+          │ + IDbConnection (driver surface)    │                  │
+   ┌──────┼──────────┬──────────────┐           │                  │
+   ▼      ▼          ▼              ▼           ▼                  │
+ sqlite3  mysql   postgres        dm8        jsonfile ◄───────────┘
+```
+
+- **`SqlBackendBase`** (`src/base/SqlBackendBase.h/.cpp`) is an abstract base holding the 8 `Idb` method skeletons, the statement builders, the smart-query assembly (`genSql`), the pagination counters and the transaction loop — compiled ONCE. Backends drive their driver through the **`IDbConnection`** interface and override only the **virtual dialect hooks** that differ from the defaults.
+- **`DbPool`** (`src/base/DbPool.h`) is the shared connection pool: lazily created connections up to `db_conn`, exclusive RAII `Lease` per statement (a `select` runs its main query and the records count on the same connection), blocking checkout when exhausted, `invalidate()` self-heal after fatal connection errors.
+- **jsonfile** (`src/backends/JsonFileDb.h/.cpp` + `FileLock.h/.cpp`) is independent of the SQL stack: a single JSON file with a cross-process lock, atomic writes, corrupt-file backup and an O(1) per-table id index.
+
+### Dialect hooks — who overrides what
+
+Similar backends share the defaults naturally; only true one-offs carry overrides:
+
+| Hook (default in `SqlBackendBase.cpp`) | sqlite3 | mysql | postgres | dm8 |
+|---|---|---|---|---|
+| placeholder `?` / `limit o,n` / identity quoting / comma-join projections | default | default | override ($n, `limit N OFFSET o`) | override ("quoted") |
+| upsert `ON CONFLICT ... excluded` | default | override (`ON DUPLICATE KEY ... values()`) | default | — (read-then-write in `create()`) |
+| literal escaping (double the quotes) | default | override (`mysql_real_escape_string`) | default | default |
+| LIKE / fuzzy column | default | default | override (`CAST(col as TEXT)`) | override (quoted) |
+| **overrides needed** | **0** | **2** | **5** | **9 + create/insertBatch** |
+
+sqlite3 is pure driver code — that is the calibration point for the dedup. Adding a backend means writing a `Connection` class and overriding only the hooks your dialect writes differently.
+
+## Project layout
+
+```
+zorm/
+├── CMakeLists.txt            # zormlib static lib + demo exe + test targets
+├── CMakePresets.json         # clang-dbg / clang-rlz (Ninja + MSYS2 clang64)
+├── run-test                  # test runner (see "Unit test")
+├── src/
+│   ├── main.cpp              # demo entry (links zormlib)
+│   ├── DbBase.cpp            # factory impl - the ONLY TU that sees backend headers
+│   ├── GlobalConstants.cpp   # status-code message table
+│   ├── include/              # ★ PUBLIC surface (4 headers, keep minimal)
+│   │   ├── Idb.h             # THE unified interface (frozen)
+│   │   ├── DbBase.h          # factory declaration (no driver headers leak)
+│   │   ├── GlobalConstants.h # status codes (200/202/301/701/...)
+│   │   └── dll_global.h      # ZORM_API macro
+│   ├── base/                 # private shared algorithm layer
+│   │   ├── SqlBackendBase.h/.cpp  # Idb skeletons, builders, genSql, tx loop
+│   │   ├── DbConnection.h    # IDbConnection: per-connection execution surface
+│   │   ├── DbPool.h          # HandlePool + exclusive RAII leases (template)
+│   │   └── DbUtils.h/.cpp    # SQL/JSON helpers, GenerateId, Trim
+│   └── backends/             # private per-backend pairs
+│       ├── Sqlit3Db.h/.cpp   # sqlite3 (zero dialect overrides - pure driver)
+│       ├── MysqlDb.h/.cpp    # mysql (upsert/escaping overrides, TLS options)
+│       ├── PostgresDb.h/.cpp # postgres ($n placeholders, CAST LIKE, OFFSET)
+│       ├── Dm8Db.h/.cpp      # dm8 (quoted-lowercase group, read-then-write upsert)
+│       ├── JsonFileDb.h/.cpp # jsonfile backend
+│       ├── FileLock.h/.cpp   # cross-process lock used by JsonFileDb
+│       └── pg_type_d.h       # libpq OID table (private)
+├── tests/                    # see "Unit test"
+├── docs/                     # project-index, jsonfile-design, code-review record
+└── thirds/                   # bundled deps: googletest, sqlite3, mysql, pq, dm8, zjson
+```
 
 ## Database interface
-  > The interface was designed to separate operations from databases. 
+> The interface was designed to separate operations from databases. 
 
-  ```
-      class ZORM_API Idb
-      {
-      public:
-          virtual Json select(const string& tablename, const Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) = 0;
-          virtual Json create(const string& tablename, const Json& params) = 0;
-          virtual Json update(const string& tablename, const Json& params) = 0;
-          virtual Json remove(const string& tablename, const Json& params) = 0;
-          virtual Json querySql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) = 0;
-          virtual Json execSql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array)) = 0;
-          virtual Json insertBatch(const string& tablename, const Json& elements, string constraint = "id") = 0;
-          virtual Json transGo(const Json& sqls, bool isAsync = false) = 0;
-      };
-  ```
+```
+    class ZORM_API Idb
+    {
+    public:
+        virtual Json select(const string& tablename, const Json& params, vector<string> fields = vector<string>(), Json values = Json(JsonType::Array)) = 0;
+        virtual Json create(const string& tablename, const Json& params) = 0;
+        virtual Json update(const string& tablename, const Json& params) = 0;
+        virtual Json remove(const string& tablename, const Json& params) = 0;
+        virtual Json querySql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array), vector<string> fields = vector<string>()) = 0;
+        virtual Json execSql(const string& sql, Json params = Json(), Json values = Json(JsonType::Array)) = 0;
+        virtual Json insertBatch(const string& tablename, const Json& elements, string constraint = "id") = 0;
+        virtual Json transGo(const Json& sqls, bool isAsync = false) = 0;
+    };
+```
+
+Every method returns a Json object with a `status` field. Key codes (`GlobalConstants.h`):
+
+| Code | Meaning |
+|------|---------|
+| 200 | success |
+| 202 | query result empty |
+| 301 | param error (bad shape / missing id / malformed reserved word) |
+| 700 | db connection failed |
+| 701 | db operation failed (carries the driver error message) |
+| 404 / 500 / 702 / 703 / 801 | see `src/include/GlobalConstants.h` |
+
+### Behavior contract (identical on every backend)
+
+| Call | Semantics |
+|------|-----------|
+| `create(table, params)` | object → insert; auto-generates an 8-hex `id` when missing/empty; **upserts** (overwrites) when a provided id already exists; returns `{status, id, insertId, affectedRows}` |
+| `create(table, array)` | 1 element → delegated to the single-row path; N elements → delegated to `insertBatch` |
+| `update(table, params)` | requires `id` plus at least one column to set (else 301); returns `affectedRows` |
+| `remove(table, params)` | requires `id` (else 301) |
+| `select(table, params, fields)` | smart query (below); always returns `records` + `pages` beside `data` |
+| `querySql(sql, params, values, fields)` | raw query; `params` carry the smart-query reserved words, `values` bind to `?`/`$n` placeholders |
+| `execSql(sql, params, values)` | raw statement; returns `affectedRows` |
+| `insertBatch(table, elements, constraint)` | one multi-row INSERT; duplicate keys update (upsert); a single element is accepted |
+| `transGo(sqls, isAsync)` | transaction, see below |
+
+### transGo elements
+
+A transaction is an array of elements; each element is either raw SQL text or a structured operation:
+
+```
+// raw SQL, optionally with placeholders
+{ "text": "insert into users (id,name) values (?,?)", "values": ["a1b2c3d4", "john"] }
+
+// structured operations (SQL is generated per backend, correctly quoted)
+{ "table": "users", "method": "Insert", "params": {"id": "...", "name": "john"} }
+{ "table": "users", "method": "Update", "id": "...", "params": {"name": "jane"} }
+{ "table": "users", "method": "Delete", "id": "..." }
+{ "table": "users", "method": "Batch",  "params": [ {...}, {...} ] }
+```
+
+Any statement failing rolls the whole transaction back and the failure status carries the driver error.
 
 ## Example of DbBase
-> Global query switch variable:
+> Global query switch variables:
 - DbLogClose : show sql or not
 - parameterized : query using parameterized or not
 
@@ -107,6 +204,22 @@ task list：
     DbBase* db = new DbBase("postgres", options);
 ```
 
+> Dm8:
+```
+    Json options;
+    options.add("db_host", "192.168.5.12");  //dm8 service IP
+    options.add("db_port", 5236);            //port, default 5236
+    options.add("db_name", "dbtest");        //schema name
+    options.add("db_user", "SYSDBA");        //username
+    options.add("db_pass", "123456");        //password
+    options.add("db_char", "utf8mb4");       //Connection character setting[optional]
+    options.add("db_conn", 1);               //pool setting[optional], default is 1
+    options.add("DbLogClose", false);
+    options.add("parameterized", true);
+    DbBase* db = new DbBase("dm8", options);
+```
+> DM8 note: identifiers generated by zorm are always quoted lower-case; keep raw SQL in your own code quoted too (a CASE_SENSITIVE=Y server folds unquoted identifiers to upper case).
+
 > JsonFile:
 ```
     Json options;
@@ -131,7 +244,7 @@ task list：
     Json p;
     p.add("page", 1);
     p.add("size", 10);
-    p.add("size", "sort desc");
+    p.add("sort", "age desc");
     (new DbBase(...))->select("users", p);
     
     generate sql：   SELECT * FROM users  ORDER BY age desc LIMIT 0,10
@@ -229,6 +342,14 @@ The supported operators are : >, >=, <, <=, <>, = . Comma is the separator. One 
 
     generate sql：   SELECT * FROM users  WHERE age= 18  and username like '%john%'
     ```
+
+> Paging response shape: with `page`/`size` set, every `select` also returns
+> `records` (total row count, computed on the same connection as the main query)
+> and `pages` (total pages); without paging, `records` is the returned row count.
+> Malformed reserved words (`ins` with a missing value, odd element counts, a
+> comparison operator with three components, ...) return status 301 on every
+> backend.
+
  Details in unit test, thanks! 
 
 ## Unit test
@@ -243,24 +364,36 @@ Backends covered by the same suite:
 - `jsonfile` — JSON file backend (no server needed)
 - `mysql`, `postgres`, `dm8` — remote servers (see dbconfig.json)
 
-Run:
+The shared bodies assert the **intersection** of backend behavior — all 8 Idb
+methods, every reserved word, type fidelity (decimal/datetime round-trips,
+aggregate precision, NULL rendering) and escaping fidelity (quotes/percent/
+JSON-looking text round-trip in BOTH parameterized and literal modes) — plus
+parameter-error paths (301 shapes) shared by every backend.
+
+Run (13 ctest registrations):
 ```
-./run-test                 # default: sqlitemem + jsonfile hardening
-./run-test local           # sqlitemem + sqlite(file) + json(file) + hardening
+./run-test                 # default: sqlitemem + jsonfile hardening + dbutils + pool
+./run-test local           # sqlitemem + sqlite(file) + json(file) + hardening + unit tests
 ./run-test remote          # mysql + postgres + dm8
-./run-test all             # everything (9 ctest registrations)
+./run-test all             # everything — the regression gate
 ./run-test sqlitemem       # memory sqlite only
 ./run-test sqlite          # file sqlite only
+./run-test json            # jsonfile contract + hardening (both)
+./run-test utils           # DbUtils + DbBase facade unit tests (no db at all)
+./run-test pool            # HandlePool lease/blocking/invalidate tests (no db at all)
 ./run-test mysqlplain      # mysql with parameterized=false (literal-SQL paths)
 ./run-test sqliteplain     # sqlitemem with parameterized=false (same)
 ./run-test pgplain         # postgres with parameterized=false (same)
 ./run-test dmplain         # dm8 with parameterized=false (same)
-./run-test json            # jsonfile contract + hardening (both)
 ```
 
+Every SQL dialect is registered twice (default + `*plain`): literal-SQL
+generation, escaping and non-parameterized decoding are separate code paths.
 The jsonfile backend has its own storage-engine hardening suite (corrupt-file
 backup, cross-process lock, atomic write, memory-vs-disk consistency, UTF-8
 validation). `./run-test json` runs it together with the shared contract suite.
+Backend-independent units (DbUtils helpers, the DbBase facade validation, the
+connection pool) have their own offline unit tests — no database involved.
 > See [docs/jsonfile-design.md](docs/jsonfile-design.md) for the design and
 > the full test breakdown.
 > Example of test case running results
@@ -288,6 +421,15 @@ cd build && make
 
 run zorm or ctest
 ```
+Build artifacts land in `bin/`: the demo executable `zorm` (plus the test
+binaries when tests are enabled). On MSYS2/clang64 the presets are faster:
+`cmake --preset clang-dbg` then `cmake --build build`; `./run-test` handles
+the DLL paths for the tests.
+
+To consume zorm in your own project: add this repository (or an installed
+copy) with `add_subdirectory`, then link `zormlib` and add `src/include` to
+your include path — that is the whole public surface.
+
 - note 1：on linux need mysql dev lib and create a db named dbtest first.
 the command of ubuntu： apt install libmysqlclient-dev  
 - note 2：on linux need libpq dev lib (gcc at least 8).
