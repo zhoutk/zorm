@@ -862,6 +862,33 @@ inline void EscapingFidelity() {
 	result = db.select(kTable, Json{{"id", "esc02"}});
 	ASSERT_EQ(result["status"].toInt(), 200);
 	EXPECT_EQ(result["data"][0]["name"].toString(), tricky);
+
+	// Values whose TEXT looks like JSON must stay text. Note the construction:
+	// Json(const string&) sniffs {/[ and would turn "[1,2]" into an array at
+	// the API boundary, so callers that mean text use Json::str (the file
+	// backend's SQL-literal path had the same sniffing bug internally and was
+	// fixed the same way).
+	const Json jsonLooking = Json::str("[1,2] {\"a\":1}");
+	result = db.create(kTable, Json{{"id", "esc03"}, {"name", jsonLooking}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "esc03"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_TRUE(result["data"][0]["name"].isString());
+	EXPECT_EQ(result["data"][0]["name"].toString(), jsonLooking.toString());
+
+	// a value that is *valid* JSON text is the sharper case
+	result = db.create(kTable, Json{{"id", "esc04"}, {"name", Json::str("[1,2]")}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "esc04"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_TRUE(result["data"][0]["name"].isString());
+	EXPECT_EQ(result["data"][0]["name"].toString(), "[1,2]");
+
+	// ... including when the same text is used as a query condition
+	result = db.select(kTable, Json{{"name", Json::str("[1,2]")}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	ASSERT_GE(result["data"].size(), 1);
+	EXPECT_EQ(result["data"][0]["id"].toString(), "esc04");
 }
 
 }  // namespace contract

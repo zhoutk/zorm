@@ -119,6 +119,8 @@ task list：
   > cross-process file lock, atomic writes, corrupt-file backup and an O(1) per-table id index.
   > The backend is also available directly as `ZORM::JsonFile::JsonFileDb` (with a `createShared`
   > factory method).
+  > Note: when a value is *text* that merely looks like JSON (`[1,2]`, `{"a":1}`), build it with
+  > `Json::str(text)` - `Json(text)` would parse it into an array/object.
 
 ## Design of intelligent query use Json
 > Query reserved words：page, size, sort, fuzzy, lks, ins, ors, count, sum, group

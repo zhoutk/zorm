@@ -2945,6 +2945,22 @@ namespace ZJSON {
 			return result;
 		}
 
+		// Builds a String node from arbitrary text WITHOUT the JSON sniffing done
+		// by Json(const string&): text that happens to look like an object/array
+		// ([1,2], {"a":1}, ...) stays a string.  Use this wherever the text is
+		// known to be data (SQL literals, ids, query-parameter values) - the
+		// sniffing constructor would silently change its type.
+		static Json str(const string& value) {
+			Json node(Type::String);
+			node.valueString = value;
+			return node;
+		}
+		static Json str(string&& value) {
+			Json node(Type::String);
+			node.valueString = std::move(value);
+			return node;
+		}
+
 		bool operator==(const Json& other) const {
 			if (this->type != other.type)
 				return false;
@@ -3638,7 +3654,10 @@ namespace ZJSON {
 				this->add(childName, *cur);
 				break;
 			case Type::String:
-				this->add(childName, cur->valueString.str());
+				// Re-add as a String node: passing the raw text to add() would
+				// run the {/[ sniffing constructor again and silently turn a
+				// string value like "[1,2]" into an array.
+				this->add(childName, Json::str(cur->valueString.str()));
 				break;
 			case Type::Object:
 			case Type::Array:

@@ -120,6 +120,8 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
   > 支持全部通用接口（CRUD、批量插入、事务、智能查询），内建跨进程文件锁、原子写入、
   > 损坏文件自动备份与按 id 的 O(1) 索引；也可直接使用 `JsonFileDb` 类
   > （`ZORM::JsonFile::JsonFileDb`，提供 `createShared` 工厂方法）。
+  > 提示：值若是一段"看起来像 JSON 的文本"（如 `[1,2]`、`{"a":1}`），请用
+  > `Json::str(text)` 构造——`Json(text)` 会把它按文档解析成数组/对象。
 
 ## 智能查询方式设计
 > 查询保留字：page, size, sort, fuzzy, lks, ins, ors, count, sum, group

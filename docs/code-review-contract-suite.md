@@ -242,3 +242,24 @@ stmt 系列函数在 `mysql_stmt_prepare/bind_param/execute` 失败时直接 ret
 2. 改动**类型解码/语句构造**后：做一次变异验证——把改动点人为改坏，确认至少一处断言失败（否则说明该路径无覆盖，先补测试）；变异必须自证生效（参考 8.1 的无效变异 C）；
 3. 新增方言/驱动：注册新的 `--dialect` 条目外，**同时注册一个 `--no-param` 变体**（并确保 `escapeString` 真的有方言正确的实现，而不是 `return true;`）；
 4. 契约表新增列时：同步更新 `tests/dbconfig.json`、`test_jsonfile.cpp` 的内嵌 DDL、以及 TypeFidelity 的断言。
+
+### 8.5 jsonfile 是否存在同类问题？——审计结论：存在，且根因比预想更系统性
+
+审计方法与 SQL 后端相同（先问"哪些路径从未被测试覆盖"，再用探针实测）。结论：**同一根因在三处产生类型污染**，根因是 zjson 的"JSON 嗅探"语义——`Json(const string&)` / `add(key, raw string)` 对以 `{` 或 `[` 开头的文本会**当成 JSON 文档解析**。
+
+| # | 位置 | 症状（实测） | 修复 |
+|---|---|---|---|
+| J-1 | jsonfile SQL shim：字符串字面量解析（`parseSqlLiteral` 的 `out = Json(s)`） | `execSql("insert ... values ('j1','{\"a\":1}')")` → 读回 **type=Object**（应为 String）；`'[1,2]'` → **type=Array** | 改用新增的 `Json::str(s)` |
+| J-2 | **四个 SQL 后端的读取解码**（sqlite `Json((char*)sqlite3_column_text)`、mysql plain/stmt 的 `Json(row[i])`、pg `Json(PQgetvalue)`、dm8 字符串列） | sqlite 存入文本 `[1,2]` 读回 **not String**（被嗅探成数组）——这是 J-1 修完后**新暴露**出来的同族缺陷 | 全部改用 `Json::str(...)` |
+| J-3 | **zjson `extendItem` 的 String 分支**（initializer_list / `extend` / `concat` 的公共路径） | `Json{{"id", Json::str("[9]")}}` → **isString=0**（String 值在搬运时被转回 `std::string` 再 `add`，重走嗅探）；`add("id", Json::str("[9]"))` 则正常 | 该分支改为 `add(name, Json::str(text))` |
+
+**新增能力**：zjson 提供 `Json::str(text)` 免嗅探字符串工厂（与既有 `Json::array(...)` 工厂风格一致），供所有"这段文本是数据"的场景使用。**语义边界保持不变**：`Json("[1,2]")`、`add("k","[1,2]")` 等裸字符串写法仍然按文档解析（既有语义）；要表达文本，用 `Json::str`。
+
+**变异验证 G**：把 zjson 的 `extendItem` String 分支改回原写法 → `test_contract_jsonfile`（EscapingFidelity）**失败**；改回修复版即恢复全绿。
+
+**新增测试**（覆盖上述三处）：
+- 共享 `EscapingFidelity`（11 个注册全跑）：新增 `esc03`（`[1,2] {"a":1}` 混合文本）与 `esc04`（**合法 JSON 文本** `[1,2]`，更尖锐的情形）的往返 + 作为查询条件；
+- jsonfile 专属套件（`SqlEdgeContract`）：字面量写入 JSON-looking 文本、**绑定值**写入同形文本、**id 本身形如 JSON**（`[9]`）后仍可寻址；
+- 构造方式的意图显式化：测试里凡"这是文本"一律 `Json::str(...)`，并在注释中说明原因。
+
+> 注：J-2 的守门与 J-1/J-3 同由 `EscapingFidelity` 的 `esc04` 断言覆盖（SQL 后端读回的文本必须仍是 String）；J-3 另由 `esc03/esc04` 的 `Json::str` 构造路径覆盖。

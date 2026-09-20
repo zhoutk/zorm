@@ -743,7 +743,7 @@ Json upsertRowIndexed(Json& tableObject, const Json& inputRow,
 	std::string id = trim(variantText(childValue(normalized, "id")));
 	if (id.empty()) {
 		id = generateId();
-		setObjectValue(normalized, "id", Json(id));
+		setObjectValue(normalized, "id", Json::str(id));
 	}
 
 	auto it = idIndex.find(id);
@@ -755,7 +755,7 @@ Json upsertRowIndexed(Json& tableObject, const Json& inputRow,
 	}
 	setObjectValue(tableObject, "rows", rows);
 
-	Json response = makeRunResponse(1, Json(id));
+	Json response = makeRunResponse(1, Json::str(id));
 	response.add("id", id);
 	return response;
 }
@@ -778,7 +778,7 @@ Json updateRowIndexed(Json& tableObject, const Json& patch, const std::string& i
 			setObjectValue(row, ownedKey(p->key()), p->value());
 		}
 	}
-	setObjectValue(row, "id", Json(id));
+	setObjectValue(row, "id", Json::str(id));
 	row = applySchemaDefaults(tableObject, row);
 	setArrayElement(rows, it->second, row);
 	setObjectValue(tableObject, "rows", rows);
@@ -829,7 +829,7 @@ Json updateRow(Json& tableObject, const Json& patch, const std::string& id) {
 	}
 	for (int index = 0; index < rows.size(); ++index) {
 		Json row = asObject(rows[index]);
-		if (!valuesEqual(childValue(row, "id"), Json(id))) {
+		if (!valuesEqual(childValue(row, "id"), Json::str(id))) {
 			continue;
 		}
 		if (patch.isObject()) {
@@ -837,7 +837,7 @@ Json updateRow(Json& tableObject, const Json& patch, const std::string& id) {
 				setObjectValue(row, ownedKey(p->key()), p->value());
 			}
 		}
-		setObjectValue(row, "id", Json(id));
+		setObjectValue(row, "id", Json::str(id));
 		row = applySchemaDefaults(tableObject, row);
 		setArrayElement(rows, index, row);
 		setObjectValue(tableObject, "rows", rows);
@@ -852,7 +852,7 @@ Json deleteRow(Json& tableObject, const std::string& id) {
 		return makeRunResponse(0);
 	}
 	for (int index = 0; index < rows.size(); ++index) {
-		if (!valuesEqual(childValue(asObject(rows[index]), "id"), Json(id))) {
+		if (!valuesEqual(childValue(asObject(rows[index]), "id"), Json::str(id))) {
 			continue;
 		}
 		rows.remove(index);
@@ -1296,7 +1296,8 @@ bool parseSqlLiteral(const std::string& token, Json& out) {
 				s.push_back(t[i]);
 			}
 		}
-		out = Json(s);
+		// Json::str: a literal like '{"a":1}' or '[1,2]' is TEXT, not a document.
+		out = Json::str(s);
 		return true;
 	}
 
@@ -1724,7 +1725,7 @@ Json metadataQueryResult(const Json& store, const std::string& sql, const Json& 
 		(containsNoCase(sql, "sqlite_master") || containsNoCase(sql, "information_schema.tables"))) {
 		if (findTableIndex(store, tableName) >= 0) {
 			Json row;
-			setObjectValue(row, "TABLE_NAME", Json(tableName));
+			setObjectValue(row, "TABLE_NAME", Json::str(tableName));
 			rows.push_back(row);
 		}
 	}
@@ -2001,7 +2002,7 @@ Json buildQuerySpec(Json params, std::vector<std::string>& fields, QuerySpec& sp
 				const std::vector<std::string> expectedValues(parts.begin() + 1, parts.end());
 				spec.conditions.push_back([fieldName, expectedValues](const Json& row) {
 					for (const std::string& expected : expectedValues) {
-						if (valuesEqual(childValue(row, fieldName), Json(expected))) {
+						if (valuesEqual(childValue(row, fieldName), Json::str(expected))) {
 							return true;
 						}
 					}
@@ -2013,8 +2014,8 @@ Json buildQuerySpec(Json params, std::vector<std::string>& fields, QuerySpec& sp
 						const std::string& fieldName = parts[pairIndex];
 						const std::string& expected = parts[pairIndex + 1];
 						const bool matches = key == "lks"
-							? containsValue(childValue(row, fieldName), Json(expected))
-							: valuesEqual(childValue(row, fieldName), Json(expected));
+							? containsValue(childValue(row, fieldName), Json::str(expected))
+							: valuesEqual(childValue(row, fieldName), Json::str(expected));
 						if (matches) {
 							return true;
 						}
@@ -2036,7 +2037,7 @@ Json buildQuerySpec(Json params, std::vector<std::string>& fields, QuerySpec& sp
 				const std::string op = parts[0] + ",";
 				const std::string expected = parts[1];
 				spec.conditions.push_back([key, op, expected](const Json& row) {
-					return compareByOperator(childValue(row, key), op, Json(expected));
+					return compareByOperator(childValue(row, key), op, Json::str(expected));
 				});
 				handledComparison = true;
 			} else if (parts.size() == 4) {
@@ -2045,8 +2046,8 @@ Json buildQuerySpec(Json params, std::vector<std::string>& fields, QuerySpec& sp
 				const std::string opB = parts[2] + ",";
 				const std::string expectedB = parts[3];
 				spec.conditions.push_back([key, opA, expectedA, opB, expectedB](const Json& row) {
-					return compareByOperator(childValue(row, key), opA, Json(expectedA)) &&
-						   compareByOperator(childValue(row, key), opB, Json(expectedB));
+					return compareByOperator(childValue(row, key), opA, Json::str(expectedA)) &&
+						   compareByOperator(childValue(row, key), opB, Json::str(expectedB));
 				});
 				handledComparison = true;
 			} else {
@@ -2060,7 +2061,7 @@ Json buildQuerySpec(Json params, std::vector<std::string>& fields, QuerySpec& sp
 
 		if (fuzzy == "1") {
 			spec.conditions.push_back([key, text](const Json& row) {
-				return containsValue(childValue(row, key), Json(text));
+				return containsValue(childValue(row, key), Json::str(text));
 			});
 			continue;
 		}
@@ -2073,7 +2074,7 @@ Json buildQuerySpec(Json params, std::vector<std::string>& fields, QuerySpec& sp
 		}
 
 		spec.conditions.push_back([key, text](const Json& row) {
-			return valuesEqual(childValue(row, key), Json(text));
+			return valuesEqual(childValue(row, key), Json::str(text));
 		});
 	}
 

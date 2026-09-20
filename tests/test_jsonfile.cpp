@@ -397,6 +397,37 @@ TEST_F(JsonFileDbTest, SqlEdgeContract) {
 	EXPECT_EQ(idb.execSql("UPDATE ?? SET id = 'x' WHERE id = 'y'")["status"].toInt(), 701);
 	EXPECT_EQ(idb.execSql("DELETE FROM ?? WHERE id = 'y'")["status"].toInt(), 701);
 
+	// Literal SQL strings whose text looks like JSON must stay text (the SQL
+	// shim used to re-type them via Json(const string&)), and so must the
+	// bound values and the ids derived from text.
+	Json litResult = idb.execSql(
+		"insert into table_for_test (id,name) values ('jl01','[1,2] {\"a\":1}')");
+	ASSERT_EQ(litResult["status"].toInt(), 200);
+	Json litRow = idb.select(kTableName, Json{{"id", "jl01"}});
+	ASSERT_EQ(litRow["status"].toInt(), 200);
+	EXPECT_TRUE(litRow["data"][0]["name"].isString());
+	EXPECT_EQ(litRow["data"][0]["name"].toString(), "[1,2] {\"a\":1}");
+
+	// bound value with the same shape (Json::str: this text is data, not a
+	// document - Json(const string&) would sniff "[3,4]" into an array)
+	Json jlValues(JsonType::Array);
+	jlValues.add("jl02");
+	jlValues.add(Json::str("[3,4]"));
+	Json jlBound = idb.execSql("insert into table_for_test (id,name) values (?,?)", Json(), jlValues);
+	ASSERT_EQ(jlBound["status"].toInt(), 200);
+	jlBound = idb.select(kTableName, Json{{"id", "jl02"}});
+	ASSERT_EQ(jlBound["status"].toInt(), 200);
+	EXPECT_TRUE(jlBound["data"][0]["name"].isString());
+	EXPECT_EQ(jlBound["data"][0]["name"].toString(), "[3,4]");
+
+	// an id that looks like JSON stays text and remains addressable
+	Json jlId = idb.create(kTableName, Json{{"id", Json::str("[9]")}, {"name", "json-id"}});
+	ASSERT_EQ(jlId["status"].toInt(), 200);
+	EXPECT_EQ(jlId["id"].toString(), "[9]");
+	jlId = idb.select(kTableName, Json{{"id", "[9]"}});
+	ASSERT_EQ(jlId["status"].toInt(), 200);
+	EXPECT_EQ(jlId["data"][0]["name"].toString(), "json-id");
+
 	// CREATE TABLE / DROP TABLE with a ?? table placeholder
 	Json phValues(JsonType::Array);
 	phValues.add("ph_table");

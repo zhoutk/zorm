@@ -321,7 +321,7 @@ namespace ZORM {
 						else if (IS_NUM(fs[i].type))
 							al.add(fs[i].name, atof(row[i]));
 						else
-							al.add(fs[i].name, row[i]);
+							al.add(fs[i].name, Json::str(row[i]));
 					}
 					arr.push_back(al);
 				}
@@ -418,15 +418,15 @@ namespace ZORM {
 							else
 								std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
 											  t.year, t.month, t.day, t.hour, t.minute, t.second);
-							al.add(fs[i].name, buf);
+							al.add(fs[i].name, Json::str(buf));
 						} else if (fs[i].type == MYSQL_TYPE_TIME) {
 							MYSQL_TIME t;
 							std::memcpy(&t, dataOuts[i], sizeof(MYSQL_TIME));
 							char buf[24] = {0};
 							std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t.hour, t.minute, t.second);
-							al.add(fs[i].name, buf);
+							al.add(fs[i].name, Json::str(buf));
 						} else
-							al.add(fs[i].name, dataOuts[i]);
+							al.add(fs[i].name, Json::str(dataOuts[i]));
 					}
 					arr.push_back(al);
 				}

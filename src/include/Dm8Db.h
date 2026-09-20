@@ -440,7 +440,7 @@ namespace ZORM {
 							al.add(string((char*)(fieldNames[i])), outInts[i]);
 						else {
 							string tmp(dataOuts[i]);
-							al.add(string((char*)(fieldNames[i])), tmp.erase(tmp.find_last_not_of(" ") + 1));
+							al.add(string((char*)(fieldNames[i])), Json::str(tmp.erase(tmp.find_last_not_of(" ") + 1)));
 						}
 					}
 					arr.push_back(al);
@@ -558,7 +558,7 @@ namespace ZORM {
 							al.add(string((char*)(fieldNames[i])), outInts[i]);
 						else {
 							string tmp(dataOuts[i]);
-							al.add(string((char*)(fieldNames[i])), tmp.erase(tmp.find_last_not_of(" ") + 1));
+							al.add(string((char*)(fieldNames[i])), Json::str(tmp.erase(tmp.find_last_not_of(" ") + 1)));
 						}
 					}
 					arr.push_back(al);

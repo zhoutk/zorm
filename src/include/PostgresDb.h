@@ -173,7 +173,8 @@ namespace ZORM {
 							al.add(PQfname(res, j), atof(PQgetvalue(res, i, j)));
 							break;
 						default:
-							al.add(PQfname(res, j), PQgetvalue(res, i, j));
+							// Json::str: JSON-looking text stays text.
+							al.add(PQfname(res, j), Json::str(PQgetvalue(res, i, j)));
 							break;
 						}
 					}

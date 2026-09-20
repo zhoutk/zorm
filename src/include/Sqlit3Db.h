@@ -182,7 +182,9 @@ namespace ZORM {
 						else if (nType == 2)  // SQLITE_FLOAT
 							al.add(k, sqlite3_column_double(stmt, j));
 						else if (nType == 3)  // SQLITE_TEXT
-							al.add(k, (char*)sqlite3_column_text(stmt, j));
+							// Json::str: text that looks like JSON ([1,2], {...})
+							// is data here, not a document to parse.
+							al.add(k, Json::str((char*)sqlite3_column_text(stmt, j)));
 						else  // BLOB / SQLITE_NULL -> empty (this backend's NULL rendering)
 							al.add(k, "");
 					}
