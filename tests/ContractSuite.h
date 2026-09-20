@@ -818,6 +818,52 @@ inline void TypeFidelity() {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Escaping fidelity: values containing quotes / percent signs must round-trip
+// in BOTH execution modes. In parameterized mode they ride through the bind
+// protocol; in plain mode the value is inlined into the SQL text, so a
+// missing dialect escape silently corrupts the statement (or worse).
+// -----------------------------------------------------------------------------
+
+inline void EscapingFidelity() {
+	CONTRACT_RESET();
+	Idb& db = env->db();
+	const std::string tricky = "O'Brien \"quoted\" 100% _under_";
+
+	Json result = db.create(kTable, Json{{"id", "esc01"}, {"name", tricky}, {"price", 1.25}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "esc01"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), tricky);
+
+	// the same value as a WHERE condition (inlined in plain mode)
+	result = db.select(kTable, Json{{"name", tricky}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	ASSERT_GE(result["data"].size(), 1);
+	EXPECT_EQ(result["data"][0]["id"].toString(), "esc01");
+
+	// fuzzy (like) with a substring of the tricky value
+	result = db.select(kTable, Json{{"name", "100%"}, {"fuzzy", 1}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	ASSERT_GE(result["data"].size(), 1);
+	EXPECT_EQ(result["data"][0]["id"].toString(), "esc01");
+
+	// update with an apostrophe
+	result = db.update(kTable, Json{{"id", "esc01"}, {"name", "it's updated"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "esc01"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), "it's updated");
+
+	// batch insert carrying the same payload
+	Json batch(JsonType::Array);
+	batch.add(Json{{"id", "esc02"}, {"name", tricky}});
+	ASSERT_EQ(db.insertBatch(kTable, batch)["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "esc02"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), tricky);
+}
+
 }  // namespace contract
 }  // namespace ZORM
 
@@ -855,4 +901,8 @@ inline void TypeFidelity() {
 	TEST(Contract, TypeFidelity) {                                                \
 		::ZORM::contract::env->connectOnce();                                     \
 		::ZORM::contract::TypeFidelity();                                         \
+	}                                                                             \
+	TEST(Contract, EscapingFidelity) {                                          \
+		::ZORM::contract::env->connectOnce();                                     \
+		::ZORM::contract::EscapingFidelity();                                       \
 	}

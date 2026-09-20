@@ -4,7 +4,7 @@
 # 用法（参照 gels 的 run-tests 模式）:
 #   ./run-test                  # 默认: 本地测试（sqlitemem 内存库 + json 文件库加固）
 #   ./run-test <name>...        # 按名字选择: sqlitemem | sqlite | json | mysql | pg | dm
-#                               #            sqliteplain | mysqlplain
+#                               #            sqliteplain | mysqlplain | pgplain | dmplain
 #                               # 可组合: ./run-test sqlitemem sqlite json
 #   ./run-test local            # 本地: sqlitemem + sqlite(文件) + json(文件) + jsonfile 加固
 #   ./run-test remote           # 远程数据库: mysql + pg + dm
@@ -21,6 +21,8 @@
 #   jsonfile-hardening -> test_jsonfile (文件型后端加固测试)
 #   sqliteplain -> test_contract_sqlite3_mem_plain  (parameterized=false)
 #   mysqlplain  -> test_contract_mysql_plain        (parameterized=false)
+#   pgplain     -> test_contract_postgres_plain     (parameterized=false)
+#   dmplain     -> test_contract_dm8_plain          (parameterized=false)
 
 # 脚本所在目录（项目根），并规范化为 POSIX 风格路径：
 # 当从 Windows 风格的工作目录启动时 pwd 会给出 "D:/x/y"，该形式拼入 MSYS 的
@@ -47,12 +49,12 @@ NAMES=()
 PASSTHROUGH=()
 for arg in "$@"; do
     case "$arg" in
-        sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|local|remote|all)
+        sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|local|remote|all)
             NAMES+=("$arg") ;;
         -*)
             PASSTHROUGH+=("$arg") ;;
         *)
-            echo "警告: '$arg' 不是有效的测试名（sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|local|remote|all），将原样传给 ctest。" >&2
+            echo "警告: '$arg' 不是有效的测试名（sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|local|remote|all），将原样传给 ctest。" >&2
             PASSTHROUGH+=("$arg") ;;
     esac
 done
@@ -63,6 +65,8 @@ map_name() {
         sqlitemem)         echo "test_contract_sqlite3_mem" ;;
         sqliteplain)       echo "test_contract_sqlite3_mem_plain" ;;
         mysqlplain)        echo "test_contract_mysql_plain" ;;
+        pgplain)           echo "test_contract_postgres_plain" ;;
+        dmplain)           echo "test_contract_dm8_plain" ;;
         sqlite)            echo "test_contract_sqlite3" ;;
         json|jsonfile)     echo "test_contract_jsonfile|test_jsonfile" ;;
         mysql)             echo "test_contract_mysql" ;;

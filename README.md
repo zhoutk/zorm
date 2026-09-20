@@ -251,6 +251,8 @@ Run:
 ./run-test sqlite          # file sqlite only
 ./run-test mysqlplain      # mysql with parameterized=false (literal-SQL paths)
 ./run-test sqliteplain     # sqlitemem with parameterized=false (same)
+./run-test pgplain         # postgres with parameterized=false (same)
+./run-test dmplain         # dm8 with parameterized=false (same)
 ./run-test json            # jsonfile contract + hardening (both)
 ```
 

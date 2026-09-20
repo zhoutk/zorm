@@ -111,9 +111,21 @@ namespace ZORM {
 
 			// ---------------- CRTP hooks: driver ----------------
 
+			// Literal escaping for the parameterized=false path, where values
+			// are inlined into the SQL text. Standard-conforming strings (the
+			// postgres default since 9.1) only need the single quote doubled;
+			// with standard_conforming_strings=off, use parameterized mode.
 			bool escapeString(string& pStr) {
-				(void)pStr;
-				return true;  // values ride through PQexecParams binding
+				std::string escaped;
+				escaped.reserve(pStr.size() + 8);
+				for (const char ch : pStr) {
+					if (ch == '\'')
+						escaped += "''";
+					else
+						escaped += ch;
+				}
+				pStr = escaped;
+				return true;
 			}
 
 			Json execQueryOn(Handle pq, const string& aQuery, const vector<string>& fields, Json& values) {

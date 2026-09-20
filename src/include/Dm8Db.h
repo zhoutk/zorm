@@ -166,9 +166,20 @@ namespace ZORM {
 			// CRTP hooks: driver
 			// ─────────────────────────────────────────────────────────────────
 
+			// Literal escaping for the parameterized=false path, where values
+			// are inlined into the SQL text: double the single quote (the SQL
+			// standard rule DM8 follows).
 			bool escapeString(string& pStr) {
-				(void)pStr;
-				return true;  // DM8 values ride through dpi_bind_param
+				std::string escaped;
+				escaped.reserve(pStr.size() + 8);
+				for (const char ch : pStr) {
+					if (ch == '\'')
+						escaped += "''";
+					else
+						escaped += ch;
+				}
+				pStr = escaped;
+				return true;
 			}
 
 			// Parameterized statements go through prepare + bind; plain

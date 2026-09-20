@@ -265,15 +265,19 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 ./run-test json            # jsonfile 契约 + 加固（两者一起跑）
 ./run-test mysqlplain      # mysql, parameterized=false（覆盖字面量 SQL 路径）
 ./run-test sqliteplain     # sqlitemem, parameterized=false（同上）
+./run-test pgplain         # postgres, parameterized=false（同上）
+./run-test dmplain         # dm8, parameterized=false（同上）
 ```
-每个被测方言都注册了 CTest 用例（9 个：sqlite3-mem / sqlite3 / jsonfile / mysql /
-postgres / dm8 / sqlite3-mem(plain) / mysql(plain) / jsonfile 加固）。共享契约套件
+每个被测方言都注册了 CTest 用例（11 个：6 个方言 × 契约 + 4 个 plain 变体 + jsonfile 加固）。
+共享契约套件
 覆盖 Idb.h 全部 8 个方法的所有参数形态，另外包含：
 - **TypeFidelity**：decimal/numeric 与 datetime 列的精确往返、聚合精度、类型列上的
   NULL 渲染——用于守住解码类缺陷（例如 MySQL DECIMAL 在二进制协议中是字符串，
   曾按 double 读出 7e-320 垃圾值）；
-- **plain 方言**：以 `parameterized=false` 运行同一套契约，覆盖字面量 SQL 生成、
-  转义与非参数化解码路径（这些路径与参数化路径是两套代码）。
+- **plain 方言**（4 个）：以 `parameterized=false` 运行同一套契约，覆盖字面量 SQL 生成、
+  转义与非参数化解码路径（这些路径与参数化路径是两套代码）；
+- **EscapingFidelity**：含引号/百分号/下划线的值必须精确往返（create/等值查询/fuzzy/
+  update/批量）——用于守住各方言的字面量转义实现。
 
 jsonfile 后端另有独立的存储引擎加固测试（损坏文件备份、跨进程锁、原子写、
 内存与磁盘一致性、UTF-8 校验）。`./run-test json` 会把它与共享契约套件一起运行。

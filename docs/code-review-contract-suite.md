@@ -4,7 +4,7 @@
 - 评审日期：2026-09-20
 - 评审范围：`tests/TestConfig.*`、`tests/dbconfig.json`、`tests/ContractSuite.h`、`tests/test_contract.cpp`、`run-test`、`CMakeLists.txt`、四个后端头文件（Sqlit3Db/MysqlDb/PostgresDb/Dm8Db）的能力对等改造、`DbUtils.h` 新增公共工具
 - 评审基线：全部 7 个 CTest 套件在真实数据库（mysql/pg/dm8 @ 10.0.0.7）上 7/7 通过
-  > 后续演进：第三轮已扩展为 **9 个注册、9/9 通过**（新增两个非参数化方言），见第八节。
+  > 后续演进：第三轮已扩展为 **11 个注册、11/11 通过**（四个非参数化方言 + TypeFidelity + EscapingFidelity），见第八节。
 
 ---
 
@@ -200,11 +200,19 @@ stmt 系列函数在 `mysql_stmt_prepare/bind_param/execute` 失败时直接 ret
    - **datetime 列往返**：写入 `2026-09-20 10:30:45`，读回须为同一渲染（覆盖 MySQL 的 `MYSQL_TIME` 解码，即 O-1）；
    - **类型列上的 NULL**：按配置的 nullRendering（json-null / null-string / empty）断言。
 2. **schema 扩展**：契约表新增 `price decimal(10,2)` 与 `ts datetime` 两列（6 个方言的 DDL 各自使用等价类型：mysql `decimal/datetime`、pg `numeric/timestamp`、dm8 `DECIMAL/DATETIME`、sqlite `decimal/datetime`、jsonfile 仅记录列名）。
-3. **非参数化方言**（覆盖另一套代码路径）：`--no-param` 开关 + 两个新注册
+3. **非参数化方言**（覆盖另一套代码路径）：`--no-param` 开关 + **四个新注册**
    - `test_contract_sqlite3_mem_plain`（`./run-test sqliteplain`）
    - `test_contract_mysql_plain`（`./run-test mysqlplain`）
-   它们跑**同一套契约**但 `parameterized=false`，覆盖：字面量 SQL 生成（genSql 的 else 分支）、字符串转义（`escapeString`）、MySQL 非参数化解码（含 P1-1 的 `atof(NULL)` 修复路径）。
-   - **该方言注册后立刻抓到真实缺陷**：`ins` 查询的非参数化分支在基座重构时丢失（生成 `in (?,?,?)` 却按字面量执行 → 701）；已修复并回归。这正是"补测试"的直接价值。
+   - `test_contract_postgres_plain`（`./run-test pgplain`）
+   - `test_contract_dm8_plain`（`./run-test dmplain`）
+   它们跑**同一套契约**但 `parameterized=false`，覆盖：字面量 SQL 生成（genSql/构造器的 else 分支，值经 `escapeString` 转义后内联）、非参数化解码（含 P1-1 的 `atof(NULL)` 修复路径）。
+   - **注册后立刻抓到两个真实缺陷**：① `ins` 查询的非参数化分支在基座重构时丢失（生成 `in (?,?,?)` 却按字面量执行 → 701）；② 见下一条"转义保真"。
+   - jsonfile 没有 plain 变体：它的 SQL shim 同时解析 `?` 绑定与字面量（同一段代码两条分支），不存在"参数化 vs 拼接"两套独立实现；其字面量路径由 jsonfile 专属套件的 SqlEdge 用例覆盖。
+4. **`EscapingFidelity` 契约段**（全 11 个注册执行）：含引号/百分号/下划线的值必须精确往返——
+   `create` 后按 id 读回、按该值做等值条件查询、`fuzzy` 子串查询、`update` 携带撇号、`insertBatch` 批量携带。
+   - **为什么必须加**：契约原有数据（Kevin 凯文/test001/中文…）**不含单引号**，因此 `postgres` 与 `dm8` 的 `escapeString` 一直是 `return true;`（空实现，注释写着 "values ride through binding"）却从未被发现——加上本段后 `pgplain`/`dmplain` 立刻失败，证实了空转义在非参数化模式下会直接生成坏 SQL。
+   - 修复：为 postgres/dm8 实现标准 SQL 转义（单引号加倍，标准合规字符串为默认）；同时把 mysql 的 `escapeString` 改为**纯内置转义不再取连接租借**——原先它 acquire 一个 lease，而 `transGo` 已经持有租借再构建语句，`db_conn=1` 的配置会自锁。
+   - 变异验证 E：把 postgres 的转义改回空实现 → `pgplain` **失败**，而 `postgres`（参数化）**通过**——守门精准且路径隔离正确。
 4. **测试基础设施修复**（本轮发现）：
    - `test_jsonfile.cpp` 未初始化 `contract::g_config` → `parameterized()` 误判为 false，导致共享契约走错分支（已初始化并标记 jsonfile 的 `?` 绑定语义）；
    - `PlaceholderSql` 契约按模式分叉：参数化模式走占位符语句，plain 模式走等价字面量语句（否则 plain 方言必然失败，且这些路径将完全没有覆盖）；
@@ -222,13 +230,15 @@ stmt 系列函数在 `mysql_stmt_prepare/bind_param/execute` 失败时直接 ret
 | test_contract_mysql_plain | mysql | ❌ | 字面量 SQL + 非参数化解码 |
 | test_contract_postgres | postgres | ✅ | |
 | test_contract_dm8 | dm8 | ✅ | |
+| test_contract_postgres_plain | postgres | ❌ | 字面量 SQL + 转义 + 非参数化解码 |
+| test_contract_dm8_plain | dm8 | ❌ | 同上 |
 | test_jsonfile | jsonfile | — | 存储引擎加固（损坏/锁/原子写/编码） |
 
-`./run-test all` → **9/9**。
+`./run-test all` → **11/11**。
 
 ### 8.4 回归守门约定（建议长期执行）
 
 1. 任何后端改动后：`./run-test all`（本地 + 远程全方言）；
 2. 改动**类型解码/语句构造**后：做一次变异验证——把改动点人为改坏，确认至少一处断言失败（否则说明该路径无覆盖，先补测试）；变异必须自证生效（参考 8.1 的无效变异 C）；
-3. 新增方言/驱动：注册新的 `--dialect` 条目外，**同时注册一个 `--no-param` 变体**；
+3. 新增方言/驱动：注册新的 `--dialect` 条目外，**同时注册一个 `--no-param` 变体**（并确保 `escapeString` 真的有方言正确的实现，而不是 `return true;`）；
 4. 契约表新增列时：同步更新 `tests/dbconfig.json`、`test_jsonfile.cpp` 的内嵌 DDL、以及 TypeFidelity 的断言。

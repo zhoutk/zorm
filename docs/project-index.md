@@ -23,9 +23,11 @@ The interface, status codes and response shapes are shared across all backends,
 so switching databases at runtime is a single config change (see tests).
 
 Each SQL dialect is registered twice: once with bound parameters (the default)
-and once with `parameterized=false` (`sqliteplain` / `mysqlplain`), because the
-literal-SQL generation and the non-parameterized decoding are separate code
-paths. 9 CTest registrations total; `./run-test all` runs them all.
+and once with `parameterized=false` (`sqliteplain` / `mysqlplain` / `pgplain` /
+`dmplain`), because literal-SQL generation, escaping and non-parameterized
+decoding are separate code paths. 11 CTest registrations total (6 dialect
+contracts + 4 plain variants + the jsonfile hardening suite); `./run-test all`
+runs them all.
 
 ---
 
@@ -37,7 +39,8 @@ zorm/
 ├── CMakePresets.json
 ├── version                   # VERSION_MAJOR/MINOR/PATCH
 ├── run-test                  # test runner: sqlitemem|sqlite|json|mysql|pg|dm|
-│                             #   sqliteplain|mysqlplain|local|remote|all
+│                             #   sqliteplain|mysqlplain|pgplain|dmplain|
+│                             #   local|remote|all
 ├── src/
 │   ├── main.cc               # demo entry
 │   ├── JsonFileDb.cc         # JSON file backend implementation

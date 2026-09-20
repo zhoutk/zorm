@@ -185,6 +185,10 @@ if (CMAKE_ZJSON_ENABLE_TEST)
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
     add_test(NAME test_contract_mysql_plain COMMAND test_contract --dialect mysql --no-param
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_postgres_plain COMMAND test_contract --dialect postgres --no-param
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_dm8_plain COMMAND test_contract --dialect dm8 --no-param
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
     add_test(NAME test_contract_mysql COMMAND test_contract --dialect mysql
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
     add_test(NAME test_contract_postgres COMMAND test_contract --dialect postgres
