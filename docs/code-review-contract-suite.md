@@ -54,23 +54,23 @@ stmt 系列函数在 `mysql_stmt_prepare/bind_param/execute` 失败时直接 ret
 
 ---
 
-## 三、记录在案、建议后续处理的问题（未改码）
+## 三、记录在案的问题 → 修复状态（2026-09-20 第二轮，全部处理）
 
-按优先级排列：
-
-| # | 位置 | 问题 | 建议 |
+| # | 问题 | 修复方式 | 状态 |
 |---|---|---|---|
-| O-1 | MysqlDb 参数化 SELECT | `MYSQL_TYPE_DATETIME/TIMESTAMP/DATE/TIME` 列以二进制 `MYSQL_TIME` 结构落入缓冲区，但解码走"字符串"分支——**含日期列的参数化 SELECT 会读出乱码**。测试表无日期列所以未暴露 | 解码处 memcpy 到 MYSQL_TIME 并格式化为字符串；或绑定 buffer_type 强制字符串传输 |
-| O-2 | 四后端连接池 | 池句柄无 checkout/checkin 语义：两个并发线程可能拿到**同一个连接**执行（rand 轮询只是缓解）。事务（transGo）期间若并发进入同一连接会话状态互相污染 | 引入 RAII 连接租借（mutex + 条件变量或每线程连接），这是交付多线程服务前必须解决的 |
-| O-3 | attachRecordsPages | count 查询通过 `GetConnection` 可能落在**与主查询不同的池连接**上（InnoDB REPEATABLE READ 下两快照可能不一致），records 与 data 存在竞态偏差 | count 复用主查询的连接，或接受近似值并文档化 |
-| O-4 | CountSqlFromSelect | 以子串 `" from "` / `" order by "` 切分拼 count SQL——非参数化模式下若 WHERE 字面量含这些串会错切 | 参数化模式下安全（值走绑定）；可文档化"非参数化模式的值不要包含这些关键字"，或改为在 genSql 内构造而非事后切分 |
-| O-5 | buildUpdateSql | params 只含 `id` 时生成 `update t set  where id=?`（语法错误 → 701）。旧行为一致，但契约未覆盖 | 补一条契约：仅 id 时返回 301 或 no-op（各后端统一后加断言） |
-| O-6 | insertBatch upsert 语义不一致 | mysql 带 `on duplicate key update`（重复 id 成功），**sqlite/pg/dm8/sqlite3-mem 无 upsert**（重复 id 报 701）。本次新增测试时已实际踩到 | 统一：要么全部加 upsert（pg: `ON CONFLICT DO UPDATE`，sqlite: 同，dm8: MERGE），要么把 mysql 改成与其它一致；推荐前者（gels 契约是 upsert） |
-| O-7 | dbconfig.json | mysql 的 `nullRendering: "null-string"` 疑似过时：参数化路径现在正确返回 JSON null，与 "json-null" 的断言在 toString 层面恰好等价，掩盖了配置语义 | 用 `isNull()` 区分后复核各后端真实渲染，更新配置 |
-| O-8 | TestConfig.cc | `readConfigFile` 是外部链接函数但未在头文件声明（ODR 隐患）；`resolveDialect` 与 `resolveDialectWithArgv` 90% 重复 | 加 static 或头文件声明；抽出公共实现 |
-| O-9 | DbUtils.h | `GenerateId` 用了 `std::uint32_t` 但未包含 `<cstdint>`（靠 `<random>` 间接带入） | 显式 include |
-| O-10 | allocate_buffer_for_field | `#if A1 / #if A0` 死代码块（宏未定义）；`const MYSQL_FIELD field` 按值拷贝 | 清理死代码；改 const 引用 |
-| O-11 | ExecNoneQuerySql | `int affected = (int)mysql_affected_rows(...)`：my_ulonglong → int 截断（超大批量） | 用 long long 并让 affectedRows 走 long long |
+| O-1 | mysql 参数化 SELECT 日期列按 MYSQL_TIME 二进制落入字符串分支（乱码） | 参数化解码新增 DATETIME/TIMESTAMP/DATE/TIME 分支：memcpy 到 MYSQL_TIME 后格式化为 `YYYY-MM-DD[ HH:MM:SS]` / `HH:MM:SS` | ✅ 已修复 |
+| O-2 | 连接池无 checkout/checkin，并发线程可能共用同一连接 | 新增 `src/include/DbPool.h`：`DbPool::HandlePool<Handle>` 模板（mutex+condvar 槽位、懒建连、RAII Lease 独占租借），四 SQL 后端接入 | ✅ 见重构提交 |
+| O-3 | records/pages 的 count 查询可能落在与主查询不同的连接（快照不一致） | `select()` 持有单个 Lease，主查询与 count 同连接执行 | ✅ 见重构提交 |
+| O-4 | CountSqlFromSelect 以子串切分拼 count SQL（脆弱） | genSql 内用已知的 table/where/group 直接构造；分组查询包一层子查询使 records=分组数；`CountSqlFromSelect` 删除 | ✅ 已修复 |
+| O-5 | 仅含 id 的 update 生成非法 SQL（后端间 301/701 不一致） | 四后端 buildUpdateSql 对"仅 id 无列"返回 false → 统一 301；jsonfile 对齐；契约断言固化 | ✅ 已修复 |
+| O-6 | insertBatch upsert 语义不一致（mysql 有、pg/dm8/sqlite 无） | pg 原本已有（constraint 参数）；sqlite 补 `ON CONFLICT (constraint) DO UPDATE`；dm8 逐行走 create() 的读后写 upsert；mysql 原有。契约断言固化 | ✅ 已修复 |
+| O-7 | dbconfig mysql nullRendering 过时 | 实测参数化路径 is_null → JSON null，配置改为 `json-null` | ✅ 已修复 |
+| O-8 | TestConfig readConfigFile 外部链接未声明；resolve 函数重复 | readConfigFile 改 static；抽出 `dialectFromArgv` 公共实现 | ✅ 已修复 |
+| O-9 | DbUtils 缺 `<cstdint>` | 显式 include | ✅ 已修复 |
+| O-10 | allocate_buffer_for_field 死代码块 + 按值拷贝 | 删除 `#if A1/A0`；改 `const MYSQL_FIELD&` | ✅ 已修复 |
+| O-11 | affected 的 my_ulonglong→int 截断 | 改 `long long` | ✅ 已修复 |
+
+> O-2/O-3 的实现（DbPool 模板 + 各后端接入）与"多数据库封装去重重构"为同一改造，见下文第七节的修复设计与计划。
 
 ---
 

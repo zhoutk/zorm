@@ -2344,6 +2344,17 @@ Json JsonFileDb::update(const string& tablename, const Json& params) {
 	if (params.isError() || !params.isObject() || !hasChild(params, "id")) {
 		return makeResponse(STPARAMERR);
 	}
+	// Parity with the SQL backends: an update that carries no column other
+	// than `id` is rejected instead of silently rewriting the row.
+	{
+		int patchFields = 0;
+		for (auto it = params.cbegin(); it != params.cend(); ++it) {
+			if (it->key() != "id")
+				++patchFields;
+		}
+		if (patchFields == 0)
+			return makeResponse(STPARAMERR);
+	}
 
 	return writeWithLock([&]() -> Json {
 		const int tableIndex = findTableIndex(store_, tablename);

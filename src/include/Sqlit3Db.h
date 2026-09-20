@@ -243,7 +243,23 @@ namespace ZORM {
 						}
 						keyStr.append(valueStr);
 					}
-					sql.append(tablename).append(keyStr);
+					// Upsert parity (O-6): duplicate ids update the row like
+					// create()/mysql do - INSERT ... ON CONFLICT DO UPDATE.
+					string upsertClause;
+					if (elements.size() > 0) {
+						vector<string> keys = DbUtils::GetVectorFromJson(elements[0].getAllKeys());
+						string updateStr;
+						for (const string& k : keys) {
+							if (k == constraint)
+								continue;
+							if (!updateStr.empty())
+								updateStr += ",";
+							updateStr += k + " = excluded." + k;
+						}
+						if (!updateStr.empty())
+							upsertClause = " on conflict (" + constraint + ") do update set " + updateStr;
+					}
+					sql.append(tablename).append(keyStr).append(upsertClause);
 					Json rs = ExecNoneQuerySql(sql, values);
 					if (rs["status"].toInt() == STSUCCESS)
 						rs.add("affectedRows", elements.size());
@@ -429,6 +445,10 @@ namespace ZORM {
 				vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
 				vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 				if (iter == allKeys.end())
+					return false;
+				// O-5 parity: an update carrying only the id (no columns) is
+				// rejected - it would otherwise build "update t set  where ...".
+				if (allKeys.size() < 2)
 					return false;
 				sql = "update " + tablename + " set ";
 				string where = " where id = ";
@@ -685,14 +705,14 @@ namespace ZORM {
 					// records/pages. It must be computed BEFORE the LIMIT is
 					// appended, so capture it here and let the caller run it.
 					if (countSql != nullptr && queryType == 1 && page > 0) {
-						*countSql = DbUtils::CountSqlFromSelect(querySql, countAlias_);
-						// count(col) with a group returns per-group rows; the
-						// records count for a grouped page is the row count of
-						// the (unlimited) grouped result, which we approximate
-						// with count(1) over the same group. SQL backends count
-						// the group rows via a subselect in gels; here we use
-						// the simple count and accept pages computed from the
-						// filtered row count when grouped.
+						// Built from the known parts instead of re-parsing the finished
+						// statement (O-4); grouped queries count the groups via a
+						// wrapped subquery so records == number of groups.
+						const string wherePart = where.length() > 0 ? " where " + where : "";
+						if (group.empty())
+						*countSql = "select count(1) as " + countAlias_ + " from " + tablename + wherePart;
+					else
+						*countSql = "select count(1) as " + countAlias_ + " from (select * from " + tablename + wherePart + " group by " + group + ") zorm_cnt";
 					}
 
 					if (page > 0) {

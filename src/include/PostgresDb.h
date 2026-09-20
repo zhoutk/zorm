@@ -572,7 +572,14 @@ namespace ZORM {
 					}
 
 					if (countSql != nullptr && queryType == 1 && page > 0) {
-						*countSql = DbUtils::CountSqlFromSelect(querySql, countAlias_);
+						// Built from the known parts instead of re-parsing the finished
+						// statement (O-4); grouped queries count the groups via a
+						// wrapped subquery so records == number of groups.
+						const string wherePart = where.length() > 0 ? " where " + where : "";
+						if (group.empty())
+						*countSql = "select count(1) as " + countAlias_ + " from " + tablename + wherePart;
+					else
+						*countSql = "select count(1) as " + countAlias_ + " from (select * from " + tablename + wherePart + " group by " + group + ") zorm_cnt";
 					}
 
 					if (page > 0) {
@@ -813,6 +820,10 @@ namespace ZORM {
 				vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
 				vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 				if (iter == allKeys.end())
+					return false;
+				// O-5 parity: an update carrying only the id (no columns) is
+				// rejected - it would otherwise build "update t set  where ...".
+				if (allKeys.size() < 2)
 					return false;
 				sql = "update " + tablename + " set ";
 				string where = " where id = ";

@@ -334,6 +334,22 @@ inline void Write() {
 	EXPECT_NE(db.update(kTable, Json{{"score", 1}})["status"].toInt(), 200);
 	EXPECT_NE(db.create(kTable, Json(JsonType::Object))["status"].toInt(), 200);
 	EXPECT_NE(db.remove(kTable, Json(JsonType::Object))["status"].toInt(), 200);
+
+	// O-5 parity: an update carrying only the id (no columns) is rejected
+	EXPECT_EQ(db.update(kTable, Json{{"id", "a2b3c4d5"}})["status"].toInt(), 301);
+
+	// O-6 parity: batch insert with duplicate ids upserts on every backend
+	Json dupRows(JsonType::Array);
+	dupRows.add(Json{{"id", "dup01"}, {"name", "dup-first"}, {"age", 1}, {"score", 0.1}});
+	ASSERT_EQ(db.insertBatch(kTable, dupRows, "id")["status"].toInt(), 200);
+	Json updRows(JsonType::Array);
+	updRows.add(Json{{"id", "dup01"}, {"name", "dup-upserted"}, {"age", 2}, {"score", 0.2}});
+	result = db.insertBatch(kTable, updRows, "id");
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "dup01"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_EQ(result["data"][0]["name"].toString(), "dup-upserted");
+	EXPECT_EQ(result["data"][0]["age"].toInt(), 2);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -586,7 +586,14 @@ namespace ZORM {
 					}
 
 					if (countSql != nullptr && queryType == 1 && page > 0) {
-						*countSql = DbUtils::CountSqlFromSelect(querySql, countAlias_);
+						// Built from the known parts instead of re-parsing the finished
+						// statement (O-4); grouped queries count the groups via a
+						// wrapped subquery so records == number of groups.
+						const string wherePart = where.length() > 0 ? " where " + where : "";
+						if (group.empty())
+						*countSql = "select count(1) as " + countAlias_ + " from " + tablename + wherePart;
+					else
+						*countSql = "select count(1) as " + countAlias_ + " from (select * from " + tablename + wherePart + " group by " + group + ") zorm_cnt";
 					}
 
 					if (page > 0) {
@@ -789,6 +796,28 @@ namespace ZORM {
 								}
 								else if (fields[i].type == MYSQL_TYPE_DOUBLE || fields[i].type == MYSQL_TYPE_DECIMAL || fields[i].type == MYSQL_TYPE_NEWDECIMAL) //sum
 									al.add(fields[i].name, *((double *)dataOuts[i]));
+								else if (fields[i].type == MYSQL_TYPE_DATETIME || fields[i].type == MYSQL_TYPE_TIMESTAMP || fields[i].type == MYSQL_TYPE_DATE)
+								{
+									// Binary protocol delivers these as MYSQL_TIME
+									// structs - format them back to SQL literal text.
+									MYSQL_TIME t;
+									std::memcpy(&t, dataOuts[i], sizeof(MYSQL_TIME));
+									char buf[48] = {0};
+									if (fields[i].type == MYSQL_TYPE_DATE)
+										std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", t.year, t.month, t.day);
+									else
+										std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
+													  t.year, t.month, t.day, t.hour, t.minute, t.second);
+									al.add(fields[i].name, buf);
+								}
+								else if (fields[i].type == MYSQL_TYPE_TIME)
+								{
+									MYSQL_TIME t;
+									std::memcpy(&t, dataOuts[i], sizeof(MYSQL_TIME));
+									char buf[24] = {0};
+									std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d", t.hour, t.minute, t.second);
+									al.add(fields[i].name, buf);
+								}
 								else
 									al.add(fields[i].name, dataOuts[i]);
 							}
@@ -827,7 +856,7 @@ namespace ZORM {
 					return rs;
 				}
 				else {
-					int affected = (int)mysql_affected_rows(mysql);
+					const long long affected = static_cast<long long>(mysql_affected_rows(mysql));
 					rs.add("affected", affected);
 				}
 				!DbLogClose && std::cout << "SQL: " << aQuery << std::endl;
@@ -891,7 +920,7 @@ namespace ZORM {
 						mysql_stmt_close(stmt);             // was leaked on this path
 						return rs;
 					}
-					int affected = (int)mysql_affected_rows(mysql);
+					const long long affected = static_cast<long long>(mysql_affected_rows(mysql));
 					rs.add("affected", affected);
 					for (auto el : dataInputs)
 						delete[] el;
@@ -908,7 +937,7 @@ namespace ZORM {
 			};
 
 			
-			st_buffer_size_type allocate_buffer_for_field(const MYSQL_FIELD field)
+			st_buffer_size_type allocate_buffer_for_field(const MYSQL_FIELD& field)
 			{
 				switch (field.type)
 				{
@@ -945,15 +974,6 @@ namespace ZORM {
 				case MYSQL_TYPE_DECIMAL:
 				case MYSQL_TYPE_NEWDECIMAL:
 					return st_buffer_size_type(64, field.type);
-#if A1
-				case MYSQL_TYPE_TIMESTAMP:
-				case MYSQL_TYPE_YEAR:
-					return st_buffer_size_type(10, field.type);
-#endif
-#if A0
-				case MYSQL_TYPE_ENUM:
-				case MYSQL_TYPE_SET:
-#endif
 				case MYSQL_TYPE_BIT:
 					return st_buffer_size_type(8, MYSQL_TYPE_BIT);
 				case MYSQL_TYPE_GEOMETRY:
@@ -1134,6 +1154,10 @@ namespace ZORM {
 				vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
 				vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 				if (iter == allKeys.end())
+					return false;
+				// O-5 parity: an update carrying only the id (no columns) is
+				// rejected - it would otherwise build "update t set  where ...".
+				if (allKeys.size() < 2)
 					return false;
 				sql = "update " + tablename + " set ";
 				string where = " where id = ";

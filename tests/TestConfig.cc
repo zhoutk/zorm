@@ -37,7 +37,7 @@ static std::string trim(const std::string& text) {
 	return text.substr(begin, end - begin);
 }
 
-bool readConfigFile(Json& out) {
+static bool readConfigFile(Json& out) {
 	// 1. Current working directory (source-tree runs).
 	// 2. The tests/ source directory (when running from the repo root).
 	const fs::path candidates[] = {
@@ -145,20 +145,31 @@ static std::string resolveDialectFrom(Json& file) {
 	return std::string();
 }
 
-std::string resolveDialect(int argc, char* argv[]) {
-	// 1. --dialect <name>
+namespace {
+// Shared resolution steps; the two entry points differ only in how the
+// config file is located (cwd / source tree vs. next to the executable).
+std::string dialectFromArgv(int argc, char* argv[]) {
 	for (int i = 1; i < argc - 1; ++i) {
 		const std::string arg = argv[i];
 		if (arg == "--dialect" || arg == "-d") {
 			return argv[i + 1];
 		}
 	}
-	// 2. ZORM_DB_DIALECT
 	if (const char* env = std::getenv("ZORM_DB_DIALECT")) {
 		std::string value = trim(env);
 		if (!value.empty()) {
 			return value;
 		}
+	}
+	return std::string();
+}
+}  // namespace
+
+std::string resolveDialect(int argc, char* argv[]) {
+	// 1. --dialect <name>  2. ZORM_DB_DIALECT
+	std::string value = dialectFromArgv(argc, argv);
+	if (!value.empty()) {
+		return value;
 	}
 	// 3. config file db_dialect
 	Json file;
@@ -173,19 +184,10 @@ std::string resolveDialect(int argc, char* argv[]) {
 }
 
 std::string resolveDialectWithArgv(int argc, char* argv[]) {
-	// 1. --dialect <name>
-	for (int i = 1; i < argc - 1; ++i) {
-		const std::string arg = argv[i];
-		if (arg == "--dialect" || arg == "-d") {
-			return argv[i + 1];
-		}
-	}
-	// 2. ZORM_DB_DIALECT
-	if (const char* env = std::getenv("ZORM_DB_DIALECT")) {
-		std::string value = trim(env);
-		if (!value.empty()) {
-			return value;
-		}
+	// 1. --dialect <name>  2. ZORM_DB_DIALECT
+	std::string value = dialectFromArgv(argc, argv);
+	if (!value.empty()) {
+		return value;
 	}
 	// 3. config file db_dialect (executable dir first)
 	Json file;

@@ -4,6 +4,7 @@
 #include <time.h>
 #include "GlobalConstants.h"
 #include <algorithm>
+#include <cstdint>
 #include <random>
 
 namespace ZORM {
@@ -23,23 +24,6 @@ namespace ZORM {
 			char buffer[16] = { 0 };
 			std::snprintf(buffer, sizeof(buffer), "%08x", static_cast<unsigned int>(distribution(engine)));
 			return std::string(buffer);
-		}
-
-		// Builds "select count(1) as <alias> <tail>" from a select statement,
-		// where tail starts at the first " from " and stops before any
-		// " order by " clause (pagination + count for every backend).
-		static std::string CountSqlFromSelect(const std::string& selectSql, const std::string& alias) {
-			const std::string marker = " from ";
-			const std::string::size_type from = selectSql.find(marker);
-			if (from == std::string::npos) {
-				return std::string();
-			}
-			std::string tail = selectSql.substr(from);
-			const std::string::size_type order = tail.find(" order by ");
-			if (order != std::string::npos) {
-				tail = tail.substr(0, order);
-			}
-			return "select count(1) as " + alias + tail;
 		}
 
 		static std::string Trim(const std::string& text) {

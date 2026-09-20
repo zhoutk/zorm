@@ -216,46 +216,28 @@ namespace ZORM {
 
 			Json insertBatch(const string& tablename, const Json& elements, string constraint) override
 			{
-				string sql = "insert into ";
 				if (!elements.isArray() || elements.size() < 1) {
 					return DbUtils::MakeJsonObject(STPARAMERR);
 				}
-				else {
-					Json values = Json(JsonType::Array);
-					string keyStr = " ( ";
-					keyStr.append(DbUtils::GetVectorJoinStrArroundQuots(DbUtils::GetVectorFromJson(elements[0].getAllKeys()))).append(" ) values ");
-					for (int i = 0; i < elements.size(); i++) {
-						vector<string> keys = DbUtils::GetVectorFromJson(elements[i].getAllKeys());
-						string valueStr = " ( ";
-						for (int j = 0; j < keys.size(); j++) {
-							bool vIsString = elements[i][keys[j]].isString() || elements[i][keys[j]].isArray() || elements[i][keys[j]].isObject();
-							string v = elements[i][keys[j]].toString();
-							!queryByParameter && vIsString && escapeString(v);
-							if(queryByParameter){
-								valueStr.append("?");
-								values.add(v);
-							}else{
-								if(vIsString)
-									valueStr.append("'").append(v).append("'");
-								else
-									valueStr.append(v);
-							}
-							if (j < keys.size() - 1) {
-								valueStr.append(",");
-							}
-						}
-						valueStr.append(" )");
-						if (i < elements.size() - 1) {
-							valueStr.append(",");
-						}
-						keyStr.append(valueStr);
-					}
-					sql.append("\"").append(dbname).append("\"").append(".").append("\"").append(tablename).append("\"").append(keyStr);
-					Json rs = queryByParameter ? ExecNoneQuerySql(sql,values) : ExecNoneQuerySql(sql);
-					if (rs["status"].toInt() == STSUCCESS)
-						rs.add("affectedRows", elements.size());
-					return rs;
+				// Upsert parity (O-6): DM8 has no INSERT ... ON CONFLICT and
+				// its DPI cannot bind placeholders inside MERGE, so route
+				// every row through create(), which implements the
+				// read-then-update/insert upsert.
+				long long affected = 0;
+				Json lastInsertId(0);
+				for (int i = 0; i < elements.size(); ++i) {
+					Json rowResult = create(tablename, elements[i]);
+					if (rowResult["status"].toInt() != STSUCCESS)
+						return rowResult;
+					affected += rowResult["affectedRows"].isError() ? 1 : rowResult["affectedRows"].toInt();
+					const Json id = rowResult["insertId"];
+					if (!id.isError())
+						lastInsertId = id;
 				}
+				Json rs = DbUtils::MakeJsonObject(STSUCCESS);
+				rs.add("affectedRows", affected);
+				rs.add("insertId", lastInsertId);
+				return rs;
 			}
 
 			// Structured element -> SQL text + values.
@@ -601,8 +583,17 @@ namespace ZORM {
 					if (countSql != nullptr && queryType == 1 && page > 0) {
 						// DM8 folds unquoted identifiers to upper case; quote
 						// the alias so the result column keeps its case and the
-						// JSON key lookup below stays lowercase.
-						*countSql = DbUtils::CountSqlFromSelect(querySql, "\"" + countAlias_ + "\"");
+						// JSON key lookup below stays lowercase. Built from the
+						// known parts (O-4) instead of re-parsing the finished
+						// statement; grouped queries count the groups via a
+						// wrapped subquery so records == number of groups.
+						const string quotedTable = "\"" + dbname + "\".\"" + tablename + "\"";
+						const string quotedAlias = "\"" + countAlias_ + "\"";
+						const string wherePart = where.length() > 0 ? " where " + where : "";
+						if (group.empty())
+							*countSql = "select count(1) as " + quotedAlias + " from " + quotedTable + wherePart;
+						else
+							*countSql = "select count(1) as " + quotedAlias + " from (select * from " + quotedTable + wherePart + " group by " + group + ") zorm_cnt";
 					}
 
 					if (page > 0) {
@@ -1177,6 +1168,10 @@ namespace ZORM {
 				vector<string> allKeys = DbUtils::GetVectorFromJson(params.getAllKeys());
 				vector<string>::iterator iter = find(allKeys.begin(), allKeys.end(), "id");
 				if (iter == allKeys.end())
+					return false;
+				// O-5 parity: an update carrying only the id (no columns) is
+				// rejected - it would otherwise build "update t set  where ...".
+				if (allKeys.size() < 2)
 					return false;
 				sql = "update " + qualified(tablename) + " set ";
 				string where = " where \"id\" = ";

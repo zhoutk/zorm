@@ -87,7 +87,7 @@
       "rawTable": "`table_for_test`",
       "placeholder": "?",
       "catalogSql": "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='dbtest' AND TABLE_NAME='v_table_name_not_exist_in_db'",
-      "nullRendering": "null-string"
+      "nullRendering": "json-null"
     },
     "postgres": {
       "name": "postgres",
