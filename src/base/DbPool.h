@@ -60,6 +60,7 @@ public:
 		}
 		Lease(Lease&& other) noexcept : pool_(other.pool_), handle_(other.handle_) {
 			other.pool_ = nullptr;
+			other.handle_ = Handle{};  // moved-from lease must read as empty
 		}
 		Lease& operator=(Lease&& other) noexcept {
 			if (this != &other) {

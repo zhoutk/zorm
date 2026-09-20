@@ -586,7 +586,7 @@ Json makeStatusResponse(StatusCodes code, const std::string& detail = std::strin
 		}
 		info.insert(0, " details, ");
 	}
-	info.insert(0, STCODEMESSAGES[static_cast<int>(code)]);
+	info.insert(0, StatusMessages().at(static_cast<int>(code)));
 	response.add("message", info);
 	return response;
 }

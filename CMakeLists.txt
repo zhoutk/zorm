@@ -45,6 +45,8 @@ add_definitions(-DDM64)
 include_directories(./thirds/sqlit3)
 link_directories(./thirds/sqlit3/lib)
 include_directories(./src/include)
+include_directories(./src/base)
+include_directories(./src/backends)
 include_directories(./thirds/zjson)
 if(MSVC)
     include_directories(./thirds/MySQL-C-Api-6.1/include)
@@ -112,22 +114,39 @@ elseif(UNIX)
     set(dm8Name libdmdpi.so)
 endif()
 
-FILE(GLOB_RECURSE SRC_FILES "./src/*.cc") 
-FILE(GLOB_RECURSE HEAD_FILES "./src/*.h") 
+##--------------------- zorm static library --------------------------------##
+# One library compiles the whole stack once; executables and tests link it.
+# Public surface: src/include (Idb.h / DbBase.h / GlobalConstants.h) + zjson.
+# Everything under src/base and src/backends is private to the library.
+set(ZORM_LIB_SOURCES
+    src/GlobalConstants.cpp
+    src/DbBase.cpp
+    src/base/DbUtils.cpp
+    src/base/SqlBackendBase.cpp
+    src/backends/Sqlit3Db.cpp
+    src/backends/MysqlDb.cpp
+    src/backends/PostgresDb.cpp
+    src/backends/Dm8Db.cpp
+    src/backends/JsonFileDb.cpp
+    src/backends/FileLock.cpp)
 
-add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEAD_FILES})
+add_library(zormlib STATIC ${ZORM_LIB_SOURCES})
+
 if(MSVC)
-    target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name})
+    target_link_libraries(zormlib PUBLIC ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name})
 elseif(MINGW)
-    target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name})
+    target_link_libraries(zormlib PUBLIC ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name})
 elseif(UNIX)
-    target_link_libraries(${PROJECT_NAME} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} dl)
+    target_link_libraries(zormlib PUBLIC ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} dl)
 endif()
 
+##--------------------- demo executable ------------------------------------##
+add_executable(${PROJECT_NAME} src/main.cpp)
+target_link_libraries(${PROJECT_NAME} zormlib)
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
 # Output all generated binaries to ${CMAKE_SOURCE_DIR}/bin
-set_target_properties(${PROJECT_NAME} PROPERTIES
+set_target_properties(${PROJECT_NAME} zormlib PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
@@ -148,17 +167,28 @@ if (CMAKE_ZJSON_ENABLE_TEST)
     # --dialect <name> | ZORM_DB_DIALECT | tests/dbconfig.json "db_dialect".
     # test_jsonfile.cpp keeps the file-hardening suite (corrupt file, lock,
     # atomic write, persistence, shared instance, encoding).
+    # Both link zormlib - the tests no longer recompile backend sources.
     add_executable(test_contract
         tests/test_contract.cpp
-        tests/TestConfig.cc
-        src/JsonFileDb.cc)
+        tests/TestConfig.cpp)
     add_executable(test_jsonfile
         tests/test_jsonfile.cpp
-        tests/TestConfig.cc
-        src/JsonFileDb.cc)
+        tests/TestConfig.cpp)
+    foreach(t test_contract test_jsonfile)
+        target_link_libraries(${t} zormlib gtest gtest_main)
+    endforeach()
+
+    # DbUtils / DbBase facade + HandlePool unit tests (backend-independent,
+    # offline - no database server or even sqlite involved).
+    add_executable(test_dbutils
+        tests/test_dbutils.cpp)
+    target_link_libraries(test_dbutils zormlib gtest gtest_main)
+    add_executable(test_pool
+        tests/test_pool.cpp)
+    target_link_libraries(test_pool zormlib gtest gtest_main)
 
     # Output test executables to ${CMAKE_SOURCE_DIR}/bin as well
-    set_target_properties(test_contract test_jsonfile PROPERTIES
+    set_target_properties(test_contract test_jsonfile test_dbutils test_pool PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
     )
 
@@ -197,19 +227,8 @@ if (CMAKE_ZJSON_ENABLE_TEST)
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
     add_test(NAME test_jsonfile COMMAND test_jsonfile
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_jsonfile>)
-
-    set(ZORM_TEST_TARGETS test_contract test_jsonfile)
-    if(MSVC)
-        foreach(t ${ZORM_TEST_TARGETS})
-            target_link_libraries(${t} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        endforeach()
-    elseif(MINGW)
-        foreach(t ${ZORM_TEST_TARGETS})
-            target_link_libraries(${t} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main)
-        endforeach()
-    elseif(UNIX)
-        foreach(t ${ZORM_TEST_TARGETS})
-            target_link_libraries(${t} ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} gtest gtest_main dl)
-        endforeach()
-    endif()
+    add_test(NAME test_dbutils COMMAND test_dbutils
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_dbutils>)
+    add_test(NAME test_pool COMMAND test_pool
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_pool>)
 endif()

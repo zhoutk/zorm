@@ -1,7 +1,11 @@
 #pragma once
 
+// Public status codes + message table (part of the external API surface).
+// The message map itself lives in GlobalConstants.cpp so every translation
+// unit shares one copy instead of a per-TU static.
+
 #include <map>
-#include<iostream>
+#include <string>
 
 enum StatusCodes {
 	STSUCCESS = 200,              //操作成功
@@ -22,23 +26,5 @@ enum StatusCodes {
 	STPARENTNOTFOUNDERR = 801,    //父记录不存在
 };
 
-const std::pair<int, std::string> pairs[] = {
-	std::make_pair(200, "Operation succeeded. "),
-	std::make_pair(202, "Query result is empty. "),
-	std::make_pair(301, "Error: Param is wrong. "),
-	std::make_pair(404, "Error: Request resource is not found. "),
-	std::make_pair(411, "Error: Upload file fail. "),
-	std::make_pair(421, "Error: Json web token authorize fail. "),
-	std::make_pair(422, "Error: Password is wrong. "),
-	std::make_pair(423, "Error: Username is wrong. "),
-	std::make_pair(431, "Error: Authorization is less. "),
-	std::make_pair(432, "Error: User is not found. "),
-	std::make_pair(500, "Error: Exception is thrown. "),
-	std::make_pair(700, "Error: Database connection is wrong. "),
-	std::make_pair(701, "Error: Database operation is wrong. "),
-	std::make_pair(702, "Error: Database table must have id field. "),
-	std::make_pair(703, "Error: Database modify & serve need resart. "),
-	std::make_pair(801, "Error: Parent record is not found. "),
-};
-
-static std::map<int, std::string> STCODEMESSAGES(pairs, pairs + sizeof(pairs)/sizeof(pairs[0]));
+// Message lookup for a StatusCodes value (never empty).
+const std::map<int, std::string>& StatusMessages();

@@ -1,4 +1,4 @@
-// tests/TestConfig.cc
+// tests/TestConfig.cpp
 // ----------------------------------------------------------------------------
 // Loads the backend config from tests/dbconfig.json (gels configs.ts parity).
 // See TestConfig.h for the dialect resolution order.

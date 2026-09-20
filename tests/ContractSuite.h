@@ -632,6 +632,32 @@ inline void EdgeCases() {
 	Json secondSelect = db.select("third_table", Json{{"id", "s001"}});
 	ASSERT_EQ(secondSelect["status"].toInt(), 200);
 	EXPECT_EQ(secondSelect["data"][0]["value"].toString(), "second-data");
+
+	// ── Parameter-error + shape paths shared by every backend ─────────────
+	// create with nothing to insert -> 301 (empty object)
+	EXPECT_EQ(db.create("second_table", Json("{}"))["status"].toInt(), 301);
+	// create with an empty array -> 301
+	EXPECT_EQ(db.create("second_table", Json(JsonType::Array))["status"].toInt(), 301);
+	// create with a single-element array routes to create(row)
+	Json oneArr(JsonType::Array);
+	oneArr.add(Json{{"id", "one01"}, {"name", "one-row"}});
+	Json oneResult = db.create("second_table", oneArr);
+	ASSERT_EQ(oneResult["status"].toInt(), 200);
+	EXPECT_EQ(oneResult["id"].toString(), "one01");
+	selectResult = db.select("second_table", Json{{"id", "one01"}});
+	ASSERT_EQ(selectResult["status"].toInt(), 200);
+	EXPECT_EQ(selectResult["data"][0]["name"].toString(), "one-row");
+	// remove without id -> 301 (parity: deletes are id-keyed only)
+	EXPECT_EQ(db.remove("second_table", Json{{"name", "one-row"}})["status"].toInt(), 301);
+
+	// malformed reserved keys -> 301
+	EXPECT_EQ(db.select("second_table", Json{{"ins", "age"}})["status"].toInt(), 301);          // < 2 parts
+	EXPECT_EQ(db.select("second_table", Json{{"ors", "age,18,age"}})["status"].toInt(), 301);   // odd parts
+	EXPECT_EQ(db.select("second_table", Json{{"lks", "name"}})["status"].toInt(), 301);         // < 2 parts
+	EXPECT_EQ(db.select("second_table", Json{{"sum", "age"}})["status"].toInt(), 301);          // odd parts
+	EXPECT_EQ(db.select("second_table", Json{{"count", "age"}})["status"].toInt(), 301);        // odd parts
+	// malformed comparison value (operator + 3 components) -> 301
+	EXPECT_EQ(db.select("second_table", Json{{"age", ">,18,19"}})["status"].toInt(), 301);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

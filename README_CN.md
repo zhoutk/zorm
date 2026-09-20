@@ -13,12 +13,12 @@
 ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges,达梦8 四种关系数据库，另含 JsonFile 文件型存储后端，同时支持windows、linux和macOS。
 
 ## 项目特点
-本系列项目采用单头文件形式开发，使用简单，需要什么，你只要把它下载到你的项目中，include进你的代码，直接使用就好。
+项目以静态库（zormlib）形式构建：把 `src/include` 加入头文件搜索路径，include `DbBase.h`，链接 zormlib 即可使用——驱动头文件（mysql.h、DPI.h 等）不会泄漏到使用方代码中。整个库只编译一次，可执行程序与测试直接链接 zormlib。
 
 ## 项目进度
   现在已经实现了基本目标的所有功能。  
   我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api（MINGW 下用 pacman 的 MariaDB Connector/C，OpenSSL 3 后端支持 TLSv1.2/1.3，MSVC 下仍用第三方目录里的 MySQL Connector C 6.1）；达梦8 - dpi；postgres - c api(pgsql14)；pqxx分支实现了libpqxx7.7.4的封装，linux和macos上运行正常，windows上运行有问题，待解决。
-  > 架构说明：四个 SQL 后端共享 `SqlBackendBase.h`（CRTP 方言基座：语句构造、智能查询装配、分页统计、事务循环各只有一份实现）+ `DbPool.h`（RAII 连接租借），后端头文件只保留驱动与方言钩子。
+  > 架构说明：SQL 后端共享 `SqlBackendBase`（抽象基类，语句构造、智能查询装配、分页统计、事务循环在 `SqlBackendBase.cpp` 中各只有一份实现）+ `DbPool`（基于 `IDbConnection` 接口的 RAII 独占连接租借），各后端只重写与自己方言不同的虚钩子——sqlite3 零重写，postgres 仅 5 处。
 
 任务列表：
 - [x] Sqlite3 实现

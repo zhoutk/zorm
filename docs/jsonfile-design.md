@@ -1,6 +1,6 @@
 # JsonFileDb 设计思想与测试详解
 
-> 本文档解释 zorm 的 JSON 文件型后端（`src/JsonFileDb.cc` + `src/include/JsonFileDb.h`）的
+> 本文档解释 zorm 的 JSON 文件型后端（`src/backends/JsonFileDb.cpp` + `src/backends/JsonFileDb.h`）的
 > 设计思想、它区别于 SQL 后端的特别之处，以及 `tests/test_jsonfile.cpp` 加固测试的详细内容。
 
 ---

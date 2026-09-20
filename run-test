@@ -19,6 +19,8 @@
 #   pg        -> test_contract_postgres
 #   dm        -> test_contract_dm8
 #   jsonfile-hardening -> test_jsonfile (文件型后端加固测试)
+#   utils     -> test_dbutils (后端无关的 DbUtils / DbBase 门面单测)
+#   pool      -> test_pool (HandlePool 连接池租约/自愈单测)
 #   sqliteplain -> test_contract_sqlite3_mem_plain  (parameterized=false)
 #   mysqlplain  -> test_contract_mysql_plain        (parameterized=false)
 #   pgplain     -> test_contract_postgres_plain     (parameterized=false)
@@ -49,12 +51,12 @@ NAMES=()
 PASSTHROUGH=()
 for arg in "$@"; do
     case "$arg" in
-        sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|local|remote|all)
+        sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|utils|pool|local|remote|all)
             NAMES+=("$arg") ;;
         -*)
             PASSTHROUGH+=("$arg") ;;
         *)
-            echo "警告: '$arg' 不是有效的测试名（sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|local|remote|all），将原样传给 ctest。" >&2
+            echo "警告: '$arg' 不是有效的测试名（sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|utils|pool|local|remote|all），将原样传给 ctest。" >&2
             PASSTHROUGH+=("$arg") ;;
     esac
 done
@@ -72,6 +74,8 @@ map_name() {
         mysql)             echo "test_contract_mysql" ;;
         pg|postgres)       echo "test_contract_postgres" ;;
         dm|dm8)            echo "test_contract_dm8" ;;
+        utils)             echo "test_dbutils" ;;
+        pool)              echo "test_pool" ;;
         *)                 return 1 ;;
     esac
 }
@@ -80,7 +84,7 @@ REGEX=""
 SELECTED=()
 if [ ${#NAMES[@]} -eq 0 ]; then
     # 默认: 内存型 sqlite + json 文件库加固，不需要数据库服务器
-    SELECTED=(test_contract_sqlite3_mem test_jsonfile)
+    SELECTED=(test_contract_sqlite3_mem test_jsonfile test_dbutils test_pool)
 else
     for n in "${NAMES[@]}"; do
         if [ "$n" = "all" ]; then
@@ -88,7 +92,7 @@ else
             break
         fi
         if [ "$n" = "local" ]; then
-            SELECTED+=(test_contract_sqlite3_mem test_contract_sqlite3 test_contract_jsonfile test_jsonfile)
+            SELECTED+=(test_contract_sqlite3_mem test_contract_sqlite3 test_contract_jsonfile test_jsonfile test_dbutils test_pool)
             continue
         fi
         if [ "$n" = "remote" ]; then

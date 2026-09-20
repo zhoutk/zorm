@@ -14,7 +14,7 @@ interface (`ZORM::Idb`) across multiple database backends:
 |---------|------|-------|
 | `sqlite3-mem` | SQL | in-memory SQLite, no server |
 | `sqlite3` | SQL | file-backed SQLite |
-| `jsonfile` | JSON file | pure C++17 file backend (JsonFileDb.cc) |
+| `jsonfile` | JSON file | pure C++17 file backend (JsonFileDb.cpp) |
 | `mysql` | SQL | MariaDB Connector/C on MINGW |
 | `postgres` | SQL | libpq |
 | `dm8` | SQL | DM8 (达梦) DPI |
@@ -22,11 +22,16 @@ interface (`ZORM::Idb`) across multiple database backends:
 The interface, status codes and response shapes are shared across all backends,
 so switching databases at runtime is a single config change (see tests).
 
+Consumers include only `src/include/DbBase.h` (or `Idb.h`) and link the
+`zormlib` static library - driver headers (mysql.h, DPI.h, ...) never leak
+into client code. The whole stack is compiled once in the library; the demo
+executable and every test binary link it instead of recompiling sources.
+
 Each SQL dialect is registered twice: once with bound parameters (the default)
 and once with `parameterized=false` (`sqliteplain` / `mysqlplain` / `pgplain` /
 `dmplain`), because literal-SQL generation, escaping and non-parameterized
-decoding are separate code paths. 11 CTest registrations total (6 dialect
-contracts + 4 plain variants + the jsonfile hardening suite); `./run-test all`
+decoding are separate code paths. 13 CTest registrations total (6 dialect
+contracts + 4 plain variants + jsonfile hardening + dbutils + pool); `./run-test all`
 runs them all.
 
 ---
@@ -35,35 +40,43 @@ runs them all.
 
 ```
 zorm/
-├── CMakeLists.txt            # build + test targets (config-driven tests)
+├── CMakeLists.txt            # zormlib static lib + demo exe + test targets
 ├── CMakePresets.json
 ├── version                   # VERSION_MAJOR/MINOR/PATCH
 ├── run-test                  # test runner: sqlitemem|sqlite|json|mysql|pg|dm|
 │                             #   sqliteplain|mysqlplain|pgplain|dmplain|
-│                             #   local|remote|all
+│                             #   utils|pool|local|remote|all
 ├── src/
-│   ├── main.cc               # demo entry
-│   ├── JsonFileDb.cc         # JSON file backend implementation
-│   └── include/
-│       ├── Idb.h             # THE unified interface (keep unchanged)
-│       ├── DbBase.h          # factory: DbBase("sqlite3"|"jsonfile"|...) -> backend
-│       ├── DbUtils.h         # SQL/JSON helpers, GenerateId, Trim
-│       ├── SqlBackendBase.h  # ★ shared SQL algorithm layer (CRTP dialect base)
-│       ├── DbPool.h          # ★ connection pool with exclusive RAII leases
-│       ├── GlobalConstants.h # status codes (200/202/301/701/...) + messages
-│       ├── Sqlit3Db.h        # sqlite3 backend (driver + dialect only)
-│       ├── MysqlDb.h         # mysql backend (driver + dialect + TLS options)
-│       ├── PostgresDb.h      # postgres backend (driver + dialect only)
-│       ├── Dm8Db.h           # dm8 backend (driver + dialect + upsert overrides)
-│       ├── JsonFileDb.h      # jsonfile backend header
-│       └── FileLock.h        # cross-process lock used by JsonFileDb
+│   ├── main.cpp              # demo entry (links zormlib)
+│   ├── DbBase.cpp            # factory impl - the ONLY TU that sees backend headers
+│   ├── GlobalConstants.cpp   # status-code message table
+│   ├── include/              # ★ PUBLIC surface (4 headers, keep minimal)
+│   │   ├── Idb.h             # THE unified interface (keep unchanged)
+│   │   ├── DbBase.h          # factory declaration (no driver headers leak)
+│   │   ├── GlobalConstants.h # status codes (200/202/301/701/...)
+│   │   └── dll_global.h      # ZORM_API macro
+│   ├── base/                 # private shared algorithm layer
+│   │   ├── SqlBackendBase.h/.cpp  # ★ Idb skeletons, builders, genSql, tx loop
+│   │   ├── DbConnection.h    # IDbConnection: per-connection execution surface
+│   │   ├── DbPool.h          # HandlePool + exclusive RAII leases (template)
+│   │   └── DbUtils.h/.cpp    # SQL/JSON helpers, GenerateId, Trim
+│   └── backends/             # private per-backend pairs
+│       ├── Sqlit3Db.h/.cpp   # sqlite3 (zero dialect overrides - pure driver)
+│       ├── MysqlDb.h/.cpp    # mysql (upsert/escaping overrides, TLS options)
+│       ├── PostgresDb.h/.cpp # postgres ($n placeholders, CAST LIKE, OFFSET)
+│       ├── Dm8Db.h/.cpp      # dm8 (quoted-lowercase group, read-then-write upsert)
+│       ├── JsonFileDb.h/.cpp # jsonfile backend
+│       ├── FileLock.h/.cpp   # cross-process lock used by JsonFileDb
+│       └── pg_type_d.h       # libpq OID table (private)
 ├── tests/
 │   ├── dbconfig.json         # ★ config: db_dialect + per-backend options/DDL/hooks
-│   ├── TestConfig.h/.cc      # loads dbconfig.json, resolves --dialect
+│   ├── TestConfig.h/.cpp     # loads dbconfig.json, resolves --dialect
 │   ├── ContractSuite.h       # ★ ONE shared contract suite (gels-style)
 │   ├── test_contract.cpp     # single test binary; --dialect selects backend,
 │   │                         #   --no-param runs the literal-SQL (non-bound) paths
-│   └── test_jsonfile.cpp     # jsonfile file-hardening suite (corrupt/lock/atomic/...)
+│   ├── test_jsonfile.cpp     # jsonfile file-hardening suite (corrupt/lock/atomic/...)
+│   ├── test_dbutils.cpp      # DbUtils + DbBase facade validation (offline)
+│   └── test_pool.cpp         # HandlePool lease/blocking/invalidate tests (offline)
 ├── docs/
 │   ├── project-index.md      # ★ this index
 │   ├── jsonfile-design.md    # ★ JsonFileDb design & hardening-test details
@@ -125,7 +138,7 @@ error, `701` db operation failed, `700` connection failed.
   `ZORM_DB_DIALECT` / `dbconfig.json#db_dialect`) selects the backend.
 - `tests/ContractSuite.h` contains the shared bodies:
   `Read` / `Write` / `Query` / `Dao` / `EdgeCases` / `MetadataCatalog` /
-  `PlaceholderSql`.
+  `PlaceholderSql` / `TypeFidelity` / `EscapingFidelity`.
 - `tests/test_jsonfile.cpp` keeps the file-hardening suite (corrupt-file
   backup, cross-process lock, atomic write, persistence, shared instance,
   UTF-8 encoding) — features unique to the file backend.
@@ -137,26 +150,36 @@ error, `701` db operation failed, `700` connection failed.
 ### Run
 
 ```bash
-cmake -Bbuild .                       # configure
-cmake --build build -j 8              # build (test_contract + test_jsonfile)
-./run-test                            # sqlitemem + jsonfile hardening
-./run-test local                      # all no-server backends
+cmake --preset clang-dbg              # configure (Ninja + clang64)
+cmake --build build -j 8              # build (zormlib + exes + tests)
+./run-test                            # sqlitemem + jsonfile hardening + dbutils + pool
+./run-test local                      # all no-server backends + unit tests
 ./run-test remote                     # mysql + postgres + dm8 (need servers)
-./run-test all                        # everything
+./run-test all                        # everything (13 registrations)
 ./run-test sqlitemem | sqlite | json | mysql | pg | dm
+./run-test utils | pool               # offline unit tests (no db)
 ```
 
 CTest registrations: `test_contract_sqlite3_mem`, `test_contract_sqlite3`,
 `test_contract_jsonfile`, `test_contract_mysql`, `test_contract_postgres`,
-`test_contract_dm8`, `test_jsonfile`.
+`test_contract_dm8`, their 4 `*_plain` variants, `test_jsonfile`,
+`test_dbutils`, `test_pool`.
 
-### To add a backend
+### To add a SQL backend
 
-1. Implement `ZORM::Idb` (or extend `DbBase`).
-2. Add a `backends.<name>` block in `tests/dbconfig.json` (options + DDL +
-   hooks).
-3. Add one `add_test(... test_contract --dialect <name>)` line in CMakeLists.
-4. Run `./run-test <name>` — the whole suite now covers it.
+1. Write `src/backends/<Name>Db.h/.cpp`: subclass `SqlBackendBase`, define a
+   nested `Connection : IDbConnection` around the native handle, implement
+   `acquireConnection()` (pool + connect), and override ONLY the dialect
+   hooks that differ from the defaults (see the hook table in
+   `src/base/SqlBackendBase.h`). sqlite3 needs zero overrides; postgres
+   overrides 5; that is the calibration point.
+2. Add the `.cpp` to `ZORM_LIB_SOURCES` in CMakeLists and the include/link
+   paths of the new client library.
+3. Add a `backends.<name>` block in `tests/dbconfig.json` (options + DDL +
+   hooks) and a `ZORM_CONTRACT_TESTS()` instantiation in `test_contract.cpp`
+   if the dialect needs its own Env.
+4. Register the test (and its `--no-param` variant) in CMakeLists + run-test.
+5. Run `./run-test all` — the whole suite now covers it.
 
 ---
 

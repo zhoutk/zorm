@@ -10,12 +10,12 @@ This project relies on my other project Zjson, which provides a simple, convenie
 ZORM data transmission using json, so that data style can be unified from the front to the end. This project aims to be used not only in C++, but also as a dynamic link library used by node.js etc. So we hope to operate json concisely and conveniently like javascript. Therefore, the zjson library was established before this. The general operation interface of database is designed separating from the databases. This interface provides CURD standard api, as well as batch insert and transaction operations, which can basically cover more than 90% of normal database operations. The basic goal of the project is to support Sqlite 3, MySQL, Postges and dm8. Can running on Windows, Linux, or MacOS.
 
 ## Project characteristics
-This series of projects are developed in the form of a single header file. It is simple to use. If you need something, just download it to your project, include it into your codes, and use it directly.
+The project builds as a small static library (`zormlib`). To use it, add `src/include` to your include path, include `DbBase.h`, and link the library - driver headers (mysql.h, DPI.h, ...) never leak into your code. The whole stack is compiled once; executables and tests link `zormlib` instead of recompiling sources.
 
 ## Project progress
 Now all functions of using sqlit3, mysql and postgres have been implemented. The technologies I used is sqlit3 - sqllit3.h（c api）；mysql - c api （MySQL Connector C 6.1）；dm8 - dpi；postgres - c api(pgsql14). The pqxx branch implements the encapsulation of libpqxx 7.7.4. It's runs normally on Linux and Macos, but there are problems running on Windows, which need to be solved.
 
-Architecture: the four SQL backends share `SqlBackendBase.h` (a CRTP dialect base: statement builders, smart-query assembly, pagination counters and the transaction loop exist once) and `DbPool.h` (RAII connection leases); each backend header keeps only its driver and dialect hooks. On MINGW the MySQL client is MariaDB Connector/C from pacman (OpenSSL 3, TLSv1.2/1.3); MSVC still uses the bundled Connector C 6.1.
+Architecture: the SQL backends share `SqlBackendBase` (an abstract base whose statement builders, smart-query assembly, pagination counters and transaction loop are compiled once in `SqlBackendBase.cpp`) and `DbPool` (exclusive RAII connection leases over an `IDbConnection` interface); each backend overrides only the virtual dialect hooks that differ - sqlite3 needs zero overrides, postgres five. On MINGW the MySQL client is MariaDB Connector/C from pacman (OpenSSL 3, TLSv1.2/1.3); MSVC still uses the bundled Connector C 6.1.
 
 task list：
 - [x] Sqlite3
