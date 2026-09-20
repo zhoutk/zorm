@@ -12,7 +12,7 @@
       },
       "schema": [
         "DROP TABLE IF EXISTS \"table_for_test\";",
-        "CREATE TABLE \"table_for_test\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, \"age\" integer DEFAULT NULL, \"score\" real DEFAULT NULL, PRIMARY KEY (\"id\"));",
+        "CREATE TABLE \"table_for_test\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, \"age\" integer DEFAULT NULL, \"score\" real DEFAULT NULL, \"price\" decimal(10,2) DEFAULT NULL, \"ts\" datetime DEFAULT NULL, PRIMARY KEY (\"id\"));",
         "DROP TABLE IF EXISTS \"second_table\";",
         "CREATE TABLE \"second_table\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, PRIMARY KEY (\"id\"));",
         "DROP TABLE IF EXISTS \"third_table\";",
@@ -33,7 +33,7 @@
       },
       "schema": [
         "DROP TABLE IF EXISTS \"table_for_test\";",
-        "CREATE TABLE \"table_for_test\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, \"age\" integer DEFAULT NULL, \"score\" real DEFAULT NULL, PRIMARY KEY (\"id\"));",
+        "CREATE TABLE \"table_for_test\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, \"age\" integer DEFAULT NULL, \"score\" real DEFAULT NULL, \"price\" decimal(10,2) DEFAULT NULL, \"ts\" datetime DEFAULT NULL, PRIMARY KEY (\"id\"));",
         "DROP TABLE IF EXISTS \"second_table\";",
         "CREATE TABLE \"second_table\" (\"id\" char(64) NOT NULL, \"name\" TEXT DEFAULT NULL, PRIMARY KEY (\"id\"));",
         "DROP TABLE IF EXISTS \"third_table\";",
@@ -49,11 +49,13 @@
       "type": "jsonfile",
       "options": {
         "connString": "zorm_test_contract.json",
-        "DbLogClose": true
+        "DbLogClose": true,
+        "_comment": "jsonfile has no bind protocol; parameterized=true here means its SQL shim accepts `?` placeholders in execSql/transGo",
+        "parameterized": true
       },
       "schema": [
         "DROP TABLE IF EXISTS table_for_test",
-        "CREATE TABLE table_for_test (id text NOT NULL, name text DEFAULT NULL, age integer DEFAULT NULL, score real DEFAULT NULL, PRIMARY KEY (id))"
+        "CREATE TABLE table_for_test (id text NOT NULL, name text DEFAULT NULL, age integer DEFAULT NULL, score real DEFAULT NULL, price decimal(10,2) DEFAULT NULL, ts datetime DEFAULT NULL, PRIMARY KEY (id))"
       ],
       "rawTable": "table_for_test",
       "placeholder": "?",
@@ -78,7 +80,7 @@
       },
       "schema": [
         "DROP TABLE IF EXISTS `table_for_test`;",
-        "CREATE TABLE `table_for_test` (`id` char(64) CHARACTER SET utf8mb4 NOT NULL, `name` varchar(128) CHARACTER SET utf8mb4 NULL DEFAULT NULL, `age` int(0) NULL DEFAULT NULL, `score` double NULL DEFAULT NULL, PRIMARY KEY (`id`) USING BTREE) ENGINE = InnoDB CHARACTER SET = utf8mb4 ROW_FORMAT = Dynamic;",
+        "CREATE TABLE `table_for_test` (`id` char(64) CHARACTER SET utf8mb4 NOT NULL, `name` varchar(128) CHARACTER SET utf8mb4 NULL DEFAULT NULL, `age` int(0) NULL DEFAULT NULL, `score` double NULL DEFAULT NULL, `price` decimal(10,2) NULL DEFAULT NULL, `ts` datetime NULL DEFAULT NULL, PRIMARY KEY (`id`) USING BTREE) ENGINE = InnoDB CHARACTER SET = utf8mb4 ROW_FORMAT = Dynamic;",
         "DROP TABLE IF EXISTS `second_table`;",
         "CREATE TABLE `second_table` (`id` char(64) NOT NULL, `name` varchar(128) NULL, PRIMARY KEY (`id`)) ENGINE = InnoDB CHARACTER SET = utf8mb4;",
         "DROP TABLE IF EXISTS `third_table`;",
@@ -105,7 +107,7 @@
       },
       "schema": [
         "DROP TABLE IF EXISTS \"public\".\"table_for_test\";",
-        "CREATE TABLE \"public\".\"table_for_test\" (\"id\" varchar(64) NOT NULL, \"name\" varchar(128) DEFAULT NULL, \"age\" int4 DEFAULT NULL, \"score\" numeric(10,2) DEFAULT NULL)",
+        "CREATE TABLE \"public\".\"table_for_test\" (\"id\" varchar(64) NOT NULL, \"name\" varchar(128) DEFAULT NULL, \"age\" int4 DEFAULT NULL, \"score\" numeric(10,2) DEFAULT NULL, \"price\" numeric(10,2) DEFAULT NULL, \"ts\" timestamp DEFAULT NULL)",
         "ALTER TABLE \"public\".\"table_for_test\" ADD CONSTRAINT \"table_for_test_pkey\" PRIMARY KEY (\"id\");",
         "DROP TABLE IF EXISTS \"public\".\"second_table\";",
         "CREATE TABLE \"public\".\"second_table\" (\"id\" varchar(64) NOT NULL, \"name\" varchar(128) DEFAULT NULL, PRIMARY KEY (\"id\"));",
@@ -133,7 +135,7 @@
       "schema": [
         "SET SCHEMA \"dbtest\";",
         "DROP TABLE IF EXISTS \"dbtest\".\"table_for_test\"",
-        "CREATE TABLE \"dbtest\".\"table_for_test\" (\"id\" CHAR(64) NOT NULL, \"name\" VARCHAR(128), \"age\" INTEGER, \"score\" DOUBLE, NOT CLUSTER PRIMARY KEY(\"id\")) STORAGE(ON \"MAIN\", CLUSTERBTR) ;",
+        "CREATE TABLE \"dbtest\".\"table_for_test\" (\"id\" CHAR(64) NOT NULL, \"name\" VARCHAR(128), \"age\" INTEGER, \"score\" DOUBLE, \"price\" DECIMAL(10,2), \"ts\" DATETIME, NOT CLUSTER PRIMARY KEY(\"id\")) STORAGE(ON \"MAIN\", CLUSTERBTR) ;",
         "DROP TABLE IF EXISTS \"dbtest\".\"second_table\"",
         "CREATE TABLE \"dbtest\".\"second_table\" (\"id\" CHAR(64) NOT NULL, \"name\" VARCHAR(128), PRIMARY KEY(\"id\")) ;",
         "DROP TABLE IF EXISTS \"dbtest\".\"third_table\"",

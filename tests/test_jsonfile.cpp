@@ -41,7 +41,8 @@ namespace fs = std::filesystem;
 constexpr const char* kTableName = contract::kTable;
 constexpr const char* kCreateTableSql =
 	"CREATE TABLE table_for_test (id text NOT NULL, name text DEFAULT NULL, "
-	"age integer DEFAULT NULL, score real DEFAULT NULL, PRIMARY KEY (id))";
+	"age integer DEFAULT NULL, score real DEFAULT NULL, "
+	"price decimal(10,2) DEFAULT NULL, ts datetime DEFAULT NULL, PRIMARY KEY (id))";
 
 // Directory of the running executable, computed once from argv[0].
 std::string gExecutableDirectory;
@@ -927,6 +928,8 @@ int main(int argc, char* argv[]) {
 	contract::g_config.type = "jsonfile";
 	contract::g_config.nullRendering = "json-null";
 	contract::g_config.placeholder = "?";
+	// jsonfile's SQL shim accepts `?` placeholders in execSql/transGo.
+	contract::g_config.options.add("parameterized", true);
 	static JsonFileContractEnv env;
 	contract::env = &env;
 	return RUN_ALL_TESTS();

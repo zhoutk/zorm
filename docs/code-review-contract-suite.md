@@ -4,6 +4,7 @@
 - 评审日期：2026-09-20
 - 评审范围：`tests/TestConfig.*`、`tests/dbconfig.json`、`tests/ContractSuite.h`、`tests/test_contract.cpp`、`run-test`、`CMakeLists.txt`、四个后端头文件（Sqlit3Db/MysqlDb/PostgresDb/Dm8Db）的能力对等改造、`DbUtils.h` 新增公共工具
 - 评审基线：全部 7 个 CTest 套件在真实数据库（mysql/pg/dm8 @ 10.0.0.7）上 7/7 通过
+  > 后续演进：第三轮已扩展为 **9 个注册、9/9 通过**（新增两个非参数化方言），见第八节。
 
 ---
 
@@ -171,3 +172,63 @@ stmt 系列函数在 `mysql_stmt_prepare/bind_param/execute` 失败时直接 ret
 - dm8 的事务在 `beginTx/commitTx/rollbackTx` 中切换并在结束后**恢复 AUTOCOMMIT**（旧实现恰好也做了）。
 - 偶发观察：`test_jsonfile` 曾在一次全量运行中耗时 30s（FileLock 的 30 秒 stale 窗口），复跑即恢复 <1s——疑与磁盘/杀软瞬时抖动有关，非代码缺陷，记录备查。
 - 仍是后续项：QueryType 2/3 的 `fields` 替换仅支持 `*` 在语句前 10 字符内命中（沿袭旧行为）；如未来要支持 `SELECT a.*` 形式可再扩展。
+
+
+---
+
+## 八、测试覆盖强化与变异验证（2026-09-20 第三轮）
+
+### 8.1 复核：DECIMAL 解码缺陷是否已修复、是否已有测试守门
+
+**结论：已修复，且已被测试守门，并用变异测试验证了守门有效。**
+
+| 变异（人为改坏实现） | 期望被捕获 | 实测结果 |
+|---|---|---|
+| A 把 MySQL DECIMAL 解码改回 `*(double*)`（原缺陷） | mysql 方言 | ✅ `test_contract_mysql` 失败，且同时触发 **3 处**断言：`Query.agesum`(57)、`TypeFidelity` 的 price 往返(1234.56)、decimal 聚合(1234.56) |
+| C2 把 datetime 解码输出替换为固定串 | mysql 方言 | ✅ `TypeFidelity.ts` 断言失败（O-1 的修复同样有守门） |
+| D 在字符串解码分支加前缀 | 全方言 | ✅ `Read` 的多处断言失败（证明该分支被覆盖） |
+| C（无效变异：在 datetime 分支插入一条会被后续代码覆盖的赋值） | — | ⚠️ 未被捕获——**教训：变异必须自证“确实生效”**，否则会得出“测试没覆盖”的错误结论 |
+
+**关于“为什么之前的契约测试没抓到”的实证记录**：在 pre-refactor 提交（`6b30302`）上编译并运行 mysql 契约（git worktree 实测），`Contract.Query` 的 `agesum=57` 断言**通过**；对同一份旧代码施加同一个“把解码分支改成返回常量”的变异后，该断言**失败**——说明断言本身有效，旧代码在那条具体路径上确实返回了正确值。DECIMAL 垃圾值（7.1e-320）是在重构中间态用独立探针查询时暴露的。旧路径为何未触发该解码分支**未能完全定位**；无论历史成因如何，当前状态是“修复 + 变异验证的守门”，这是可执行的保证。
+
+### 8.2 本轮新增的测试（针对“解码类缺陷不会再漏”）
+
+1. **`TypeFidelity` 契约段**（全 6 方言执行）：
+   - decimal/numeric 列**精确往返**：`price=1234.56` 写入后读回必须 `== 1234.56`（`EXPECT_DOUBLE_EQ`）；
+   - decimal 列上的**聚合精度**：`sum(price)` 必须精确；
+   - 小数列聚合 `sum(score)` 精确；
+   - **datetime 列往返**：写入 `2026-09-20 10:30:45`，读回须为同一渲染（覆盖 MySQL 的 `MYSQL_TIME` 解码，即 O-1）；
+   - **类型列上的 NULL**：按配置的 nullRendering（json-null / null-string / empty）断言。
+2. **schema 扩展**：契约表新增 `price decimal(10,2)` 与 `ts datetime` 两列（6 个方言的 DDL 各自使用等价类型：mysql `decimal/datetime`、pg `numeric/timestamp`、dm8 `DECIMAL/DATETIME`、sqlite `decimal/datetime`、jsonfile 仅记录列名）。
+3. **非参数化方言**（覆盖另一套代码路径）：`--no-param` 开关 + 两个新注册
+   - `test_contract_sqlite3_mem_plain`（`./run-test sqliteplain`）
+   - `test_contract_mysql_plain`（`./run-test mysqlplain`）
+   它们跑**同一套契约**但 `parameterized=false`，覆盖：字面量 SQL 生成（genSql 的 else 分支）、字符串转义（`escapeString`）、MySQL 非参数化解码（含 P1-1 的 `atof(NULL)` 修复路径）。
+   - **该方言注册后立刻抓到真实缺陷**：`ins` 查询的非参数化分支在基座重构时丢失（生成 `in (?,?,?)` 却按字面量执行 → 701）；已修复并回归。这正是"补测试"的直接价值。
+4. **测试基础设施修复**（本轮发现）：
+   - `test_jsonfile.cpp` 未初始化 `contract::g_config` → `parameterized()` 误判为 false，导致共享契约走错分支（已初始化并标记 jsonfile 的 `?` 绑定语义）；
+   - `PlaceholderSql` 契约按模式分叉：参数化模式走占位符语句，plain 模式走等价字面量语句（否则 plain 方言必然失败，且这些路径将完全没有覆盖）；
+   - `dbconfig.json`：jsonfile 显式声明 `parameterized: true`（其 SQL shim 接受 `?` 绑定，与 SQL 后端语义对齐）。
+
+### 8.3 覆盖矩阵（更新）
+
+| 注册名 | 方言 | 参数化 | 说明 |
+|---|---|---|---|
+| test_contract_sqlite3_mem | sqlite3-mem | ✅ | 内存库 |
+| test_contract_sqlite3 | sqlite3 | ✅ | 文件库 |
+| test_contract_jsonfile | jsonfile | — | 文件型后端契约 |
+| test_contract_sqlite3_mem_plain | sqlite3-mem | ❌ | 字面量/转义路径 |
+| test_contract_mysql | mysql | ✅ | |
+| test_contract_mysql_plain | mysql | ❌ | 字面量 SQL + 非参数化解码 |
+| test_contract_postgres | postgres | ✅ | |
+| test_contract_dm8 | dm8 | ✅ | |
+| test_jsonfile | jsonfile | — | 存储引擎加固（损坏/锁/原子写/编码） |
+
+`./run-test all` → **9/9**。
+
+### 8.4 回归守门约定（建议长期执行）
+
+1. 任何后端改动后：`./run-test all`（本地 + 远程全方言）；
+2. 改动**类型解码/语句构造**后：做一次变异验证——把改动点人为改坏，确认至少一处断言失败（否则说明该路径无覆盖，先补测试）；变异必须自证生效（参考 8.1 的无效变异 C）；
+3. 新增方言/驱动：注册新的 `--dialect` 条目外，**同时注册一个 `--no-param` 变体**；
+4. 契约表新增列时：同步更新 `tests/dbconfig.json`、`test_jsonfile.cpp` 的内嵌 DDL、以及 TypeFidelity 的断言。

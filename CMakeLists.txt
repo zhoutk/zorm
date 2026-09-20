@@ -179,6 +179,12 @@ if (CMAKE_ZJSON_ENABLE_TEST)
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
     add_test(NAME test_contract_jsonfile COMMAND test_contract --dialect jsonfile
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    # parameterized=false variants: exercise the plain-SQL paths (literal
+    # escaping, non-parameterized decoding) the default suite never touches.
+    add_test(NAME test_contract_sqlite3_mem_plain COMMAND test_contract --dialect sqlite3-mem --no-param
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
+    add_test(NAME test_contract_mysql_plain COMMAND test_contract --dialect mysql --no-param
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
     add_test(NAME test_contract_mysql COMMAND test_contract --dialect mysql
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_contract>)
     add_test(NAME test_contract_postgres COMMAND test_contract --dialect postgres

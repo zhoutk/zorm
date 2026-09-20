@@ -15,6 +15,8 @@ This series of projects are developed in the form of a single header file. It is
 ## Project progress
 Now all functions of using sqlit3, mysql and postgres have been implemented. The technologies I used is sqlit3 - sqllit3.h（c api）；mysql - c api （MySQL Connector C 6.1）；dm8 - dpi；postgres - c api(pgsql14). The pqxx branch implements the encapsulation of libpqxx 7.7.4. It's runs normally on Linux and Macos, but there are problems running on Windows, which need to be solved.
 
+Architecture: the four SQL backends share `SqlBackendBase.h` (a CRTP dialect base: statement builders, smart-query assembly, pagination counters and the transaction loop exist once) and `DbPool.h` (RAII connection leases); each backend header keeps only its driver and dialect hooks. On MINGW the MySQL client is MariaDB Connector/C from pacman (OpenSSL 3, TLSv1.2/1.3); MSVC still uses the bundled Connector C 6.1.
+
 task list：
 - [x] Sqlite3
   - [x] linux 
@@ -244,9 +246,11 @@ Run:
 ./run-test                 # default: sqlitemem + jsonfile hardening
 ./run-test local           # sqlitemem + sqlite(file) + json(file) + hardening
 ./run-test remote          # mysql + postgres + dm8
-./run-test all             # everything
+./run-test all             # everything (9 ctest registrations)
 ./run-test sqlitemem       # memory sqlite only
 ./run-test sqlite          # file sqlite only
+./run-test mysqlplain      # mysql with parameterized=false (literal-SQL paths)
+./run-test sqliteplain     # sqlitemem with parameterized=false (same)
 ./run-test json            # jsonfile contract + hardening (both)
 ```
 

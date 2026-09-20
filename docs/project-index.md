@@ -22,6 +22,11 @@ interface (`ZORM::Idb`) across multiple database backends:
 The interface, status codes and response shapes are shared across all backends,
 so switching databases at runtime is a single config change (see tests).
 
+Each SQL dialect is registered twice: once with bound parameters (the default)
+and once with `parameterized=false` (`sqliteplain` / `mysqlplain`), because the
+literal-SQL generation and the non-parameterized decoding are separate code
+paths. 9 CTest registrations total; `./run-test all` runs them all.
+
 ---
 
 ## 2. Repository layout
@@ -31,30 +36,37 @@ zorm/
 ├── CMakeLists.txt            # build + test targets (config-driven tests)
 ├── CMakePresets.json
 ├── version                   # VERSION_MAJOR/MINOR/PATCH
-├── run-test                  # test runner: sqlitemem|sqlite|json|mysql|pg|dm|local|remote|all
+├── run-test                  # test runner: sqlitemem|sqlite|json|mysql|pg|dm|
+│                             #   sqliteplain|mysqlplain|local|remote|all
 ├── src/
 │   ├── main.cc               # demo entry
 │   ├── JsonFileDb.cc         # JSON file backend implementation
 │   └── include/
 │       ├── Idb.h             # THE unified interface (keep unchanged)
 │       ├── DbBase.h          # factory: DbBase("sqlite3"|"jsonfile"|...) -> backend
-│       ├── DbUtils.h         # SQL/JSON helpers, GenerateId, CountSqlFromSelect
+│       ├── DbUtils.h         # SQL/JSON helpers, GenerateId, Trim
+│       ├── SqlBackendBase.h  # ★ shared SQL algorithm layer (CRTP dialect base)
+│       ├── DbPool.h          # ★ connection pool with exclusive RAII leases
 │       ├── GlobalConstants.h # status codes (200/202/301/701/...) + messages
-│       ├── Sqlit3Db.h        # sqlite3 backend (header-only)
-│       ├── MysqlDb.h         # mysql backend (header-only)
-│       ├── PostgresDb.h      # postgres backend (header-only)
-│       ├── Dm8Db.h           # dm8 backend (header-only)
+│       ├── Sqlit3Db.h        # sqlite3 backend (driver + dialect only)
+│       ├── MysqlDb.h         # mysql backend (driver + dialect + TLS options)
+│       ├── PostgresDb.h      # postgres backend (driver + dialect only)
+│       ├── Dm8Db.h           # dm8 backend (driver + dialect + upsert overrides)
 │       ├── JsonFileDb.h      # jsonfile backend header
 │       └── FileLock.h        # cross-process lock used by JsonFileDb
 ├── tests/
 │   ├── dbconfig.json         # ★ config: db_dialect + per-backend options/DDL/hooks
 │   ├── TestConfig.h/.cc      # loads dbconfig.json, resolves --dialect
 │   ├── ContractSuite.h       # ★ ONE shared contract suite (gels-style)
-│   ├── test_contract.cpp     # single test binary; --dialect selects backend
+│   ├── test_contract.cpp     # single test binary; --dialect selects backend,
+│   │                         #   --no-param runs the literal-SQL (non-bound) paths
 │   └── test_jsonfile.cpp     # jsonfile file-hardening suite (corrupt/lock/atomic/...)
 ├── docs/
 │   ├── project-index.md      # ★ this index
-│   └── jsonfile-design.md    # ★ JsonFileDb design & hardening-test details
+│   ├── jsonfile-design.md    # ★ JsonFileDb design & hardening-test details
+│   └── code-review-contract-suite.md  # ★ review findings, O-1..O-11 fixes,
+│                              #   the shared-layer refactor and the test
+│                              #   hardening + mutation-verification record
 ├── thirds/                   # bundled deps: googletest, sqlite3, mysql, pq, dm8, zjson
 └── refer/                    # reference projects (NOT part of this project)
     ├── gels/                 # TypeScript project - best-in-class DAO layer

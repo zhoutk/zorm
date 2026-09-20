@@ -10,14 +10,15 @@
 本人姓名拼音第一个字母z加上orm，即得本项目名称zorm，没有其它任何意义。我将编写一系列以z开头的相关项目，命名是个很麻烦的事，因此采用了这种简单粗暴的方式。
 
 ## 设计思路 
-ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges,达梦8 四种关系数据库，同时支持windows、linux和macOS。
+ZORM 数据传递采用json来实现，使数据标准能从最前端到最后端达到和谐统一。此项目目标，不但在要C++中使用，还要作为动态链接库与node.js结合用使用，因此希望能像javascript一样，简洁方便的操作json。所以先行建立了zjson库，作为此项目的先行项目。设计了数据库通用操作接口，实现与底层实现数据库的分离。该接口提供了CURD标准访问，以及批量插入和事务操作，基本能满足平时百分之九十以上的数据库操作。项目基本目标，支持Sqlite3,Mysql,Postges,达梦8 四种关系数据库，另含 JsonFile 文件型存储后端，同时支持windows、linux和macOS。
 
 ## 项目特点
 本系列项目采用单头文件形式开发，使用简单，需要什么，你只要把它下载到你的项目中，include进你的代码，直接使用就好。
 
 ## 项目进度
   现在已经实现了基本目标的所有功能。  
-  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api （MySQL Connector C 6.1）；达梦8 - dpi；postgres - c api(pgsql14)；pqxx分支实现了libpqxx7.7.4的封装，linux和macos上运行正常，windows上运行有问题，待解决。
+  我选择的技术实现方式，基本上是最底层高效的方式。sqlit3 - sqllit3.h（官方的标准c接口）；mysql - c api（MINGW 下用 pacman 的 MariaDB Connector/C，OpenSSL 3 后端支持 TLSv1.2/1.3，MSVC 下仍用第三方目录里的 MySQL Connector C 6.1）；达梦8 - dpi；postgres - c api(pgsql14)；pqxx分支实现了libpqxx7.7.4的封装，linux和macos上运行正常，windows上运行有问题，待解决。
+  > 架构说明：四个 SQL 后端共享 `SqlBackendBase.h`（CRTP 方言基座：语句构造、智能查询装配、分页统计、事务循环各只有一份实现）+ `DbPool.h`（RAII 连接租借），后端头文件只保留驱动与方言钩子。
 
 任务列表：
 - [x] Sqlite3 实现
@@ -258,14 +259,26 @@ ZORM 数据传递采用json来实现，使数据标准能从最前端到最后�
 ./run-test                 # 默认: sqlitemem + jsonfile 加固测试
 ./run-test local           # sqlitemem + sqlite(文件) + json(文件) + 加固
 ./run-test remote          # mysql + postgres + dm8
-./run-test all             # 全部
+./run-test all             # 全部（9 个测试注册）
 ./run-test sqlitemem       # 仅内存型 sqlite
 ./run-test sqlite          # 仅文件型 sqlite
 ./run-test json            # jsonfile 契约 + 加固（两者一起跑）
+./run-test mysqlplain      # mysql, parameterized=false（覆盖字面量 SQL 路径）
+./run-test sqliteplain     # sqlitemem, parameterized=false（同上）
 ```
-jsonfile 后端拥有独立的存储引擎加固测试（损坏文件备份、跨进程锁、原子写、
+每个被测方言都注册了 CTest 用例（9 个：sqlite3-mem / sqlite3 / jsonfile / mysql /
+postgres / dm8 / sqlite3-mem(plain) / mysql(plain) / jsonfile 加固）。共享契约套件
+覆盖 Idb.h 全部 8 个方法的所有参数形态，另外包含：
+- **TypeFidelity**：decimal/numeric 与 datetime 列的精确往返、聚合精度、类型列上的
+  NULL 渲染——用于守住解码类缺陷（例如 MySQL DECIMAL 在二进制协议中是字符串，
+  曾按 double 读出 7e-320 垃圾值）；
+- **plain 方言**：以 `parameterized=false` 运行同一套契约，覆盖字面量 SQL 生成、
+  转义与非参数化解码路径（这些路径与参数化路径是两套代码）。
+
+jsonfile 后端另有独立的存储引擎加固测试（损坏文件备份、跨进程锁、原子写、
 内存与磁盘一致性、UTF-8 校验）。`./run-test json` 会把它与共享契约套件一起运行。
-> 详见 [docs/jsonfile-design.md](docs/jsonfile-design.md)：设计思想与测试详解。
+> 详见 [docs/jsonfile-design.md](docs/jsonfile-design.md)：设计思想与测试详解；
+> 契约测试与解码守门详见 [docs/code-review-contract-suite.md](docs/code-review-contract-suite.md)。
 > 测试用例运行结果样例
 ![输入图片说明](tests/uniTest.PNG)
 

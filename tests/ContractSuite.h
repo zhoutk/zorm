@@ -97,6 +97,12 @@ public:
 		return g_config.nullRendering;
 	}
 
+	// True when the dialect runs with bound parameters (dbconfig / --no-param).
+	bool parameterized() const {
+		const Json flag = g_config.options["parameterized"];
+		return flag.isError() ? false : flag.toBool();
+	}
+
 	// Placeholder syntax ("?" or "$n"), from dbconfig.json.
 	virtual string rawPlaceholder() const {
 		return g_config.placeholder;
@@ -657,6 +663,39 @@ inline void PlaceholderSql() {
 	const string colId = q + "id" + q;
 	const string colName = q + "name" + q;
 
+	// Plain-SQL mode: no bound parameters exist, so the same contract is
+	// exercised with literal statements (this is the only coverage the
+	// parameterized=false paths get).
+	if (!env->parameterized()) {
+		Json rs = db.execSql("update " + table + " set " + colName + " = 'plain-1' where " + colId + " = 'a1b2c3d4'");
+		ASSERT_EQ(rs["status"].toInt(), 200);
+		rs = db.select(kTable, Json{{"id", "a1b2c3d4"}});
+		ASSERT_EQ(rs["status"].toInt(), 200);
+		EXPECT_EQ(rs["data"][0]["name"].toString(), "plain-1");
+
+		Json sqlArr(JsonType::Array);
+		{
+			Json el;
+			el.add("text", "insert into " + table + " (" + colId + "," + colName + ") values ('pl001','plain-name')");
+			sqlArr.add(el);
+		}
+		{
+			Json el;
+			el.add("text", "insert into " + table + " (" + colId + "," + colName + ") values ('pl002','plain-2')");
+			sqlArr.add(el);
+		}
+		rs = db.transGo(sqlArr);
+		ASSERT_EQ(rs["status"].toInt(), 200);
+		rs = db.select(kTable, Json{{"id", "pl001"}});
+		ASSERT_EQ(rs["status"].toInt(), 200);
+		EXPECT_EQ(rs["data"][0]["name"].toString(), "plain-name");
+
+		rs = db.querySql(env->rawSelectAll() + " where " + colName + " = 'plain-2'");
+		ASSERT_EQ(rs["status"].toInt(), 200);
+		EXPECT_EQ(rs["data"][0]["id"].toString(), "pl002");
+		return;
+	}
+
 	// execSql with placeholders
 	Json values(JsonType::Array);
 	values.add("placeholder-1");
@@ -726,6 +765,59 @@ inline void PlaceholderSql() {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Type fidelity: typed columns round-trip exactly and aggregates keep their
+// precision. This is the guard against decode bugs that silently produce
+// garbage - e.g. MySQL DECIMAL arriving as a string in the binary protocol,
+// where reading it as a double returned 7e-320; only an exact-value
+// assertion catches that class of bug.
+// -----------------------------------------------------------------------------
+
+inline void TypeFidelity() {
+	CONTRACT_RESET();
+	Idb& db = env->db();
+
+	// decimal / numeric column round-trip
+	Json result = db.create(kTable, Json{{"id", "tf01"}, {"name", "decimal"}, {"age", 10}, {"score", 1.5}, {"price", 1234.56}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "tf01"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_DOUBLE_EQ(result["data"][0]["price"].toDouble(), 1234.56);
+
+	// aggregate over the decimal column keeps its value
+	result = db.select(kTable, Json{{"sum", "price,total"}, {"id", "tf01"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_DOUBLE_EQ(result["data"][0]["total"].toDouble(), 1234.56);
+
+	// aggregate over a fractional column keeps its precision
+	result = db.select(kTable, Json{{"sum", "score,s"}, {"id", "tf01"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	EXPECT_DOUBLE_EQ(result["data"][0]["s"].toDouble(), 1.5);
+
+	// datetime / timestamp column round-trip (covers the MySQL MYSQL_TIME decode)
+	result = db.create(kTable, Json{{"id", "tf02"}, {"name", "time"}, {"ts", "2026-09-20 10:30:45"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "tf02"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	const std::string ts = result["data"][0]["ts"].toString();
+	ASSERT_GE(ts.size(), static_cast<size_t>(19));
+	EXPECT_EQ(ts.substr(0, 19), "2026-09-20 10:30:45");
+
+	// NULL on a typed column surfaces per the configured rendering
+	result = db.create(kTable, Json{{"id", "tf03"}, {"name", "nulldecimal"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	result = db.select(kTable, Json{{"id", "tf03"}});
+	ASSERT_EQ(result["status"].toInt(), 200);
+	if (env->nullRendering() == "json-null") {
+		EXPECT_TRUE(result["data"][0]["price"].isNull());
+		EXPECT_TRUE(result["data"][0]["ts"].isNull());
+	} else if (env->nullRendering() == "null-string") {
+		EXPECT_EQ(result["data"][0]["price"].toString(), "null");
+	} else {
+		EXPECT_EQ(result["data"][0]["price"].toString(), "");
+	}
+}
+
 }  // namespace contract
 }  // namespace ZORM
 
@@ -759,4 +851,8 @@ inline void PlaceholderSql() {
 	TEST(Contract, PlaceholderSql) {                                              \
 		::ZORM::contract::env->connectOnce();                                     \
 		::ZORM::contract::PlaceholderSql();                                       \
+	}                                                                             \
+	TEST(Contract, TypeFidelity) {                                                \
+		::ZORM::contract::env->connectOnce();                                     \
+		::ZORM::contract::TypeFidelity();                                         \
 	}

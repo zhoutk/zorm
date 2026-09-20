@@ -563,15 +563,21 @@ protected:
 				if (k.compare("ins") == 0) {
 					string c = ele.at(0);
 					vector<string>(ele.begin() + 1, ele.end()).swap(ele);
-					whereExtra.append(self()->quoteIdent(c)).append(" in (");
-					const int eleLen = ele.size();
-					for (int e = 0; e < eleLen; e++) {
-						whereExtra.append(self()->placeholder(nextPlaceholder()));
-						if (e < eleLen - 1)
-							whereExtra.append(",");
-						values.add(ele[e]);
+					if (parameterized) {
+						whereExtra.append(self()->quoteIdent(c)).append(" in (");
+						const int eleLen = ele.size();
+						for (int e = 0; e < eleLen; e++) {
+							whereExtra.append(self()->placeholder(nextPlaceholder()));
+							if (e < eleLen - 1)
+								whereExtra.append(",");
+							values.add(ele[e]);
+						}
+						whereExtra.append(")");
+					} else {
+						// non-parameterized: literal IN list
+						whereExtra.append(self()->quoteIdent(c)).append(" in ( ")
+							.append(DbUtils::GetVectorJoinStr(ele)).append(" )");
 					}
-					whereExtra.append(")");
 				} else {  // lks / ors
 					whereExtra.append(" ( ");
 					for (size_t j = 0; j < ele.size(); j += 2) {

@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <iostream>
+#include <string>
 
 #include "ContractSuite.h"
 #include "DbBase.h"
@@ -65,7 +66,20 @@ int main(int argc, char* argv[]) {
 	const std::string dialect = contract::resolveDialectWithArgv(argc, argv);
 	contract::g_dialect = dialect.c_str();
 	contract::g_config = contract::loadConfig(dialect);
-	std::cout << "[==========] backend under test: " << dialect << std::endl;
+
+	// --no-param runs the same dialect with parameterized=false, which
+	// exercises the plain-SQL paths (literal escaping, non-parameterized
+	// decoding) that the parameterized suite never touches.
+	bool noParam = false;
+	for (int i = 1; i < argc; ++i) {
+		if (std::string(argv[i]) == "--no-param")
+			noParam = true;
+	}
+	if (noParam)
+		contract::g_config.options.add("parameterized", false);
+
+	std::cout << "[==========] backend under test: " << dialect
+			  << (noParam ? " (parameterized=false)" : "") << std::endl;
 
 	static ConfigEnv env;
 	contract::env = &env;
