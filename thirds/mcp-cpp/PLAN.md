@@ -340,5 +340,24 @@ server.run(StdioTransport{});     // 或 server.serve_http("0.0.0.0", 8080)
 
 **M1 验收（本机 clang 22.1.8 / ninja）**：5 个 CTest 注册全绿（version/error/jsonrpc/types/transport，约 60 用例）。计划里"Inspector 可跑通"一项推迟到 M2（需要真 server 进程才有可接对象）。计划中的 `test_stdio_e2e`（子进程往返）挪到 M2 与 minimal_server 一起做——没有 handler 循环的 stdio e2e 只能测回声，意义有限。
 
+### 2026-09-21 Update 5 — M2 完成（server builder + stdio e2e）
+
+**设计定案**：
+
+- **无状态调度**：`Server::processLine` 是纯消息处理——解析 → meta 校验 → 版本门 → 能力门 → 路由 → handler → 编码回包。无任何会话状态，符合 2026 版"每个请求自携带元数据"。
+- **三层门的错误码映射**（逐条对过 schema.md）：缺 `_meta`/必填字段 → `-32602`；版本不支持 → `-32022`（data 带 `supported`/`requested`，数组按 enum 序输出）；方法未路由 → `-32601`；能力未广播 → `-32601`（MethodNotFoundError 文档明文）；未知 tool/resource/prompt → `-32602`（同文档：未知 tool 属 InvalidParams）。
+- **能力广播与注册联动**：`Builder::tool/resource/prompt` 注册即广播对应 capability。能力对象 `capabilities_` 必须初始化为**空 Object** 而非 Null——往 Null 节点 `add` 无效且静默（这次踩了：9 个测试一起红，根因一行）。Json 的 Null/Object 区分要当作类型系统来尊重。
+- **取消**：`requestId → shared_ptr<atomic_bool>` 槽位表；`notifications/cancelled` 置位；请求到达时**复用已有槽**（乱序投递下取消不能被新标志覆盖）；请求完成即清槽。单线程下这是完备语义；M4 多 worker 时同一槽位设计天然线程安全。
+- **resultType 注入**：server 对 handler 返回的缺省 resultType 补 `"complete"`（规范：2026 实现必须带；handler 只在自己关心多态时写）。`input_required`（MRTR）原样透传——handler 自己构造 InputRequiredResult 即可，M3 client 配合闭环。
+- **分页**：`*\/list` 用不透明 cursor（本实现编码为 offset 数字串），pageSize 0 = 不分页；非法 cursor → `-32602`。`resources/templates/list` 已注册路由但模板注册表 v1 未做（记录为缺口）。
+
+**踩坑**：
+
+1. `ASSERT_*` 只能用于 void 测试函数——`spawnSelf()` 返回 Child，用了 ASSERT 直接编译错（gtest 静态断言拦住），换 EXPECT + 显式有效性检查。
+2. Windows 管道 e2e：`CreateProcessA` 的 lpCommandLine 要**可写** LPSTR——`const std::string` 的 `data()` 是 const char*，clang 直接指出 const 丢失。
+3. zjson 迭代 keys 的惯用法是 `obj.getAllKeys().toVector()`（元素是 Json，`toString()` 取 key），不能直接 range-for（给的是 JsonEntry）。
+
+**M2 验收**：7/7 CTest 全绿（新增 test_server 30+ 用例、test_stdio_e2e）。**test_stdio_e2e 是真子进程端到端**：测试二进制以 `--mcp-serve-child` 参数自启为 MCP server（Windows CreateProcess + 匿名管道 / POSIX fork+execv），走真实 OS 管道验证 discover/tools/list/tools/call 三连 + stdin EOF 优雅关停。`minimal_server` 手工冒烟通过（管道喂数据→正确回包），Inspector 对接留待用户在交互终端验证（`npx @modelcontextprotocol/inspector build/thirds/mcp-cpp/minimal_server.exe`）。
+
 ---
 *文档维护规则：每个里程碑完成后，把遇到的偏差、性能实测数字、被否决的设计记录到对应用节下新增「Update YYYY-MM-DD」条目，原文不删。*

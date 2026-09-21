@@ -48,7 +48,8 @@ add_library(mcp STATIC
   src/version.cpp
   src/types.cpp
   src/jsonrpc.cpp
-  src/transport.cpp)
+  src/transport.cpp
+  src/server.cpp)
 add_library(mcp::mcp ALIAS mcp)
 
 target_include_directories(mcp PUBLIC
@@ -65,6 +66,11 @@ else()
   target_compile_options(mcp PRIVATE -fsigned-char)
 endif()
 target_compile_options(mcp PRIVATE ${MCP_CXX_WARNINGS})
+
+# ---- examples ---------------------------------------------------------------
+
+add_executable(minimal_server examples/minimal_server.cpp)
+target_link_libraries(minimal_server PRIVATE mcp)
 
 # ---- tests -----------------------------------------------------------------
 # googletest discovery, in order:
@@ -98,12 +104,20 @@ if(MCP_BUILD_TESTS)
   add_executable(mcp_test_jsonrpc tests/test_jsonrpc.cpp)
   add_executable(mcp_test_types tests/test_types.cpp)
   add_executable(mcp_test_transport tests/test_transport.cpp)
-  foreach(t mcp_test_version mcp_test_error mcp_test_jsonrpc mcp_test_types mcp_test_transport)
+  add_executable(mcp_test_server tests/test_server.cpp)
+  # Owns its main(): doubles as the stdio e2e child server.
+  add_executable(mcp_test_stdio_e2e tests/test_stdio_e2e.cpp)
+  foreach(t mcp_test_version mcp_test_error mcp_test_jsonrpc mcp_test_types mcp_test_transport
+           mcp_test_server)
     target_link_libraries(${t} PRIVATE mcp gtest gtest_main)
     target_compile_options(${t} PRIVATE ${MCP_CXX_WARNINGS})
     add_test(NAME ${t} COMMAND ${t})
     list(APPEND MCP_TEST_EXECUTABLES ${t})
   endforeach()
+  target_link_libraries(mcp_test_stdio_e2e PRIVATE mcp gtest)
+  target_compile_options(mcp_test_stdio_e2e PRIVATE ${MCP_CXX_WARNINGS})
+  add_test(NAME mcp_test_stdio_e2e COMMAND mcp_test_stdio_e2e)
+  list(APPEND MCP_TEST_EXECUTABLES mcp_test_stdio_e2e)
 
   if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # Standalone build: keep artifacts inside this project's build dir.
