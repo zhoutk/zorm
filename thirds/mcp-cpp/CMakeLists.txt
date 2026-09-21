@@ -1,0 +1,107 @@
+# ---------------------------------------------------------------------------
+# mcp-cpp: independent MCP (Model Context Protocol) C++ SDK.
+#
+# Builds two ways:
+#   1. standalone:  cmake -S thirds/mcp-cpp -B build && cmake --build build
+#      (needs a zjson single-header copy under ./thirds/zjson)
+#   2. as a subdirectory of the zorm project: the root CMakeLists adds this
+#      directory; zjson is then found in the repo sibling dir and googletest
+#      is reused from the parent build when already present.
+#
+# Targets: mcp (static) + mcp::mcp alias; mcp tests registered with CTest.
+# See PLAN.md for the roadmap and decision log.
+# ---------------------------------------------------------------------------
+
+cmake_minimum_required(VERSION 3.18)
+project(mcp-cpp VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(MCP_BUILD_TESTS "Build mcp-cpp unit tests" ON)
+# Reserved now, effective from M3 (Streamable HTTP transport); a pure-stdio
+# build for low-footprint hosts must stay possible.
+option(MCP_DISABLE_HTTP "Build without the Streamable HTTP transport" OFF)
+
+# ---- zjson discovery -------------------------------------------------------
+# Default: a copy bundled under ./thirds/zjson (standalone layout); falls back
+# to the zorm repo sibling dir when built in-tree. Override with
+# -DMCP_ZJSON_DIR=<path> to point anywhere else.
+if(NOT DEFINED MCP_ZJSON_DIR)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/thirds/zjson/zjson.hpp")
+    set(MCP_ZJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirds/zjson")
+  elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../zjson/zjson.hpp")
+    set(MCP_ZJSON_DIR "${CMAKE_CURRENT_LIST_DIR}/../zjson")
+  endif()
+endif()
+if(NOT DEFINED MCP_ZJSON_DIR)
+  message(FATAL_ERROR
+    "mcp-cpp: zjson not found - copy the zjson single header under "
+    "${CMAKE_CURRENT_SOURCE_DIR}/thirds/zjson or pass -DMCP_ZJSON_DIR=<dir>")
+endif()
+message(STATUS "mcp-cpp: zjson at ${MCP_ZJSON_DIR}")
+
+# ---- library ---------------------------------------------------------------
+
+add_library(mcp STATIC
+  src/version.cpp)
+add_library(mcp::mcp ALIAS mcp)
+
+target_include_directories(mcp PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${MCP_ZJSON_DIR}>)
+target_compile_features(mcp PUBLIC cxx_std_17)
+
+set(MCP_CXX_WARNINGS -Wall -Wextra -Wpedantic)
+if(MSVC)
+  set(MCP_CXX_WARNINGS /W4)
+  target_compile_options(mcp PRIVATE /Zc:__cplusplus)
+else()
+  # Match the host project convention: pin char signedness for x86/ARM parity.
+  target_compile_options(mcp PRIVATE -fsigned-char)
+endif()
+target_compile_options(mcp PRIVATE ${MCP_CXX_WARNINGS})
+
+# ---- tests -----------------------------------------------------------------
+# googletest discovery, in order:
+#   1. already added by the parent project (in-tree integration)
+#   2. the zorm repo copy next to this directory (also covers standalone
+#      builds made from inside the repo checkout)
+#   3. a system GTest package; if none exists, tests are skipped with a
+#      warning - the library itself has no test dependency.
+
+set(MCP_TEST_EXECUTABLES "")
+if(MCP_BUILD_TESTS)
+  if(NOT TARGET gtest)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../googletest-1.18.0/CMakeLists.txt")
+      add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../googletest-1.18.0"
+                       "${CMAKE_BINARY_DIR}/mcp-googletest" EXCLUDE_FROM_ALL)
+    else()
+      find_package(GTest QUIET)
+      if(NOT GTest_FOUND)
+        message(WARNING "mcp-cpp: googletest not found, building without tests")
+        set(MCP_BUILD_TESTS OFF)
+      endif()
+    endif()
+  endif()
+endif()
+
+if(MCP_BUILD_TESTS)
+  enable_testing()
+
+  add_executable(mcp_test_version tests/test_version.cpp)
+  add_executable(mcp_test_error tests/test_error.cpp)
+  foreach(t mcp_test_version mcp_test_error)
+    target_link_libraries(${t} PRIVATE mcp gtest gtest_main)
+    target_compile_options(${t} PRIVATE ${MCP_CXX_WARNINGS})
+    add_test(NAME ${t} COMMAND ${t})
+    list(APPEND MCP_TEST_EXECUTABLES ${t})
+  endforeach()
+
+  if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    # Standalone build: keep artifacts inside this project's build dir.
+    set_target_properties(${MCP_TEST_EXECUTABLES} PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+  endif()
+endif()

@@ -292,5 +292,30 @@ server.run(StdioTransport{});     // 或 server.serve_http("0.0.0.0", 8080)
 
 > 按此前约定：M0 动工前，请对 §9 三项表态；后续每个里程碑完成时，本文件随 debug/实测记录滚动更新（每节末尾附加"更新日志"小节）。
 
+### 2026-09-21 Update 3 — M0 完成（骨架落地记录）
+
+**验收口径修订（用户指示）**：测试/验收只在本机 clang 22.1.8（MSYS2 clang64, windows-gnu）完成；GCC/MSVC 矩阵降级为"编码时保持兼容"（平台差异一律走 feature-test 宏，不写死编译器分支），后期再验。
+
+**对计划的三处修正（以核实为准）**：
+
+1. **协议版本是 5 个，不是"6 版"**（§3 测试清单笔误；§4.1 enum 的 5 个枚举值为准），与规范版本史一致。
+2. **错误码逐一对过本地规范**（`docs/mcp/specification-2026-07-28/basic/index.md` "Error codes"）：JSON-RPC 标准五码 + MCP 保留区 `-32020..-32099`，具名仅三个：`HeaderMismatch=-32020`、`MissingRequiredClientCapability=-32021`（其 `data.requiredCapabilities` 指向 `ClientCapabilities`）、`UnsupportedProtocolVersion=-32022`。另注意 2026 版把 resource-not-found 从 `-32002` 改为 `-32602`（InvalidParams），**没有**专用的 resource-not-found 码。`McpError.data`（JSON 载荷）推迟到 M1 与消息模型一起加——需先定 zjson arena 语义下 `data` 的所有权写法。
+3. **头文件按里程碑落地**，不做全空占位骨架（避免"先占名字后填肉"的无效 diff）。M0 实际交付：`mcp.hpp`（聚合）、`version.hpp/.cpp`、`error.hpp`、`json.hpp`。
+
+**设计记录**：
+
+- `McpError.code` 用强类型 `enum class McpErrorCode : int32_t`（计划原文是裸 int32_t——强类型可防调用点传任意整数；上线到 wire 时 `static_cast`）。
+- **错误返回双模式统一**：`McpResult<T>` 在 `__cpp_lib_expected >= 202202L` 时别名 `std::expected`，否则内置 `Result<T>`（variant 实现，`Result<void>` 特化用 monostate；成员面与 expected 一致：`has_value/value/error`）。`Ok(v)/Ok()/Err(code,msg)/Err(McpError)` 工厂返回 `ErrCarrier`，隐式转换为函数返回类型的 `McpResult<T>`——调用点 `return Err(...)` 无需写模板参数，且在两种模式下逐字相同。
+- **踩坑**：`detail::makeErr` 必须放在 `McpResult` 别名声明之后（模板别名先声明后使用）——clang 直接指出实例化点，一次修复。
+- **zjson 接入**：`mcp::Json = ZJSON::Json` 别名先行；`IJsonAdapter` 注入点按原计划推迟到 M1（等适配面最小集明确）。CMake 的 `MCP_ZJSON_DIR` 探测顺序：`./thirds/zjson`（独立发布布局）→ `../zjson`（仓库内布局）→ 报错。
+- **gtest 发现顺序**：父工程已注册 → 仓库 `thirds/googletest-1.18.0` → 系统 GTest 包 → 警告并跳过测试。库本体零测试依赖。
+- 首次配置时 `../../zjson` 路径算错过一次（`thirds/mcp-cpp` 的仓库兄弟是 `../zjson`），CMake 探测的 EXISTS 检查当即拦下——探测设计起了作用。
+
+**M0 验收（本机 clang 22.1.8 / ninja）**：
+
+- 根工程集成构建全绿（zormlib + 全部既有测试目标不受影响）。
+- `ctest -R mcp_test`：`mcp_test_version`、`mcp_test_error` 全过（版本往返/未知串/错误码 static_assert 钉死 wire 值/Result 三态与 void/非默认构造 T）。
+- **独立构建路径实测通过**：`cmake -S thirds/mcp-cpp -B <tmp> -DMCP_ZJSON_DIR=...` 独立配置、构建、测试全绿——"拷走即用"承诺成立。
+
 ---
 *文档维护规则：每个里程碑完成后，把遇到的偏差、性能实测数字、被否决的设计记录到对应用节下新增「Update YYYY-MM-DD」条目，原文不删。*

@@ -232,3 +232,9 @@ if (CMAKE_ZJSON_ENABLE_TEST)
     add_test(NAME test_pool COMMAND test_pool
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_pool>)
 endif()
+
+##--------------------- mcp protocol library (thirds/mcp-cpp) --------------##
+# Independent MCP C++ SDK (roadmap: thirds/mcp-cpp/PLAN.md). Self-contained
+# static lib; reuses googletest added above and the repo zjson. Its tests are
+# CTest-registered as mcp_test_version / mcp_test_error.
+add_subdirectory(./thirds/mcp-cpp)
