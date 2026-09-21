@@ -108,6 +108,12 @@ class [[nodiscard]] Result {
   const T& value() const& { return std::get<0>(v_); }
   T&& value() && { return std::get<0>(std::move(v_)); }
 
+  T* operator->() { return &std::get<0>(v_); }
+  const T* operator->() const { return &std::get<0>(v_); }
+  T& operator*() & { return std::get<0>(v_); }
+  const T& operator*() const& { return std::get<0>(v_); }
+  T&& operator*() && { return std::get<0>(std::move(v_)); }
+
   McpError& error() & { return std::get<1>(v_); }
   const McpError& error() const& { return std::get<1>(v_); }
   McpError&& error() && { return std::get<1>(std::move(v_)); }

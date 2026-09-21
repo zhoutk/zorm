@@ -45,7 +45,10 @@ message(STATUS "mcp-cpp: zjson at ${MCP_ZJSON_DIR}")
 # ---- library ---------------------------------------------------------------
 
 add_library(mcp STATIC
-  src/version.cpp)
+  src/version.cpp
+  src/types.cpp
+  src/jsonrpc.cpp
+  src/transport.cpp)
 add_library(mcp::mcp ALIAS mcp)
 
 target_include_directories(mcp PUBLIC
@@ -92,7 +95,10 @@ if(MCP_BUILD_TESTS)
 
   add_executable(mcp_test_version tests/test_version.cpp)
   add_executable(mcp_test_error tests/test_error.cpp)
-  foreach(t mcp_test_version mcp_test_error)
+  add_executable(mcp_test_jsonrpc tests/test_jsonrpc.cpp)
+  add_executable(mcp_test_types tests/test_types.cpp)
+  add_executable(mcp_test_transport tests/test_transport.cpp)
+  foreach(t mcp_test_version mcp_test_error mcp_test_jsonrpc mcp_test_types mcp_test_transport)
     target_link_libraries(${t} PRIVATE mcp gtest gtest_main)
     target_compile_options(${t} PRIVATE ${MCP_CXX_WARNINGS})
     add_test(NAME ${t} COMMAND ${t})

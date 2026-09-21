@@ -317,5 +317,28 @@ server.run(StdioTransport{});     // 或 server.serve_http("0.0.0.0", 8080)
 - `ctest -R mcp_test`：`mcp_test_version`、`mcp_test_error` 全过（版本往返/未知串/错误码 static_assert 钉死 wire 值/Result 三态与 void/非默认构造 T）。
 - **独立构建路径实测通过**：`cmake -S thirds/mcp-cpp -B <tmp> -DMCP_ZJSON_DIR=...` 独立配置、构建、测试全绿——"拷走即用"承诺成立。
 
+### 2026-09-21 Update 4 — M1 完成（协议核心：类型/JSON-RPC/stdio 传输）
+
+**开工前从规范核实的增量事实**（均以 `docs/mcp/specification-2026-07-28/` 为准）：
+
+- **消息四型**：Request（id 为 string|integer，**禁 null**）、Notification（**禁 id**，含 null）、Result Response（`resultType` 必带；缺失按 legacy 读作 `complete`）、Error Response（schema 为 `id?: RequestId`——**无 null id**，读不出 id 时省略）。JSON-RPC 2.0 的"id null 即通知"读法被显式拒绝：id 成员存在但为 null → InvalidRequest， mismatch 要响亮地失败。
+- **无状态**：`initialize` 握手在 2026 版已移除，每请求 `params._meta` 携带 `io.modelcontextprotocol/protocolVersion`（必填）+ `clientCapabilities`（必填）+ `clientInfo`（可选）；缺失 → `-32602`。双 era 服务器靠"请求带现代 `_meta` 还是带 `initialize`"分流——这是 M2 服务端的关键设计输入。
+- **`server/discover`**：`DiscoverResult{resultType:"complete", supportedVersions[], capabilities, instructions?, ttlMs, cacheScope}`；stdio 客户端用"discover 探针 + 识别现代错误（-32022 等）"判定服务器 era，**fallback 不得绑定单一错误码**（legacy 服务器对未知方法报 -32601/-32602 或不响应）。
+- **stdio 传输**：行分帧、禁嵌入换行、stdout 只准出消息、stderr 随意、EOF 是首要优雅关停信号；wire 格式与传输通道无关（socket/pipe 通吃）→ `StreamTransport` 注入 iostream 对，stdio 只是特例。
+- **能力对象保持 Json 背托**（结构化类型，跟随规范演进），只对运行时会分支的字段提供 `capabilitiesInclude`/`capabilitiesIncludeExtension` 探针。全量类型化结构体会冻结一个规范还在活跃扩展的字段集——刻意偏离计划 §4.1 的"全字段结构体"路线。
+
+**实现要点**：
+
+- `parseMessage` 永不失败：任何输入产出 `variant<Request, Notification, Result, ErrorResponse, InvalidMessage>`，`InvalidMessage` 携带足以构造错误响应的全部信息（code + 可恢复的 id）。params 必须是 object（MCP 所有方法 params 皆对象）；数组（JSON-RPC 批量）显式拒绝；小数 id/错误码拒绝；±2^63 id 保真。
+- 编码侧全部走 `Json::str()` 包文本（zjson 喂探约定），测试含"形如 JSON 的字符串值不被嗅探"用例。
+- `Result<T>` 补齐 `operator->`/`operator*`，与 `std::expected` 成员面完全对齐。
+
+**踩坑记录（两次，都值得留档）**：
+
+1. **zjson API 误用**：`Json::str()` 是静态工厂（造字符串值），读字符串值的成员方法是 `toString()`；`Json::parse` 是 private，公开入口是 `Json::ParseJson(input, err)`。照 zorm 主工程既有惯用法（`params["id"].toString()`）校正。
+2. **测试里的悬垂 UB（最有价值的一课）**：`asRequest(parseMessage(text))` 把指针指进**临时 variant**，全表达式结束即悬垂，后续读出垃圾——5 个测试报"bad_variant_access"看似库 bug，实为测试 UB；而同一个库用命名局部变量探针全过。教训：**对返回 variant 的函数，先落局部变量再 `get_if`**。已把全部 20 处调用点改为两步模式。另：ctest 前先确认没跑陈旧 exe（项目 CLAUDE.md 已有此坑记录，这次 cwd 漂移又踩了一次变体）。
+
+**M1 验收（本机 clang 22.1.8 / ninja）**：5 个 CTest 注册全绿（version/error/jsonrpc/types/transport，约 60 用例）。计划里"Inspector 可跑通"一项推迟到 M2（需要真 server 进程才有可接对象）。计划中的 `test_stdio_e2e`（子进程往返）挪到 M2 与 minimal_server 一起做——没有 handler 循环的 stdio e2e 只能测回声，意义有限。
+
 ---
 *文档维护规则：每个里程碑完成后，把遇到的偏差、性能实测数字、被否决的设计记录到对应用节下新增「Update YYYY-MM-DD」条目，原文不删。*

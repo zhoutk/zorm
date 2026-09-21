@@ -8,4 +8,7 @@
 
 #include <mcp/error.hpp>
 #include <mcp/json.hpp>
+#include <mcp/jsonrpc.hpp>
+#include <mcp/transport.hpp>
+#include <mcp/types.hpp>
 #include <mcp/version.hpp>
