@@ -94,6 +94,23 @@ endif()
 add_executable(minimal_server examples/minimal_server.cpp)
 target_link_libraries(minimal_server PRIVATE mcp)
 
+# zorm integration example: built only inside the zorm repo, where the
+# zormlib target and its include dirs exist. Keeps the SDK itself zorm-free.
+if(TARGET zormlib)
+  add_executable(zorm_server examples/zorm_server.cpp)
+  target_link_libraries(zorm_server PRIVATE mcp zormlib)
+endif()
+
+# ---- benchmarks (not registered with CTest; run manually) --------------------
+
+add_executable(mcp_bench_parse bench/bench_parse.cpp)
+add_executable(mcp_bench_dispatch bench/bench_dispatch.cpp)
+add_executable(mcp_bench_e2e bench/bench_e2e.cpp)
+foreach(t mcp_bench_parse mcp_bench_dispatch mcp_bench_e2e)
+  target_link_libraries(${t} PRIVATE mcp)
+  target_compile_options(${t} PRIVATE ${MCP_CXX_WARNINGS})
+endforeach()
+
 # ---- tests -----------------------------------------------------------------
 # googletest discovery, in order:
 #   1. already added by the parent project (in-tree integration)

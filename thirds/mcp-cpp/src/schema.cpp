@@ -167,8 +167,6 @@ struct Validator {
   }
 
   bool check(const Json& value, const Json& schema, const std::string& path, int depth) {
-    fprintf(stderr, "[chk] value=%s schema=%s depth=%d\n",
-            value.toString().c_str(), schema.toString().c_str(), depth);
     if (!budget()) return false;
 
     // Boolean schemas: true = anything, false = nothing.
@@ -189,7 +187,6 @@ struct Validator {
 
     // type
     const Json type = direct(schema, "type");
-    fprintf(stderr, "[chk] typeMember=%s\n", type.isError() ? "<err>" : type.toString().c_str());
     if (type.isString()) {
       if (!typeMatches(value, std::string(type.toString()))) {
         return fail(path, "expected type " + std::string(type.toString()) + ", got " +
@@ -351,10 +348,7 @@ struct Validator {
       bool any = false;
       for (const auto& sub : anyOf.toVector()) {
         Validator probe{root, limits, 0, ""};
-        bool pr = probe.check(value, sub, path, depth + 1);
-        fprintf(stderr, "[dbg] sub=%s pr=%d pErr=[%s] oErr=[%s]\n",
-                sub.toString().c_str(), (int)pr, probe.error.c_str(), error.c_str());
-        if (pr) any = true;
+        if (probe.check(value, sub, path, depth + 1)) any = true;
       }
       if (!any) return fail(path, "value matches none of anyOf");
     }

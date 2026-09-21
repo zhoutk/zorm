@@ -54,9 +54,9 @@ int main() {
                  return Ok(std::move(result));
                });
 
-  Server server = b.build();
+  auto server = b.build();
   StdioTransport transport;
-  const McpResult<void> r = server.run(transport);
+  const McpResult<void> r = server->run(transport);
   if (!r.has_value()) {
     std::cerr << "[minimal] transport error: " << r.error().message << std::endl;
     return 1;

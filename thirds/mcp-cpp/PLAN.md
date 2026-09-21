@@ -403,5 +403,35 @@ server.run(StdioTransport{});     // 或 server.serve_http("0.0.0.0", 8080)
 
 **M4 验收**：10/10 CTest 全绿零警告（新增 test_schema 12 用例；server 扩展 inputSchema 强制/completion/缓存提示用例）。
 
+### 2026-09-21 Update 8 — M5 完成（基准 + 发布检查单）＋ 项目收官
+
+**基准实测**（RelWithDebInfo 独立构建，clang 22.1.8 / MSYS2 clang64 / windows-gnu；rust 基线 = serde_json 1.x，rust-sdk 的实际解析层，同机同消息形状）：
+
+| 基准 | mcp-cpp | serde_json 基线 | 目标（§8） | 结论 |
+| --- | --- | --- | --- | --- |
+| B1 parse ~1KB | 714,000 msg/s（1.40µs） | 907,000 msg/s（1.10µs） | ≥1.5× | **未达**（0.79×） |
+| B1 parse ~64KB | 35,900 msg/s（27.8µs） | 136,800 msg/s（7.31µs） | ≥1.5× | **未达**（0.38×） |
+| B2 dispatch | 298,500 msg/s（3.35µs，含 meta/版本/能力门 + inputSchema 校验 + 编码） | 需完整 tokio 栈，无单机等价基准 | ≥2× | 无法直接对比，如实记录 |
+| B3 stdio e2e | 24,700 round trips/s（40.4µs，真管道子进程） | 同上 | ≥1.2× | 无法直接对比，如实记录 |
+
+**对 §8 承诺的如实修订**：raw JSON 解析未超 serde_json——serde 的零拷贝借用解析是业界最快的模型之一，而 zjson 是 parse-into-owned-tree + 我们 parseMessage 上叠加严格语义验证（M1 的设计取舍：正确性优先）。§8 预设的优化路径已明确并记录：① `parseJsonText` 目前对 string_view 拷贝一次，zjson arena 的借用视图可做零拷贝解析；② envelope 预扫描快路径（先 peek method/id 再全量解析）；③ 大消息场景 zjson 树深拷贝是热点。达标与否留待实施后复测——当前版本以"功能完备 + 协议一致性"为交付重心。
+
+**发布检查单（§6.2）勾选**：
+
+- [x] 独立可构建：standalone 路径全程多次实测（M0 首验，M5 以 RelWithDebInfo + Release 复验）
+- [x] 构建零警告（clang -Wall -Wextra -Wpedantic）
+- [x] `MCP_DISABLE_HTTP=ON` 纯 stdio 构建：独立配置构建 + 9/9 测试通过
+- [x] include/ 泄漏 grep：无 zorm/db_/驱动符号（zjson 通过 mcp::Json 别名属预期）
+- [x] version.txt + semver + `mcp::kSdkVersion`
+- [x] MIT LICENSE + NOTICE（zjson/httplib/googletest）
+- [x] README：功能矩阵（对标 Tier-1）、诚实基准对比、用法、zorm 集成
+- [x] examples/zorm_server.cpp：仅仓库内构建（TARGET zormlib 守卫），四工具 MCP 化 + inputSchema + 真库冒烟通过；库本体保持 zorm-free
+
+**变异验证（§6.3 惯例）**：版本协商错误码 -32022→-32601 的突变被 `ServerGates.UnsupportedVersionListsSupported` 立即抓住，还原后通过。
+
+**M5 验收**：10/10 CTest 全绿 + 3 个基准可运行（mcp_bench_parse/dispatch/e2e，附带 --bench-child 自spawn 模式）。
+
+**项目收官状态**：M0–M5 全部完成。PLAN §5 功能矩阵中除有意不实现的 Roots/Sampling（SEP-2577 弃用）与 v2 项（Tasks/OAuth）外全部落地。后续候选（按价值排序）：零拷贝解析优化（B1 差距）、Tasks 扩展、resources/templates/list 注册表、conformance 仓库对齐。
+
 ---
 *文档维护规则：每个里程碑完成后，把遇到的偏差、性能实测数字、被否决的设计记录到对应用节下新增「Update YYYY-MM-DD」条目，原文不删。*
