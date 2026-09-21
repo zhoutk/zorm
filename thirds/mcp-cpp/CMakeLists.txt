@@ -51,6 +51,7 @@ add_library(mcp STATIC
   src/transport.cpp
   src/server.cpp
   src/client.cpp
+  src/schema.cpp
   src/base64.cpp
   src/transport_http.cpp)
 add_library(mcp::mcp ALIAS mcp)
@@ -127,10 +128,11 @@ if(MCP_BUILD_TESTS)
   add_executable(mcp_test_transport tests/test_transport.cpp)
   add_executable(mcp_test_server tests/test_server.cpp)
   add_executable(mcp_test_client tests/test_client.cpp)
+  add_executable(mcp_test_schema tests/test_schema.cpp)
   # Owns its main(): doubles as the stdio e2e child server.
   add_executable(mcp_test_stdio_e2e tests/test_stdio_e2e.cpp)
   foreach(t mcp_test_version mcp_test_error mcp_test_jsonrpc mcp_test_types mcp_test_transport
-           mcp_test_server mcp_test_client)
+           mcp_test_server mcp_test_client mcp_test_schema)
     target_link_libraries(${t} PRIVATE mcp gtest gtest_main)
     target_compile_options(${t} PRIVATE ${MCP_CXX_WARNINGS})
     add_test(NAME ${t} COMMAND ${t})

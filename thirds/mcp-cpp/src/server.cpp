@@ -1,5 +1,7 @@
 #include <mcp/server.hpp>
 
+#include <mcp/schema.hpp>
+
 #include <iostream>
 #include <utility>
 
@@ -25,6 +27,7 @@ constexpr MethodRoute kRoutes[] = {
     {"resources/templates/list", "resources", "resources"},
     {"prompts/list", "prompts", "prompts"},
     {"prompts/get", "prompts", "prompts"},
+    {"completion/complete", "completions", ""},
 };
 
 std::string idToString(const RequestId& id) {
@@ -92,8 +95,11 @@ Server::Server(Server&& other) noexcept
       instructions_(std::move(other.instructions_)),
       pageSize_(other.pageSize_),
       discoverTtlMs_(other.discoverTtlMs_),
+      listTtlMs_(other.listTtlMs_),
+      listCacheScope_(std::move(other.listCacheScope_)),
       name_(std::move(other.name_)),
       version_(std::move(other.version_)),
+      completionsHandler_(std::move(other.completionsHandler_)),
       cancellations_(std::move(other.cancellations_)),
       subscriptions_(std::move(other.subscriptions_)) {}
 
@@ -119,7 +125,7 @@ void Server::processLine(const std::string& line, ITransport& out) {
 
   if (const auto* notification = std::get_if<JsonRpcNotification>(&parsed)) {
     if (notification->method == "notifications/cancelled") {
-      const Json requestId = notification->params["requestId"];
+      const Json requestId = member(notification->params, "requestId");
       auto id = decodeRequestId(requestId);
       if (id) {
         const std::string key = idToString(*id);
@@ -218,12 +224,16 @@ McpResult<Json> Server::dispatchRequest(const JsonRpcRequest& req, const Request
 
   if (req.method == "server/discover") return handleDiscover(meta);
   if (req.method == "tools/list") return handlePaginatedList(tools_, req.params, "tools");
+  if (req.method == "completion/complete") {
+    Ctx ctx{req.params, meta, cancelled};
+    return completionsHandler_(ctx);
+  }
   if (req.method == "tools/call") return handleToolCall(req, meta, cancelled);
   if (req.method == "resources/list") return handlePaginatedList(resources_, req.params, "resources");
   if (req.method == "prompts/list") return handlePaginatedList(prompts_, req.params, "prompts");
 
   if (req.method == "resources/read") {
-    const Json uri = req.params["uri"];
+    const Json uri = member(req.params, "uri");
     if (!uri.isString()) return Err(McpErrorCode::InvalidParams, "resources/read requires a string uri");
     auto it = resources_.handlers.find(std::string(uri.toString()));
     if (it == resources_.handlers.end()) {
@@ -234,7 +244,7 @@ McpResult<Json> Server::dispatchRequest(const JsonRpcRequest& req, const Request
   }
 
   if (req.method == "prompts/get") {
-    const Json name = req.params["name"];
+    const Json name = member(req.params, "name");
     if (!name.isString()) return Err(McpErrorCode::InvalidParams, "prompts/get requires a string name");
     auto it = prompts_.handlers.find(std::string(name.toString()));
     if (it == prompts_.handlers.end()) {
@@ -275,7 +285,7 @@ McpResult<Json> Server::handlePaginatedList(const Registry& reg, const Json& par
 
   const size_t total = reg.definitions.size();
   size_t offset = 0;
-  const Json cursor = params["cursor"];
+  const Json cursor = member(params, "cursor");
   if (cursor.isString()) {
     // Opaque token: this registry encodes the plain offset. Unknown cursors
     // are rejected rather than silently restarting.
@@ -298,6 +308,10 @@ McpResult<Json> Server::handlePaginatedList(const Registry& reg, const Json& par
     arr.push_back(reg.definitions[i]);
   }
   result.add(std::string(arrayKey), std::move(arr));
+  if (listTtlMs_ >= 0) {
+    result.add("ttlMs", Json(static_cast<int64_t>(listTtlMs_)));
+    result.add("cacheScope", Json::str(std::string(listCacheScope_)));
+  }
   if (pageSize_ > 0 && offset + limit < total) {
     result.add("nextCursor", Json::str(std::to_string(offset + limit)));
   }
@@ -306,13 +320,25 @@ McpResult<Json> Server::handlePaginatedList(const Registry& reg, const Json& par
 
 McpResult<Json> Server::handleToolCall(const JsonRpcRequest& req, const RequestMeta& meta,
                                        const std::function<bool()>& cancelled) {
-  const Json name = req.params["name"];
+  const Json name = member(req.params, "name");
   if (!name.isString()) {
     return Err(McpErrorCode::InvalidParams, "tools/call requires a string name");
   }
   auto it = tools_.handlers.find(std::string(name.toString()));
   if (it == tools_.handlers.end()) {
     return Err(McpErrorCode::InvalidParams, "Unknown tool: " + std::string(name.toString()));
+  }
+  // inputSchema enforcement (JSON Schema 2020-12): arguments must validate
+  // when the tool declares an object-shaped inputSchema.
+  const Json def = findToolDefinition(std::string(name.toString()));
+  const Json inputSchema = member(def, "inputSchema");
+  if (inputSchema.isObject()) {
+    const Json arguments = req.params["arguments"];
+    const Json toValidate = arguments.isObject() ? arguments : Json(R"({})");
+    auto verdict = validateSchema(toValidate, inputSchema);
+    if (!verdict.has_value()) {
+      return Err(McpErrorCode::InvalidParams, "Invalid tool arguments: " + verdict.error().message);
+    }
   }
   Ctx ctx{req.params, meta, cancelled};
   return it->second(ctx);
@@ -394,6 +420,14 @@ void Server::notifyResourceUpdated(const std::string& uri) {
   }
 }
 
+Json Server::findToolDefinition(const std::string& name) const {
+  for (const auto& def : tools_.definitions) {
+    const Json defName = member(def, "name");
+    if (defName.isString() && defName.toString() == name) return def;
+  }
+  return Json("null");  // parsed Null - callers probe isObject()
+}
+
 bool Server::versionSupported(std::string_view wire) const {
   const auto v = fromString(wire);
   return v.has_value() && supportedSet_.count(*v) > 0;
@@ -407,6 +441,21 @@ Builder& Builder::instructions(std::string text) { server_.instructions_ = std::
 Builder& Builder::pageSize(int n) { server_.pageSize_ = n; return *this; }
 Builder& Builder::discoverTtlMs(long ms) { server_.discoverTtlMs_ = ms; return *this; }
 
+Builder& Builder::completions(Handler handler) {
+  server_.completionsHandler_ = std::move(handler);
+  if (!capabilitiesInclude(server_.capabilities_, "completions")) {
+    Json empty;
+    server_.capabilities_.add("completions", std::move(empty));
+  }
+  return *this;
+}
+
+Builder& Builder::listCache(long ttlMs, std::string cacheScope) {
+  server_.listTtlMs_ = ttlMs;
+  server_.listCacheScope_ = std::move(cacheScope);
+  return *this;
+}
+
 Builder& Builder::supports(ProtocolVersion v) {
   if (server_.supportedSet_.empty()) {
     // First explicit choice replaces the implicit Latest-only default.
@@ -419,7 +468,7 @@ Builder& Builder::supports(ProtocolVersion v) {
 }
 
 Builder& Builder::tool(Json definition, Handler handler) {
-  const Json name = definition["name"];
+  const Json name = member(definition, "name");
   if (!name.isString()) {
     std::cerr << "[mcp-cpp] builder: tool definition without name ignored\n";
     return *this;
@@ -436,7 +485,7 @@ Builder& Builder::tool(Json definition, Handler handler) {
 }
 
 Builder& Builder::resource(Json definition, Handler readHandler) {
-  const Json uri = definition["uri"];
+  const Json uri = member(definition, "uri");
   if (!uri.isString()) {
     std::cerr << "[mcp-cpp] builder: resource definition without uri ignored\n";
     return *this;
@@ -452,7 +501,7 @@ Builder& Builder::resource(Json definition, Handler readHandler) {
 }
 
 Builder& Builder::prompt(Json definition, Handler handler) {
-  const Json name = definition["name"];
+  const Json name = member(definition, "name");
   if (!name.isString()) {
     std::cerr << "[mcp-cpp] builder: prompt definition without name ignored\n";
     return *this;

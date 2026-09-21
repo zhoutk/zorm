@@ -1,4 +1,5 @@
 #include "base64.h"
+#include "header_params.h"
 
 #include <mcp/transport_http.hpp>
 
@@ -8,7 +9,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <condition_variable>
+#include <map>
 #include <deque>
 #include <thread>
 #include <utility>
@@ -126,8 +129,8 @@ struct HttpServerTransport::Impl {
                              "Header mismatch: MCP-Protocol-Version header is missing")};
     }
     if (request) {
-      const Json meta = params["_meta"];
-      const Json bodyVersion = meta[std::string(kMetaProtocolVersion)];
+      const Json meta = member(params, "_meta");
+      const Json bodyVersion = member(meta, kMetaProtocolVersion);
       if (bodyVersion.isString() && bodyVersion.toString() != headerVersion) {
         return {400, errorBody(id, static_cast<int32_t>(McpErrorCode::HeaderMismatch),
                                "Header mismatch: MCP-Protocol-Version does not match body _meta")};
@@ -147,7 +150,7 @@ struct HttpServerTransport::Impl {
     if (methodNeedsNameHeader(method)) {
       const std::string headerName = req.get_header_value(kHeaderName);
       const char* sourceKey = (method == "tools/call" || method == "prompts/get") ? "name" : "uri";
-      const Json name = params[sourceKey];
+      const Json name = member(params, sourceKey);
       if (!name.isString() || headerName.empty()) {
         return {400, errorBody(id, static_cast<int32_t>(McpErrorCode::HeaderMismatch),
                                "Header mismatch: Mcp-Name header is missing or malformed")};
@@ -156,6 +159,53 @@ struct HttpServerTransport::Impl {
       if (!detail::decodeHeaderValue(headerName, decoded) || decoded != name.toString()) {
         return {400, errorBody(id, static_cast<int32_t>(McpErrorCode::HeaderMismatch),
                                "Header mismatch: Mcp-Name header does not match body value")};
+      }
+    }
+
+    // Mcp-Param-* mirrored tool parameters: every annotated parameter with a
+    // value in the body must appear as a header with the matching value, and
+    // every mirrored header must correspond to an annotated parameter.
+    if (request != nullptr && request->method == "tools/call") {
+      const Json toolDef = server.findToolDefinition(
+          std::string(request->params["name"].toString()));
+      const Json inputSchema = member(toolDef, "inputSchema");
+      if (inputSchema.isObject()) {
+        std::vector<std::pair<std::string, std::string>> expected;
+        detail::collectHeaderParams(inputSchema, request->params["arguments"], {}, expected);
+
+        // index received Mcp-Param-* headers (case-insensitive names)
+        std::map<std::string, std::string> received;  // upper(name) -> (name,value)
+        for (const auto& field : req.headers) {
+          std::string upper;
+          for (const char ch : field.first) {
+            upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+          }
+          if (upper.rfind("MCP-PARAM-", 0) == 0) received[upper] = field.second;
+        }
+
+        for (const auto& [paramName, rawValue] : expected) {
+          std::string upper = "MCP-PARAM-";
+          for (const char ch : paramName) {
+            upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+          }
+          auto it = received.find(upper);
+          if (it == received.end()) {
+            return {400, errorBody(id, static_cast<int32_t>(McpErrorCode::HeaderMismatch),
+                                   "Header mismatch: Mcp-Param-" + paramName +
+                                       " header is missing")};
+          }
+          std::string decoded;
+          if (!detail::decodeHeaderValue(it->second, decoded) || decoded != rawValue) {
+            return {400, errorBody(id, static_cast<int32_t>(McpErrorCode::HeaderMismatch),
+                                   "Header mismatch: Mcp-Param-" + paramName +
+                                       " does not match body value")};
+          }
+          received.erase(upper);
+        }
+        if (!received.empty()) {
+          return {400, errorBody(id, static_cast<int32_t>(McpErrorCode::HeaderMismatch),
+                                 "Header mismatch: unrecognized Mcp-Param-* header")};
+        }
       }
     }
     return {0, ""};
@@ -448,13 +498,13 @@ McpResult<void> HttpClientTransport::postOne(std::string_view message) {
 
   httplib::Headers headers;
   headers.emplace("Accept", "application/json, text/event-stream");
-  const Json meta = params["_meta"];
-  const Json version = meta[std::string(kMetaProtocolVersion)];
+  const Json meta = member(params, "_meta");
+  const Json version = member(meta, kMetaProtocolVersion);
   if (version.isString()) headers.emplace(kHeaderProtocolVersion, std::string(version.toString()));
   headers.emplace(kHeaderMethod, method);
   if (methodNeedsNameHeader(method)) {
     const char* key = (method == "tools/call" || method == "prompts/get") ? "name" : "uri";
-    const Json name = params[key];
+    const Json name = member(params, key);
     if (name.isString()) {
       headers.emplace(kHeaderName, detail::encodeHeaderValue(name.toString()));
     }

@@ -2,6 +2,11 @@
 
 namespace mcp {
 
+Json member(const Json& obj, std::string_view key) {
+  const Json* p = obj.directMemberPtr(std::string_view(key));
+  return p ? *p : Json(nullptr);
+}
+
 std::optional<RequestId> decodeRequestId(const Json& v) {
   if (v.isString()) {
     return RequestId(std::string(v.toString()));
@@ -43,21 +48,21 @@ Json encodeImplementation(const Implementation& impl) {
 
 std::optional<Implementation> decodeImplementation(const Json& v) {
   if (!v.isObject()) return std::nullopt;
-  const Json name = v["name"];
-  const Json version = v["version"];
+  const Json name = member(v, "name");
+  const Json version = member(v, "version");
   if (!name.isString() || !version.isString()) return std::nullopt;
 
   Implementation impl;
   impl.name = std::string(name.toString());
   impl.version = std::string(version.toString());
 
-  const Json title = v["title"];
+  const Json title = member(v, "title");
   if (title.isString()) impl.title = std::string(title.toString());
-  const Json description = v["description"];
+  const Json description = member(v, "description");
   if (description.isString()) impl.description = std::string(description.toString());
-  const Json websiteUrl = v["websiteUrl"];
+  const Json websiteUrl = member(v, "websiteUrl");
   if (websiteUrl.isString()) impl.websiteUrl = std::string(websiteUrl.toString());
-  const Json icons = v["icons"];
+  const Json icons = member(v, "icons");
   if (icons.isArray()) impl.icons = icons;
   return impl;
 }
@@ -68,17 +73,17 @@ McpResult<RequestMeta> decodeRequestMeta(const Json& params) {
   if (!params.isObject()) {
     return Err(McpErrorCode::InvalidParams, "request params must be an object");
   }
-  const Json meta = params["_meta"];
+  const Json meta = member(params, "_meta");
   if (!meta.isObject()) {
     return Err(McpErrorCode::InvalidParams,
                "request is missing the required _meta object");
   }
-  const Json pv = meta[std::string(kMetaProtocolVersion)];
+  const Json pv = member(meta, kMetaProtocolVersion);
   if (!pv.isString() || pv.toString().empty()) {
     return Err(McpErrorCode::InvalidParams,
                "request _meta is missing io.modelcontextprotocol/protocolVersion");
   }
-  const Json caps = meta[std::string(kMetaClientCapabilities)];
+  const Json caps = member(meta, kMetaClientCapabilities);
   if (!caps.isObject()) {
     return Err(McpErrorCode::InvalidParams,
                "request _meta is missing io.modelcontextprotocol/clientCapabilities");
@@ -86,7 +91,7 @@ McpResult<RequestMeta> decodeRequestMeta(const Json& params) {
   RequestMeta m;
   m.protocolVersion = std::string(pv.toString());
   m.clientCapabilities = caps;
-  const Json info = meta[std::string(kMetaClientInfo)];
+  const Json info = member(meta, kMetaClientInfo);
   if (info.isObject()) m.clientInfo = decodeImplementation(info);
   return Ok(std::move(m));
 }
@@ -107,14 +112,14 @@ Json encodeRequestMeta(std::string_view protocolVersion,
 
 bool capabilitiesInclude(const Json& capabilities, std::string_view key) {
   if (!capabilities.isObject()) return false;
-  const Json member = capabilities[std::string(key)];
-  return member.isObject() || member.isTrue();
+  const Json m = member(capabilities, key);
+  return m.isObject() || m.isTrue();
 }
 
 bool capabilitiesIncludeExtension(const Json& capabilities, std::string_view extensionId) {
   if (!capabilities.isObject()) return false;
-  const Json extensions = capabilities["extensions"];
-  return extensions.isObject() && extensions[std::string(extensionId)].isObject();
+  const Json extensions = member(capabilities, "extensions");
+  return extensions.isObject() && member(extensions, extensionId).isObject();
 }
 
 }  // namespace mcp

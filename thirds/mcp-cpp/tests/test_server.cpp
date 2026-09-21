@@ -328,3 +328,78 @@ TEST(ServerRun, ProcessesUntilEof) {
   ASSERT_TRUE(r.has_value());          // EOF is graceful
   EXPECT_EQ(t.output_.size(), 2u);     // notification produced no output
 }
+
+// ---- M4: inputSchema enforcement, completions, CacheableResult --------------------
+
+TEST(ServerM4, ToolInputSchemaValidatesArguments) {
+  Builder b;
+  Json schema = Json(
+      R"({"type":"object","required":["query"],
+          "properties":{"query":{"type":"string"},"limit":{"type":"integer","minimum":1}}})");
+  Json def;
+  def.add("name", Json::str("search"));
+  def.add("description", Json::str("searches"));
+  def.add("inputSchema", std::move(schema));
+  b.tool(std::move(def), [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({"found":true})")); });
+  auto server = b.build();
+
+  Out good = serveOnce(server, makeRequest("s1", "tools/call",
+                                           Json(R"({"name":"search","arguments":{"query":"q","limit":5}})")));
+  ASSERT_NE(good.result, nullptr);
+
+  Out missing = serveOnce(server, makeRequest("s2", "tools/call",
+                                              Json(R"({"name":"search","arguments":{}})")));
+  ASSERT_NE(missing.error, nullptr);
+  EXPECT_EQ(missing.error->error.code, -32602);
+
+  Out negative = serveOnce(server, makeRequest("s3", "tools/call",
+                                               Json(R"({"name":"search","arguments":{"query":"q","limit":0}})")));
+  ASSERT_NE(negative.error, nullptr);
+  EXPECT_EQ(negative.error->error.code, -32602);
+}
+
+TEST(ServerM4, CompletionRoute) {
+  Builder b;
+  b.completions([](Ctx&) -> McpResult<Json> {
+    Json result;
+    Json completion;
+    Json values = Json("[]");
+    values.push_back(Json::str("option-1"));
+    completion.add("values", std::move(values));
+    completion.add("hasMore", Json(false));
+    result.add("completion", std::move(completion));
+    return Ok(std::move(result));
+  });
+  auto server = b.build();
+
+  Out o = serveOnce(server, makeRequest("cm1", "completion/complete",
+                                        Json(R"({"ref":{"type":"ref/prompt","name":"greet"},
+                                              "argument":{"name":"lang","value":"zh"}})")));
+  ASSERT_NE(o.result, nullptr);
+  EXPECT_EQ(o.result->result["completion"]["values"].size(), 1);
+
+  // capability advertised on discover
+  Out d = serveOnce(server, makeRequest("cm2", "server/discover", Json(nullptr)));
+  ASSERT_NE(d.result, nullptr);
+  EXPECT_TRUE(capabilitiesInclude(d.result->result["capabilities"], "completions"));
+}
+
+TEST(ServerM4, ListCacheHints) {
+  Builder b;
+  b.listCache(60000, "private");
+  b.simpleTool("t", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({})")); });
+  auto server = b.build();
+
+  Out o = serveOnce(server, makeRequest("h1", "tools/list", Json(nullptr)));
+  ASSERT_NE(o.result, nullptr);
+  EXPECT_EQ(o.result->result["ttlMs"].toInt64(), 60000);
+  EXPECT_EQ(o.result->result["cacheScope"].toString(), "private");
+
+  // default: no cache hints (still needs the tools capability)
+  Builder plain;
+  plain.simpleTool("t2", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({})")); });
+  auto pserver = plain.build();
+  Out d = serveOnce(pserver, makeRequest("h2", "tools/list", Json(nullptr)));
+  ASSERT_NE(d.result, nullptr);
+  EXPECT_TRUE(d.result->result["ttlMs"].isError());
+}

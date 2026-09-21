@@ -1,6 +1,7 @@
 #include <mcp/client.hpp>
 
 #include "base64.h"  // x-mcp-header value encoding
+#include "header_params.h"
 
 #include <utility>
 
@@ -73,8 +74,7 @@ McpResult<Json> Client::request(std::string_view method, const Json& extraParams
     if (const auto* notification = std::get_if<JsonRpcNotification>(&parsed)) {
       // subscribe() resolves on the server's acknowledgment for this request.
       if (awaitAck_ && notification->method == "notifications/subscriptions/acknowledged") {
-        const Json subId =
-            notification->params["_meta"][std::string(kMetaSubscriptionId)];
+        const Json subId = member(member(notification->params, "_meta"), kMetaSubscriptionId);
         if (subId.isString() || subId.isNumber()) {
           awaitAck_ = false;
           if (subId.toString() == idString) return Ok(notification->params);
@@ -100,7 +100,7 @@ McpResult<Json> Client::request(std::string_view method, const Json& extraParams
       if (res->id == id) return Ok(res->result);
       // A result carrying a subscriptionId closes that subscription
       // gracefully (basic/patterns/subscriptions.md "Graceful Closure").
-      const Json subId = res->result["_meta"][std::string(kMetaSubscriptionId)];
+      const Json subId = member(member(res->result, "_meta"), kMetaSubscriptionId);
       if (onSubscriptionClosed_ && (subId.isString() || subId.isNumber())) {
         onSubscriptionClosed_(std::string(subId.toString()));
       }
@@ -122,10 +122,10 @@ McpResult<Json> Client::listTools(const std::string& cursor) {
   if (result.has_value()) {
     // Cache definitions for x-mcp-header mirroring.
     toolSchemas_.clear();
-    const Json tools = (*result)["tools"];
+    const Json tools = member(*result, "tools");
     if (tools.isArray()) {
       for (const auto& item : tools.toVector()) {
-        const Json name = item["name"];
+        const Json name = member(item, "name");
         if (name.isString()) toolSchemas_[std::string(name.toString())] = item;
       }
     }
@@ -163,42 +163,6 @@ McpResult<Json> Client::subscribe(const Json& filter) {
   return r;
 }
 
-namespace {
-
-// Collects values at properties-chains annotated with "x-mcp-header".
-// Only statically reachable chains qualify (properties keys only).
-void collectHeaderParams(const Json& schema, const Json& args,
-                         const std::vector<std::string>& path,
-                         std::vector<std::pair<std::string, std::string>>& out) {
-  if (!schema.isObject() || !args.isObject()) return;
-  const Json properties = schema["properties"];
-  if (!properties.isObject()) return;
-  for (const auto& key : properties.getAllKeys().toVector()) {
-    const std::string keyStr(key.toString());
-    const Json prop = properties[keyStr];
-    const Json annotation = prop["x-mcp-header"];
-    if (annotation.isString() && !annotation.toString().empty()) {
-      // Read the value at this exact path in the arguments.
-      Json node = args;
-      for (const auto& seg : path) node = node[seg];
-      const Json value = node[keyStr];
-      if (value.isError() || value.isNull()) continue;  // absent -> omit header
-      std::string text;
-      if (value.isString()) text = std::string(value.toString());
-      else if (value.isNumber()) text = std::to_string(value.toInt64());
-      else if (value.isFalse()) text = "false";
-      else if (value.isTrue()) text = "true";
-      if (!text.empty()) out.emplace_back(std::string(annotation.toString()), std::move(text));
-    }
-    // Descend through properties chains only.
-    std::vector<std::string> nextPath = path;
-    nextPath.push_back(keyStr);
-    collectHeaderParams(prop, args[keyStr], nextPath, out);
-  }
-}
-
-}  // namespace
-
 void Client::mirrorHeaderParams(const std::string& toolName, const Json& arguments) {
   // Clear headers mirrored for the previous call.
   for (const auto& h : lastParamHeaders_) transport_->setHeader(h, "");
@@ -206,11 +170,11 @@ void Client::mirrorHeaderParams(const std::string& toolName, const Json& argumen
 
   auto it = toolSchemas_.find(toolName);
   if (it == toolSchemas_.end()) return;  // unknown tool -> nothing to mirror
-  const Json inputSchema = it->second["inputSchema"];
+  const Json inputSchema = member(it->second, "inputSchema");
   if (!inputSchema.isObject()) return;
 
   std::vector<std::pair<std::string, std::string>> params;
-  collectHeaderParams(inputSchema, arguments, {}, params);
+  detail::collectHeaderParams(inputSchema, arguments, {}, params);
   for (auto& [headerName, value] : params) {
     const std::string wireName = "Mcp-Param-" + headerName;
     transport_->setHeader(wireName, detail::encodeHeaderValue(value));

@@ -384,5 +384,24 @@ server.run(StdioTransport{});     // 或 server.serve_http("0.0.0.0", 8080)
 
 **M3 验收**：9/9 CTest 全绿（新增 test_client 8 用例、test_http_e2e 7 用例——真 httplib 服务器/客户端 loopback 对跑：discover/callTool/readResource/404/405/403/-32020/SSE 订阅流 ack+通知+过滤）。零警告。
 
+### 2026-09-21 Update 7 — M4 完成（schema 校验器 + completions + Cacheable）＋ zjson 深搜隐患的系统性清除
+
+**交付**：
+
+- **JSON Schema 2020-12 校验器**（`mcp/schema.hpp`）：type/enum/const、数值边界（minimum/maximum/exclusive*/multipleOf）、字符串（minLength/maxLength/pattern）、对象（required/properties/additionalProperties/patternProperties/min-maxProperties）、数组（items 单值与 tuple/uniqueItems/min-maxItems）、组合（allOf/anyOf/oneOf/not）、本地 `$ref`（JSON Pointer + `~0/~1` 转义，远程 ref 一律拒绝）、布尔 schema。**资源边界**：深度 64、检查次数 10000 封顶（规范防 schema DoS 的 SHOULD 落实），超限即失败而非宽松放行。
+- **server 集成**：tools/call 按 tool 的 inputSchema 校验 arguments（违规 → -32602）；`completion/complete` 路由 + completions 能力 + `Builder::completions(handler)`；`Builder::listCache(ttlMs, scope)` 给 `*\/list` 加 CacheableResult 的 ttlMs/cacheScope。
+- **M3 缺口补齐**：服务端对 `Mcp-Param-*` 镜像头做 MUST 校验（按注册表的 tool schema 反查注解路径，缺失/不匹配/多余头 → 400 + -32020）；`x-mcp-header` 注解遍历抽成 client/server 共用的 `header_params.h`。
+- `member()` 进公共 API（见下）。
+
+**★ zjson operator[] 深搜回退——系统性隐患（用户要求重点记录，已入持久记忆库）**：
+
+- **现象**：schema 校验器在 `{"anyOf":[...]}` 对象上取 `schema["type"]`，竟拿到嵌套在数组内的 `"type":"string"`——anyOf 被跳过、直接拿子 schema 校验，顺序相关、深浅难排查。
+- **根因**：zjson 的 `operator[]` 是**故意设计**为"直接成员优先，否则 `findPtrDeep` 全树深搜"（源码注释明示）。这对 zorm 的扁平用法无害，但协议层探测"可能缺失"的成员时会误读嵌套数据。同类的系统性暴露点：`doc["id"]` 会拿到 `params.id`、`params["name"]` 会拿到 `_meta.clientInfo.name`。
+- **修复**：新公共 helper **`mcp::member(obj, key)`**（直接成员或 Null，绝不深搜，基于 `directMemberPtr`），并**全库清扫**了 jsonrpc/types/server/transport_http/client/header_params 六处的所有"可能缺失"的成员读取。`contains()` 本身就是直接语义，保持不变。
+- **配套坑**：absent 哨兵不能用 `Json("null")`——嗅探约定把它变成字符串 "null"（`{`/`[` 开头才解析）——必须 `Json(nullptr)`（真正的 Null 节点）。
+- **经验**：引入第三方库时，"多做的语义"（deep-search fallback）和"少做的语义"一样危险；探测型读取必须显式选择直接/深度语义。此条已写入 `~/.claude/projects/D--codes-zorm/memory/zjson-operator-deep-search-trap.md`。
+
+**M4 验收**：10/10 CTest 全绿零警告（新增 test_schema 12 用例；server 扩展 inputSchema 强制/completion/缓存提示用例）。
+
 ---
 *文档维护规则：每个里程碑完成后，把遇到的偏差、性能实测数字、被否决的设计记录到对应用节下新增「Update YYYY-MM-DD」条目，原文不删。*

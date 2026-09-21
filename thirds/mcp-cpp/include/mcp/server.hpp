@@ -98,6 +98,10 @@ class Server {
   const Json& serverCapabilities() const { return capabilities_; }
   const std::vector<std::string>& supportedVersions() const { return supported_; }
 
+  // The wire-form definition of a registered tool (Error Json if unknown).
+  // Used by the HTTP transport to validate Mcp-Param-* mirrored headers.
+  Json findToolDefinition(const std::string& name) const;
+
   // --- subscriptions ----------------------------------------------------------
   // processLine handles subscriptions/listen on the current channel (stdio:
   // acknowledged then later notifications as plain lines). Stream transports
@@ -148,6 +152,9 @@ class Server {
   std::string instructions_;
   int pageSize_ = 0;          // 0 = no pagination on *\/list
   long discoverTtlMs_ = 0;    // 0 = discover result immediately stale
+  long listTtlMs_ = -1;       // -1 = no CacheableResult on lists
+  std::string listCacheScope_ = "public";
+  Handler completionsHandler_;
   std::string name_ = "mcp-cpp-server";
   std::string version_ = "0.1.0";
 
@@ -182,8 +189,16 @@ class Builder {
   // Registers a prompt and advertises the prompts capability.
   Builder& prompt(Json definition, Handler handler);
 
-  // Convenience: a text tool with no schema enforcement (M4 adds validation).
+  // Convenience: a text tool whose inputSchema is {"type":"object"}; the
+  // server validates arguments against it on tools/call (M4).
   Builder& simpleTool(std::string toolName, std::string description, Handler handler);
+
+  // Registers the completion/complete handler and advertises the completions
+  // capability. The handler receives the full params (ref + argument).
+  Builder& completions(Handler handler);
+
+  // Adds ttlMs/cacheScope (CacheableResult) to *\/list responses.
+  Builder& listCache(long ttlMs, std::string cacheScope = "public");
 
   std::shared_ptr<Server> build();
 

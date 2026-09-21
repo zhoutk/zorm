@@ -31,12 +31,12 @@ struct Envelope {
 
 Envelope readEnvelope(const Json& doc) {
   Envelope e;
-  e.jsonrpc = doc["jsonrpc"];
-  e.id = doc["id"];
-  e.method = doc["method"];
-  e.params = doc["params"];
-  e.result = doc["result"];
-  e.error = doc["error"];
+  e.jsonrpc = member(doc, "jsonrpc");
+  e.id = member(doc, "id");
+  e.method = member(doc, "method");
+  e.params = member(doc, "params");
+  e.result = member(doc, "result");
+  e.error = member(doc, "error");
   return e;
 }
 
@@ -137,8 +137,8 @@ ParsedMessage parseMessage(std::string_view text) {
     return invalid("Invalid request: error must be an object", McpErrorCode::InvalidRequest,
                    std::move(id));
   }
-  const Json code = e.error["code"];
-  const Json message = e.error["message"];
+  const Json code = member(e.error, "code");
+  const Json message = member(e.error, "message");
   if (!code.isNumber() || static_cast<double>(code.toInt64()) != code.toDouble()) {
     return invalid("Invalid request: error.code must be an integer", McpErrorCode::InvalidRequest,
                    std::move(id));
@@ -151,7 +151,7 @@ ParsedMessage parseMessage(std::string_view text) {
   errRes.id = std::move(id);
   errRes.error.code = code.toInt64();
   errRes.error.message = std::string(message.toString());
-  const Json data = e.error["data"];
+  const Json data = member(e.error, "data");
   if (hasMember(e.error, "data")) errRes.error.data = data;
   return ParsedMessage(std::move(errRes));
 }

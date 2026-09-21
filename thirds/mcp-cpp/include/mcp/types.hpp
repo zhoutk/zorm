@@ -30,6 +30,12 @@ namespace mcp {
 
 using RequestId = std::variant<int64_t, std::string>;
 
+// DIRECT-member lookup: returns obj[key] when the key is an immediate
+// member, Null otherwise. Never deep-searches - zjson's operator[] falls
+// back to a deep search for missing keys, which misreads nested protocol
+// data (e.g. params.id vs. a request id). Protocol layer must use this.
+Json member(const Json& obj, std::string_view key);
+
 // Decodes a wire id value. Accepts strings and integral numbers only.
 std::optional<RequestId> decodeRequestId(const Json& v);
 
