@@ -33,6 +33,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -49,6 +50,30 @@ struct Ctx {
   const RequestMeta& meta;         // decoded params._meta
   const std::function<bool()>& isCancelled;  // true once notifications/cancelled names this request id
 };
+
+// ---- subscriptions -----------------------------------------------------------
+// The filter mirrors the spec's Notification Filter object; every field the
+// server honors is echoed in the acknowledgment.
+
+struct SubscriptionFilter {
+  bool toolsListChanged = false;
+  bool promptsListChanged = false;
+  bool resourcesListChanged = false;
+  std::vector<std::string> resourceUris;  // notifications/resources/updated
+};
+
+// Receives one wire line per notification (or the graceful-closure result).
+// Implementations must be safe to call from any thread that may publish.
+using NotifSink = std::function<void(const std::string& line)>;
+
+// Parses the spec's Notification Filter object from a subscriptions/listen
+// params value; serializes a filter back (the acknowledged subset).
+SubscriptionFilter parseSubscriptionFilter(const Json& params);
+Json subscriptionFilterToJson(const SubscriptionFilter& filter);
+
+// True when `method` has a server-side route (used by the HTTP transport for
+// the 404-vs-405 distinction required by the spec).
+bool isKnownMethod(std::string_view method);
 
 // A handler returns the full result object (including resultType when it
 // matters; the server injects "complete" when absent), or an error that
@@ -73,8 +98,29 @@ class Server {
   const Json& serverCapabilities() const { return capabilities_; }
   const std::vector<std::string>& supportedVersions() const { return supported_; }
 
+  // --- subscriptions ----------------------------------------------------------
+  // processLine handles subscriptions/listen on the current channel (stdio:
+  // acknowledged then later notifications as plain lines). Stream transports
+  // instead call registerSubscription with their own sink after validating.
+
+  // Registers a subscription and returns the acknowledged notification line
+  // (the caller sends it before or after registering - server-side ordering
+  // guarantees no notification precedes the acknowledgment).
+  std::string registerSubscription(const RequestId& id, const SubscriptionFilter& filter,
+                                   NotifSink sink);
+  // Removes without a closure message (transport dropped).
+  void removeSubscription(const std::string& subscriptionId);
+  // Sends the graceful-closure result through the sink, then removes.
+  void closeSubscription(const std::string& subscriptionId);
+
+  // Fan-out helpers (thread-safe). Matched subscriptions receive the
+  // notification stamped with their subscriptionId in _meta.
+  void notifyListChanged(const std::string& feature);  // "tools"|"prompts"|"resources"
+  void notifyResourceUpdated(const std::string& uri);
+
  private:
   Server() = default;
+  Server(Server&& other) noexcept;  // mutex members are default-constructed
 
   struct Registry {
     std::vector<Json> definitions;             // wire form, served by *\/list
@@ -107,6 +153,14 @@ class Server {
 
   // request id (string form) -> cancel flag
   std::map<std::string, std::shared_ptr<std::atomic_bool>> cancellations_;
+
+  struct Subscription {
+    SubscriptionFilter filter;
+    NotifSink sink;
+    RequestId id = RequestId(int64_t(0));  // original listen request id
+  };
+  std::map<std::string, Subscription> subscriptions_;
+  std::mutex subscriptionsMutex_;  // guards subscriptions_ (publish from any thread)
 };
 
 // ---- builder ---------------------------------------------------------------------
@@ -131,7 +185,7 @@ class Builder {
   // Convenience: a text tool with no schema enforcement (M4 adds validation).
   Builder& simpleTool(std::string toolName, std::string description, Handler handler);
 
-  Server build();
+  std::shared_ptr<Server> build();
 
  private:
   Server server_;

@@ -174,9 +174,9 @@ int runChildServer() {
     result.add("echoed", Json::str(c.params["arguments"]["text"].toString()));
     return Ok(std::move(result));
   });
-  Server server = b.build();
+  auto server = b.build();
   StdioTransport transport;
-  return server.run(transport).has_value() ? 0 : 1;
+  return server->run(transport).has_value() ? 0 : 1;
 }
 
 std::string makeMeta() {

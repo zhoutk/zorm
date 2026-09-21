@@ -34,6 +34,10 @@ class ITransport {
 
   // Flushes the output channel.
   virtual McpResult<void> flush() = 0;
+
+  // Optional per-message header injection (Streamable HTTP mirrored headers).
+  // No-op on transports without a header layer (stdio).
+  virtual void setHeader(std::string /*name*/, std::string /*value*/) {}
 };
 
 // Framing over arbitrary C++ streams. Skips empty/blank input lines (the

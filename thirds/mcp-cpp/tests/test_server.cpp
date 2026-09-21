@@ -23,9 +23,9 @@ struct Out {
 };
 
 // Drives one request through the server and decodes the (single) response.
-Out serveOnce(Server& server, const std::string& requestLine) {
+Out serveOnce(const std::shared_ptr<Server>& server, const std::string& requestLine) {
   MemTransport t({requestLine});
-  server.processLine(requestLine, t);
+  server->processLine(requestLine, t);
   EXPECT_EQ(t.output_.size(), 1u);
   Out o;
   if (t.output_.empty()) return o;
@@ -48,7 +48,7 @@ std::string makeRequest(const std::string& id, const std::string& method,
   return encodeRequest(RequestId(id), method, params);
 }
 
-Server makeToolServer() {
+std::shared_ptr<Server> makeToolServer() {
   Builder b;
   b.name("test").version("1.0");
   b.simpleTool("echo", "echoes", [](Ctx& c) -> McpResult<Json> {
@@ -78,7 +78,7 @@ TEST(ServerDiscover, ReturnsVersionsCapabilitiesAndCacheHints) {
   Builder b;
   b.name("disc").version("9.9").instructions("howto").discoverTtlMs(5000)
       .supports(ProtocolVersion::V2025_11_25).supports(ProtocolVersion::Latest);
-  Server server = b.build();
+  auto server = b.build();
 
   Out o = serveOnce(server, makeRequest("d1", "server/discover", Json(nullptr)));
   ASSERT_NE(o.result, nullptr);
@@ -101,7 +101,7 @@ TEST(ServerDiscover, ReturnsVersionsCapabilitiesAndCacheHints) {
 // ---- meta / version gates ----------------------------------------------------------
 
 TEST(ServerGates, MissingMetaIsInvalidParams) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   const std::string line =
       encodeRequest(RequestId(std::string("m1")), "tools/list", Json(nullptr));
   Out o = serveOnce(server, line);
@@ -110,7 +110,7 @@ TEST(ServerGates, MissingMetaIsInvalidParams) {
 }
 
 TEST(ServerGates, UnsupportedVersionListsSupported) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   Out o = serveOnce(server, makeRequest("v1", "tools/list", Json(nullptr), "2025-03-26"));
   ASSERT_NE(o.error, nullptr);
   EXPECT_EQ(o.error->error.code, -32022);
@@ -124,7 +124,7 @@ TEST(ServerGates, UnsupportedVersionAcceptedWhenConfigured) {
   Builder b;
   b.supports(ProtocolVersion::V2025_11_25).supports(ProtocolVersion::Latest);
   b.simpleTool("t", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({"ok":true})")); });
-  Server server = b.build();
+  auto server = b.build();
 
   Out o = serveOnce(server, makeRequest("v2", "tools/call",
                                         Json(R"({"name":"t"})"), "2025-11-25"));
@@ -133,23 +133,23 @@ TEST(ServerGates, UnsupportedVersionAcceptedWhenConfigured) {
 }
 
 TEST(ServerGates, UnknownMethodIsMethodNotFound) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   Out o = serveOnce(server, makeRequest("u1", "sampling/create", Json(nullptr)));
   ASSERT_NE(o.error, nullptr);
   EXPECT_EQ(o.error->error.code, -32601);
 }
 
 TEST(ServerGates, UnknownNotificationIsSilentlyIgnored) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   MemTransport t({});
-  server.processLine(encodeNotification("notifications/whatever", Json(nullptr)), t);
+  server->processLine(encodeNotification("notifications/whatever", Json(nullptr)), t);
   EXPECT_TRUE(t.output_.empty());
 }
 
 TEST(ServerGates, InvalidMessageGetsParseErrorWithoutId) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   MemTransport t({});
-  server.processLine("not json", t);
+  server->processLine("not json", t);
   ASSERT_EQ(t.output_.size(), 1u);
   ParsedMessage parsed = parseMessage(t.output_[0]);
   const auto* err = std::get_if<JsonRpcErrorResponse>(&parsed);
@@ -161,7 +161,7 @@ TEST(ServerGates, InvalidMessageGetsParseErrorWithoutId) {
 // ---- tools --------------------------------------------------------------------------
 
 TEST(ServerTools, ListAndCall) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   Out list = serveOnce(server, makeRequest("l1", "tools/list", Json(nullptr)));
   ASSERT_NE(list.result, nullptr);
   const Json tools = list.result->result["tools"];
@@ -177,7 +177,7 @@ TEST(ServerTools, ListAndCall) {
 }
 
 TEST(ServerTools, UnknownToolIsInvalidParams) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   Out o = serveOnce(server, makeRequest("c2", "tools/call", Json(R"({"name":"nope"})")));
   ASSERT_NE(o.error, nullptr);
   EXPECT_EQ(o.error->error.code, -32602);
@@ -186,14 +186,14 @@ TEST(ServerTools, UnknownToolIsInvalidParams) {
 TEST(ServerTools, CallWithoutAdvertisedCapabilityIsMethodNotFound) {
   // No tools registered -> tools capability never advertised.
   Builder b;
-  Server server = b.build();
+  auto server = b.build();
   Out o = serveOnce(server, makeRequest("c3", "tools/call", Json(R"({"name":"t"})")));
   ASSERT_NE(o.error, nullptr);
   EXPECT_EQ(o.error->error.code, -32601);
 }
 
 TEST(ServerTools, HandlerResultGetsResultTypeInjected) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   Out call = serveOnce(server, makeRequest("c4", "tools/call",
                                            Json(R"({"name":"echo","arguments":{"text":"x"}})")));
   ASSERT_NE(call.result, nullptr);
@@ -201,7 +201,7 @@ TEST(ServerTools, HandlerResultGetsResultTypeInjected) {
 }
 
 TEST(ServerTools, HandlerErrorBecomesErrorResponse) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   Out call = serveOnce(server, makeRequest("c5", "tools/call", Json(R"({"name":"fail"})")));
   ASSERT_NE(call.error, nullptr);
   EXPECT_EQ(call.error->error.code, -32602);  // handler's own InvalidParams
@@ -237,7 +237,7 @@ TEST(ServerRegistrys, ResourcesAndPrompts) {
              result.add("messages", std::move(messages));
              return Ok(std::move(result));
            });
-  Server server = b.build();
+  auto server = b.build();
 
   Out rl = serveOnce(server, makeRequest("r1", "resources/list", Json(nullptr)));
   ASSERT_NE(rl.result, nullptr);
@@ -267,12 +267,12 @@ TEST(ServerRegistrys, ResourcesAndPrompts) {
 // ---- cancellation ----------------------------------------------------------------------
 
 TEST(ServerCancellation, CancelledBeforeRequestIsObserved) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   // notifications/cancelled names id "cancel-1" before the matching request.
   Json cancelParams;
   cancelParams.add("requestId", Json::str("cancel-1"));
   MemTransport t({});
-  server.processLine(encodeNotification("notifications/cancelled", cancelParams), t);
+  server->processLine(encodeNotification("notifications/cancelled", cancelParams), t);
   EXPECT_TRUE(t.output_.empty());  // never answered
 
   Out o = serveOnce(server, makeRequest("cancel-1", "tools/call",
@@ -289,7 +289,7 @@ TEST(ServerPagination, CursorPages) {
   for (const char* n : {"t1", "t2", "t3"}) {
     b.simpleTool(n, "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({})")); });
   }
-  Server server = b.build();
+  auto server = b.build();
 
   Out p1 = serveOnce(server, makeRequest("pg1", "tools/list", Json(nullptr)));
   ASSERT_NE(p1.result, nullptr);
@@ -317,14 +317,14 @@ TEST(ServerPagination, CursorPages) {
 // ---- run loop ---------------------------------------------------------------------------------
 
 TEST(ServerRun, ProcessesUntilEof) {
-  Server server = makeToolServer();
+  auto server = makeToolServer();
   std::vector<std::string> in = {
       makeRequest("1", "server/discover", Json(nullptr)),
       encodeNotification("notifications/whatever", Json(nullptr)),  // no reply
       makeRequest("2", "tools/list", Json(nullptr)),
   };
   MemTransport t(in);
-  const McpResult<void> r = server.run(t);
+  const McpResult<void> r = server->run(t);
   ASSERT_TRUE(r.has_value());          // EOF is graceful
   EXPECT_EQ(t.output_.size(), 2u);     // notification produced no output
 }

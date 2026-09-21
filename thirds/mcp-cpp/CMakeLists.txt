@@ -49,7 +49,10 @@ add_library(mcp STATIC
   src/types.cpp
   src/jsonrpc.cpp
   src/transport.cpp
-  src/server.cpp)
+  src/server.cpp
+  src/client.cpp
+  src/base64.cpp
+  src/transport_http.cpp)
 add_library(mcp::mcp ALIAS mcp)
 
 target_include_directories(mcp PUBLIC
@@ -66,6 +69,24 @@ else()
   target_compile_options(mcp PRIVATE -fsigned-char)
 endif()
 target_compile_options(mcp PRIVATE ${MCP_CXX_WARNINGS})
+
+# ---- Streamable HTTP (httplib) ----------------------------------------------
+# Skipped entirely when MCP_DISABLE_HTTP is on; degrades to a pure-stdio
+# build with a warning when httplib is unavailable.
+if(NOT MCP_DISABLE_HTTP)
+  if(NOT TARGET httplib)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../httplib/CMakeLists.txt")
+      add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../httplib" httplib-build)
+    endif()
+  endif()
+  if(TARGET httplib)
+    target_compile_definitions(mcp PUBLIC MCP_HAS_HTTP)
+    target_link_libraries(mcp PUBLIC httplib)
+    message(STATUS "mcp-cpp: HTTP transport enabled (httplib)")
+  else()
+    message(WARNING "mcp-cpp: httplib not found, building without HTTP transport")
+  endif()
+endif()
 
 # ---- examples ---------------------------------------------------------------
 
@@ -105,15 +126,24 @@ if(MCP_BUILD_TESTS)
   add_executable(mcp_test_types tests/test_types.cpp)
   add_executable(mcp_test_transport tests/test_transport.cpp)
   add_executable(mcp_test_server tests/test_server.cpp)
+  add_executable(mcp_test_client tests/test_client.cpp)
   # Owns its main(): doubles as the stdio e2e child server.
   add_executable(mcp_test_stdio_e2e tests/test_stdio_e2e.cpp)
   foreach(t mcp_test_version mcp_test_error mcp_test_jsonrpc mcp_test_types mcp_test_transport
-           mcp_test_server)
+           mcp_test_server mcp_test_client)
     target_link_libraries(${t} PRIVATE mcp gtest gtest_main)
     target_compile_options(${t} PRIVATE ${MCP_CXX_WARNINGS})
     add_test(NAME ${t} COMMAND ${t})
     list(APPEND MCP_TEST_EXECUTABLES ${t})
   endforeach()
+  if(TARGET httplib)
+    add_executable(mcp_test_http_e2e tests/test_http_e2e.cpp)
+    target_link_libraries(mcp_test_http_e2e PRIVATE mcp gtest gtest_main)
+    target_compile_options(mcp_test_http_e2e PRIVATE ${MCP_CXX_WARNINGS})
+    add_test(NAME mcp_test_http_e2e COMMAND mcp_test_http_e2e)
+    list(APPEND MCP_TEST_EXECUTABLES mcp_test_http_e2e)
+  endif()
+
   target_link_libraries(mcp_test_stdio_e2e PRIVATE mcp gtest)
   target_compile_options(mcp_test_stdio_e2e PRIVATE ${MCP_CXX_WARNINGS})
   add_test(NAME mcp_test_stdio_e2e COMMAND mcp_test_stdio_e2e)

@@ -359,5 +359,30 @@ server.run(StdioTransport{});     // 或 server.serve_http("0.0.0.0", 8080)
 
 **M2 验收**：7/7 CTest 全绿（新增 test_server 30+ 用例、test_stdio_e2e）。**test_stdio_e2e 是真子进程端到端**：测试二进制以 `--mcp-serve-child` 参数自启为 MCP server（Windows CreateProcess + 匿名管道 / POSIX fork+execv），走真实 OS 管道验证 discover/tools/list/tools/call 三连 + stdin EOF 优雅关停。`minimal_server` 手工冒烟通过（管道喂数据→正确回包），Inspector 对接留待用户在交互终端验证（`npx @modelcontextprotocol/inspector build/thirds/mcp-cpp/minimal_server.exe`）。
 
+### 2026-09-21 Update 6 — M3 完成（client + Streamable HTTP + subscriptions）
+
+**规范输入**（streamable-http.md + subscriptions.md 全文精读）：
+
+- 2026 版 HTTP 是 **POST-only 单端点**：GET 流与 Mcp-Session-Id 已删（GET/DELETE 回 405）；未知方法 **404 + -32601**（与 legacy HTTP+SSE 服务器空体 404 相区分）；通知 POST → **202 无体**；请求 → application/json 单对象或 SSE 流。
+- **头镜像**：`MCP-Protocol-Version`（必须与 body `_meta` 一致）、`Mcp-Method`（全请求）、`Mcp-Name`（tools/call、resources/read、prompts/get，取 params.name/uri）缺失/不匹配 → **400 + -32020 HeaderMismatch**。不安全字符走 `=?base64?...?=` 哨兵编码。
+- **subscriptions/listen**：响应即长命 SSE 流；acknowledged 通知必须第一条且带 `io.modelcontextprotocol/subscriptionId`（值=请求 id）；后续通知按 filter 匹配（toolsListChanged/promptsListChanged/resourcesListChanged/resourceSubscriptions）；优雅关闭 = 对原请求回一个带 subscriptionId 的 result。
+
+**实现**：
+
+- **Client**（传输无关）：id 关联、通知穿插回调、JSON-RPC 错误 → McpError（data 保留，-32022 的 supported 列表可读）、MRTR：`input_required` 结果原样上浮 + `callTool(..., inputResponses)` 重试自动带新 id、subscribe 在 ack 通知处返回（结果响应永远不来）、`onSubscriptionClosed` 收优雅关闭、`cancel` 发 notifications/cancelled。每次请求自动带 `_meta`（版本/能力/clientInfo）——无状态协议的客户端义务。
+- **HttpServerTransport**：Origin 校验钩子（默认拒非 localhost）、全头校验链、202/404/405/400 分流、application/json 响应；subscriptions/listen 升级为 SSE（`X-Accel-Buffering: no`、15s 注释 keep-alive、Pump 队列 + condvar），`Server::notifyListChanged/notifyResourceUpdated/closeSubscription` 从任意线程 fan-out。
+- **HttpClientTransport**：每消息一个 POST；派生头自动算（含 base64 哨兵）；SSE 响应在**后台线程 + 独立连接**流式接收（避免长命 POST 阻塞客户端循环），事件行入队供 read() 消费；read() 阻塞等待（瞬时队空 ≠ EOF）；**x-mcp-header 镜像**：listTools 缓存 tool schema，callTool 时沿 properties 静态链收集注解参数值并编码进 `Mcp-Param-*` 头（ITransport 加默认空 setHeader 虚方法，stdio 传输天然 no-op）。
+- **Server 变更**：`build()` 返回 `shared_ptr<Server>`（mutex 成员禁拷贝/移动）；新增 Server move 构造（mutex 默认构造）；订阅注册表 + 线程安全 fan-out。
+
+**踩坑（3 个都记进测试）**：
+
+1. **httplib stop() 死锁**：`svr.stop()` 先 join 工作线程、`is_running()` 在 join 后才清位——SSE provider 若以 `is_running()` 为循环条件就互相等待。解法：provider 用**自己的** atomic 停止位，stop() 先置位再 svr.stop()；Pump 注册表让 stop 即时 close 每个订阅流。
+2. **detach 的服务线程**生命周期：Fixture 析构后线程仍引用成员 → 悬垂挂起。改为保存线程 + stop 后 join。
+3. Python 批量替换把 `\n` 写成真实换行进了 C++ 字符串字面量（两处），靠编译错误当场暴露——以后这类替换要用 Edit 工具核对。
+
+**已知缺口（记录，M4 补）**：服务端对 `Mcp-Param-*` 头与 body 的 MUST 校验未实现（需按注册表的 tool schema 反查注解路径）；客户端镜像已实现。
+
+**M3 验收**：9/9 CTest 全绿（新增 test_client 8 用例、test_http_e2e 7 用例——真 httplib 服务器/客户端 loopback 对跑：discover/callTool/readResource/404/405/403/-32020/SSE 订阅流 ack+通知+过滤）。零警告。
+
 ---
 *文档维护规则：每个里程碑完成后，把遇到的偏差、性能实测数字、被否决的设计记录到对应用节下新增「Update YYYY-MM-DD」条目，原文不删。*

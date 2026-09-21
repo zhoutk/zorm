@@ -17,6 +17,7 @@ struct MethodRoute {
 
 constexpr MethodRoute kRoutes[] = {
     {"server/discover", "", ""},
+    {"subscriptions/listen", "", ""},
     {"tools/list", "tools", "tools"},
     {"tools/call", "tools", "tools"},
     {"resources/list", "resources", "resources"},
@@ -51,6 +52,51 @@ const MethodRoute* findRoute(std::string_view method) {
 
 }  // namespace
 
+SubscriptionFilter parseSubscriptionFilter(const Json& obj) {
+  SubscriptionFilter f;
+  if (!obj.isObject()) return f;
+  const Json notifications = obj["notifications"];
+  if (!notifications.isObject()) return f;
+  if (notifications["toolsListChanged"].isTrue()) f.toolsListChanged = true;
+  if (notifications["promptsListChanged"].isTrue()) f.promptsListChanged = true;
+  if (notifications["resourcesListChanged"].isTrue()) f.resourcesListChanged = true;
+  const Json uris = notifications["resourceSubscriptions"];
+  if (uris.isArray()) {
+    for (const auto& item : uris.toVector()) {
+      f.resourceUris.emplace_back(item.toString());
+    }
+  }
+  return f;
+}
+
+Json subscriptionFilterToJson(const SubscriptionFilter& f) {
+  Json n;
+  if (f.toolsListChanged) n.add("toolsListChanged", Json(true));
+  if (f.promptsListChanged) n.add("promptsListChanged", Json(true));
+  if (f.resourcesListChanged) n.add("resourcesListChanged", Json(true));
+  if (!f.resourceUris.empty()) {
+    Json uris = Json("[]");
+    for (const auto& uri : f.resourceUris) uris.push_back(Json::str(uri));
+    n.add("resourceSubscriptions", std::move(uris));
+  }
+  return n;
+}
+
+Server::Server(Server&& other) noexcept
+    : tools_(std::move(other.tools_)),
+      resources_(std::move(other.resources_)),
+      prompts_(std::move(other.prompts_)),
+      capabilities_(std::move(other.capabilities_)),
+      supported_(std::move(other.supported_)),
+      supportedSet_(std::move(other.supportedSet_)),
+      instructions_(std::move(other.instructions_)),
+      pageSize_(other.pageSize_),
+      discoverTtlMs_(other.discoverTtlMs_),
+      name_(std::move(other.name_)),
+      version_(std::move(other.version_)),
+      cancellations_(std::move(other.cancellations_)),
+      subscriptions_(std::move(other.subscriptions_)) {}
+
 // ---- dispatch loop -----------------------------------------------------------
 
 McpResult<void> Server::run(ITransport& transport) {
@@ -76,8 +122,10 @@ void Server::processLine(const std::string& line, ITransport& out) {
       const Json requestId = notification->params["requestId"];
       auto id = decodeRequestId(requestId);
       if (id) {
+        const std::string key = idToString(*id);
         auto flag = std::make_shared<std::atomic_bool>(true);
-        cancellations_[idToString(*id)] = flag;
+        cancellations_[key] = flag;
+        closeSubscription(key);  // cancelled subscription ends with a closure result
       }
     }
     // Notifications MUST NOT be answered; unknown ones are ignored.
@@ -117,6 +165,24 @@ void Server::processLine(const std::string& line, ITransport& out) {
         req.id, toErrorValue(McpErrorCode::MethodNotFound,
                              "Method not found: " + req.method)));
     return;
+  }
+
+  if (req.method == "subscriptions/listen") {
+    const SubscriptionFilter filter = parseSubscriptionFilter(req.params);
+    const std::string subscriptionId = idToString(req.id);
+    auto sink = [&out](const std::string& line) { (void)out.write(line); };
+    {
+      std::lock_guard<std::mutex> lock(subscriptionsMutex_);
+      subscriptions_[subscriptionId] = Subscription{filter, sink, req.id};
+    }
+    // Acknowledgment MUST be the first message for this subscription.
+    Json ackParams;
+    Json ackMeta;
+    ackMeta.add(std::string(kMetaSubscriptionId), encodeRequestId(req.id));
+    ackParams.add("_meta", std::move(ackMeta));
+    ackParams.add("notifications", subscriptionFilterToJson(filter));
+    (void)out.write(encodeNotification("notifications/subscriptions/acknowledged", ackParams));
+    return;  // no JSON-RPC response: the stream stays open
   }
 
   // Cancellation flag for this request. Reuse an existing slot: if a
@@ -253,6 +319,81 @@ McpResult<Json> Server::handleToolCall(const JsonRpcRequest& req, const RequestM
 }
 
 
+std::string Server::registerSubscription(const RequestId& id, const SubscriptionFilter& filter,
+                                         NotifSink sink) {
+  const std::string subscriptionId = idToString(id);
+  std::lock_guard<std::mutex> lock(subscriptionsMutex_);
+  subscriptions_[subscriptionId] = Subscription{filter, std::move(sink), id};
+  return subscriptionId;
+}
+
+void Server::removeSubscription(const std::string& subscriptionId) {
+  std::lock_guard<std::mutex> lock(subscriptionsMutex_);
+  subscriptions_.erase(subscriptionId);
+}
+
+void Server::closeSubscription(const std::string& subscriptionId) {
+  NotifSink sink;
+  RequestId id = RequestId(int64_t(0));
+  {
+    std::lock_guard<std::mutex> lock(subscriptionsMutex_);
+    auto it = subscriptions_.find(subscriptionId);
+    if (it == subscriptions_.end()) return;
+    sink = it->second.sink;
+    id = it->second.id;
+    subscriptions_.erase(it);
+  }
+  // Graceful closure: the result response to the original listen request,
+  // carrying the subscriptionId in _meta.
+  Json result;
+  result.add(std::string(kResultTypeKey), Json::str(std::string(kResultTypeComplete)));
+  Json meta;
+  meta.add(std::string(kMetaSubscriptionId), encodeRequestId(id));
+  result.add("_meta", std::move(meta));
+  if (sink) (void)sink(encodeResultResponse(id, result));
+}
+
+void Server::notifyListChanged(const std::string& feature) {
+  std::map<std::string, Subscription> snapshot;
+  {
+    std::lock_guard<std::mutex> lock(subscriptionsMutex_);
+    snapshot = subscriptions_;
+  }
+  const std::string method = "notifications/" + feature + "/list_changed";
+  for (auto& [id, sub] : snapshot) {
+    const bool match = (feature == "tools" && sub.filter.toolsListChanged) ||
+                       (feature == "prompts" && sub.filter.promptsListChanged) ||
+                       (feature == "resources" && sub.filter.resourcesListChanged);
+    if (!match || !sub.sink) continue;
+    Json params;
+    Json meta;
+    meta.add(std::string(kMetaSubscriptionId), Json::str(id));
+    params.add("_meta", std::move(meta));
+    (void)sub.sink(encodeNotification(method, params));
+  }
+}
+
+void Server::notifyResourceUpdated(const std::string& uri) {
+  std::map<std::string, Subscription> snapshot;
+  {
+    std::lock_guard<std::mutex> lock(subscriptionsMutex_);
+    snapshot = subscriptions_;
+  }
+  for (auto& [id, sub] : snapshot) {
+    bool match = false;
+    for (const auto& candidate : sub.filter.resourceUris) {
+      if (candidate == uri) { match = true; break; }
+    }
+    if (!match || !sub.sink) continue;
+    Json params;
+    params.add("uri", Json::str(uri));
+    Json meta;
+    meta.add(std::string(kMetaSubscriptionId), Json::str(id));
+    params.add("_meta", std::move(meta));
+    (void)sub.sink(encodeNotification("notifications/resources/updated", params));
+  }
+}
+
 bool Server::versionSupported(std::string_view wire) const {
   const auto v = fromString(wire);
   return v.has_value() && supportedSet_.count(*v) > 0;
@@ -335,7 +476,7 @@ Builder& Builder::simpleTool(std::string toolName, std::string description, Hand
   return tool(std::move(def), std::move(handler));
 }
 
-Server Builder::build() {
+std::shared_ptr<Server> Builder::build() {
   if (server_.supportedSet_.empty()) {
     supports(ProtocolVersion::Latest);
   }
@@ -348,8 +489,11 @@ Server Builder::build() {
       server_.supported_.emplace_back(std::string(toString(v)));
     }
   }
-  return server_;  // copy: registries and Json are value types
+  // std::mutex members forbid both copy and move: release from the heap.
+  return std::shared_ptr<Server>(new Server(std::move(server_)));
 }
+
+bool isKnownMethod(std::string_view method) { return findRoute(method) != nullptr; }
 
 }  // namespace server
 }  // namespace mcp

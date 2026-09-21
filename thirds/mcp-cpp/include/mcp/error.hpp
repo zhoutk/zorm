@@ -20,6 +20,8 @@
 //   }
 // ---------------------------------------------------------------------------
 
+#include <mcp/json.hpp>
+
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -66,6 +68,7 @@ constexpr bool isMcpReservedCode(int32_t code) noexcept {
 struct McpError {
   McpErrorCode code;
   std::string message;
+  Json data = Json(nullptr);  // structured payload (e.g. -32022 supported list)
 };
 
 // ---- result type -----------------------------------------------------------
