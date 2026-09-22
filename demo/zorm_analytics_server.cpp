@@ -36,6 +36,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <chrono>
 #include <vector>
 
 using namespace mcp;
@@ -789,7 +790,10 @@ struct PipeChild {
     if (inWrite) CloseHandle(inWrite);
     if (outRead) CloseHandle(outRead);
     if (pi.hProcess) {
-      WaitForSingleObject(pi.hProcess, 15000);
+      if (WaitForSingleObject(pi.hProcess, 5000) != WAIT_OBJECT_0) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 2000);
+      }
       CloseHandle(pi.hProcess);
       CloseHandle(pi.hThread);
     }
@@ -809,6 +813,12 @@ struct PipeChild {
       if (ch != '\r') out.push_back(ch);
     }
     return false;
+  }
+  void closeStdin() {
+    if (inWrite) {
+      CloseHandle(inWrite);
+      inWrite = nullptr;
+    }
   }
 };
 PipeChild spawnSelfChild() {
@@ -859,6 +869,12 @@ struct PipeChild {
     }
     return false;
   }
+  void closeStdin() {
+    if (inWrite >= 0) {
+      close(inWrite);
+      inWrite = -1;
+    }
+  }
 };
 PipeChild spawnSelfChild() {
   int inPipe[2], outPipe[2];
@@ -882,6 +898,28 @@ PipeChild spawnSelfChild() {
 }  // namespace
 #endif
 
+#ifdef _WIN32
+// Windows 10+ terminals support ANSI/VT once enabled on the stdout handle.
+void enableVirtualTerminal() {
+  HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD mode = 0;
+  if (GetConsoleMode(out, &mode)) {
+    SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+  }
+}
+#else
+void enableVirtualTerminal() {}
+#endif
+
+namespace demo_color {
+const char* kReset = "[0m";
+const char* kCyan = "[36m";
+const char* kGreen = "[32m";
+const char* kYellow = "[33m";
+const char* kMagenta = "[35m";
+const char* kBold = "[1m";
+}  // namespace demo_color
+
 // A minimal stdio transport over an OS-pipe child (the mcp-cpp client needs
 // an ITransport; this one is the "real pipes" binding for --demo).
 struct PipeTransport final : mcp::ITransport {
@@ -902,31 +940,51 @@ struct PipeTransport final : mcp::ITransport {
 };
 
 int runScriptedDemo(const std::shared_ptr<Server>&) {
-  std::cout << "\n=== Zorm Analytics MCP - self-driven demo ===\n\n";
+  using namespace demo_color;
+  enableVirtualTerminal();
+
+  std::cout << "\n" << kBold << "=== Zorm Analytics MCP - self-driven demo ===" << kReset << "\n";
+  std::cout << kCyan << "One AI assistant, many databases, zero SQL dialects.\n" << kReset;
+  std::cout << "(a real child MCP server over real OS pipes, driven by mcp-cpp's own client API)\n\n";
+
   PipeChild child = spawnSelfChild();
   PipeTransport transport(child);
-
   Client client("zorm-analytics-demo", "0.1.0");
   client.connect(transport);
 
-  // 1. server/discover
+  int step = 0;
+  auto headline = [&](const char* text) {
+    std::cout << "\n" << kBold << "[" << ++step << "] " << text << kReset << "\n";
+  };
+  auto report = [&](const char* label, const McpResult<Json>& r) {
+    std::cout << kGreen << "  -> ok" << kReset << "  " << label << "\n";
+    if (!r.has_value()) std::cout << kYellow << "  (failed: " << r.error().message << ")\n" << kReset;
+  };
+
+  // [1] discover
+  headline("server/discover - version negotiation, capabilities");
   auto disc = client.discover();
-  std::cout << "[1] server/discover -> "
-            << (disc.has_value() ? "ok" : "failed: " + disc.error().message) << "\n";
-  std::cout.flush();
+  report("supportedVersions + tools/resources/completions capabilities", disc);
 
-  // 2. tools/list
+  // [2] tools/list
+  headline("tools/list - the whole DB surface without any SQL");
   auto tools = client.listTools();
-  std::cout << "[2] tools/list -> " << (tools.has_value() ? "ok" : "failed") << "\n";
-  std::cout.flush();
+  if (tools.has_value()) {
+    const Json arr = member(*tools, "tools");
+    std::cout << kGreen << "  -> " << arr.size() << " tools:" << kReset << " ";
+    for (const auto& t : arr.toVector()) std::cout << t["name"].toString() << " ";
+    std::cout << "\n";
+  } else {
+    std::cout << kYellow << "  tools/list failed\n" << kReset;
+  }
 
-  // 3. db_list_tables on sqlite
+  // [3] db_list_tables
+  headline("db_list_tables(sqlite) - schema discovery");
   auto tables = client.callTool("db_list_tables", Json(R"({"db":"sqlite"})"));
-  std::cout << "[3] db_list_tables(sqlite) -> "
-            << (tables.has_value() ? tables->toString() : "failed") << "\n";
-  std::cout.flush();
+  report("orders / users / products", tables);
 
-  // 4. db_query: 2026 orders by region, summed amounts (sqlite)
+  // [4] smart query: group + sum
+  headline("db_query - natural semantics, no dialect: 2026 orders grouped by region");
   Json qargs;
   qargs.add("db", Json::str("sqlite"));
   qargs.add("table", Json::str("orders"));
@@ -934,26 +992,100 @@ int runScriptedDemo(const std::shared_ptr<Server>&) {
   qargs.add("group", Json::str("region"));
   qargs.add("sum", Json::str("amount"));
   auto query = client.callTool("db_query", qargs);
-  std::cout << "[4] db_query(sqlite orders 2026 by region, sum amount) ->\n"
-            << (query.has_value() ? query->toString() : "failed") << "\n";
-  std::cout.flush();
+  if (query.has_value()) {
+    const Json data = member(*query, "data");
+    for (const auto& row : data.toVector()) {
+      char sumBuf[64];
+      std::snprintf(sumBuf, sizeof(sumBuf), "%.2f", row["amount"].toDouble());
+      std::cout << "  " << kCyan << row["region"].toString() << kReset << ": "
+                << sumBuf << "\n";
+    }
+  } else {
+    std::cout << kYellow << "  db_query failed: " << query.error().message << "\n" << kReset;
+  }
 
-  // 5. db_query on jsonfile products price>100
+  // [5] cross-DB: jsonfile products filtered
+  headline("db_query on a DIFFERENT backend - same semantics (jsonfile products)");
   Json pargs;
   pargs.add("db", Json::str("jsonfile"));
   pargs.add("table", Json::str("products"));
   pargs.add("ins", Json(R"({"category":"electronics"})"));
   auto products = client.callTool("db_query", pargs);
-  std::cout << "[5] db_query(jsonfile electronics products) ->\n"
-            << (products.has_value() ? products->toString() : "failed") << "\n";
-  std::cout.flush();
+  if (products.has_value()) {
+    const Json data = member(*products, "data");
+    std::cout << kGreen << "  -> " << data.size() << " electronics products" << kReset;
+    if (data.isArray() && data.size() > 0) {
+      std::cout << " (e.g. " << data[0]["name"].toString() << ")";
+    }
+    std::cout << "\n";
+  } else {
+    std::cout << kYellow << "  db_query failed: " << products.error().message << "\n" << kReset;
+  }
 
-  // 6. resources: db://schema/sqlite/orders
+  // [6] resources
+  headline("resources/read - the server describes its own schema");
   auto schema = client.readResource("db://schema/sqlite/orders");
-  std::cout << "[6] resources/read(db://schema/sqlite/orders) ->\n"
-            << (schema.has_value() ? schema->toString() : "failed") << "\n";
-  std::cout.flush();
+  if (schema.has_value()) {
+    const Json contents = member(*schema, "contents");
+    if (contents.isArray() && contents.size() > 0) {
+      std::cout << "  " << contents[0]["text"].toString() << "\n";
+    }
+  } else {
+    std::cout << kYellow << "  resources/read failed: " << schema.error().message << "\n" << kReset;
+  }
 
-  std::cout << "\n=== demo complete (writes/MRTR in milestone 2) ===\n";
+  // [7] MRTR write confirmation
+  headline("db_insert - writes need HUMAN confirmation (MRTR)");
+  Json args;
+  args.add("db", Json::str("jsonfile"));
+  args.add("table", Json::str("analytics"));
+  Json data;
+  data.add("note", Json::str("demo summary - regions compared"));
+  args.add("data", std::move(data));
+  auto first = client.callTool("db_insert", args);
+  if (first.has_value() && (*first)["resultType"].toString() == "input_required") {
+    const std::string state = (*first)["requestState"].toString();
+    std::cout << kYellow << "  server asks: " << kReset
+              << (*first)["inputRequests"].toString() << "\n";
+    std::cout << "  (the AI client would now show this to the human...)\n";
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::cout << kMagenta << "  human approves -> retry with inputResponses" << kReset << "\n";
+    Json retry;
+    retry.add("db", Json::str("jsonfile"));
+    retry.add("table", Json::str("analytics"));
+    Json data2;
+    data2.add("note", Json::str("demo summary - regions compared"));
+    retry.add("data", std::move(data2));
+    retry.add("requestState", Json::str(state));
+    Json responses;
+    Json confirm;
+    confirm.add("approved", Json(true));
+    responses.add("confirm", std::move(confirm));
+    retry.add("inputResponses", std::move(responses));
+    auto second = client.callTool("db_insert", retry);
+    report(second.has_value() ? "persisted to jsonfile" : "FAILED", second);
+  } else if (first.has_value()) {
+    std::cout << kYellow << "  (unexpected: executed without confirmation)\n" << kReset;
+  } else {
+    std::cout << kYellow << "  db_insert failed: " << first.error().message << "\n" << kReset;
+  }
+
+  // [8] count as proof
+  headline("db_count - the write is really there");
+  auto cnt = client.callTool("db_count", Json(R"({"db":"jsonfile","table":"analytics"})"));
+  std::cout << "  " << (cnt.has_value() ? cnt->toString() : "failed") << "\n";
+
+  // graceful shutdown
+  headline("stdin EOF - graceful shutdown");
+  child.closeStdin();
+#ifdef _WIN32
+  WaitForSingleObject(child.pi.hProcess, 5000);
+#else
+  waitpid(child.pid, nullptr, 0);
+#endif
+
+  std::cout << "\n" << kBold << "=== demo complete ===" << kReset << "\n";
+  std::cout << "Now connect a real AI client (see README_demo.md):\n";
+  std::cout << kCyan << "  claude mcp add zorm-analytics -- <path-to>/zorm_analytics_server.exe\n" << kReset;
   return 0;
 }
