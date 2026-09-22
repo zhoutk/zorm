@@ -22,11 +22,18 @@ add_executable(zorm_analytics_server
   demo_data.h)
 target_link_libraries(zorm_analytics_server PRIVATE mcp zormlib)
 
-# ---- e2e test (added in milestone 3) ----------------------------------------
+# ---- e2e test ---------------------------------------------------------------
 
-# if(BUILD_TESTING AND TARGET gtest)
-#   add_executable(mcp_test_zorm_analytics test_zorm_analytics.cpp)
-#   target_link_libraries(mcp_test_zorm_analytics PRIVATE mcp zormlib gtest)
-#   add_test(NAME mcp_test_zorm_analytics COMMAND mcp_test_zorm_analytics
-#       WORKING_DIRECTORY $<TARGET_FILE_DIR:mcp_test_zorm_analytics>)
-# endif()
+if(TARGET gtest)
+  add_executable(mcp_test_zorm_analytics test_zorm_analytics.cpp)
+  target_link_libraries(mcp_test_zorm_analytics PRIVATE mcp zormlib gtest gtest_main)
+  # The spawned server child needs the zorm runtime DLLs (libpq/sqlite3/
+  # dmdpi/...). The test prepends this dir to its own PATH before CreateProcess
+  # (ctest ENVIRONMENT escaping proved unreliable for PATH on Windows).
+  if(WIN32)
+    target_compile_definitions(mcp_test_zorm_analytics PRIVATE
+        ZORM_DLL_DIR="${CMAKE_SOURCE_DIR}/thirds/bin/win10")
+  endif()
+  add_test(NAME mcp_test_zorm_analytics COMMAND mcp_test_zorm_analytics
+      WORKING_DIRECTORY $<TARGET_FILE_DIR:mcp_test_zorm_analytics>)
+endif()
