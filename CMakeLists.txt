@@ -238,3 +238,11 @@ endif()
 # static lib; reuses googletest added above and the repo zjson. Its tests are
 # CTest-registered as mcp_test_version / mcp_test_error.
 add_subdirectory(./thirds/mcp-cpp)
+
+##--------------------- zorm analytics demo (demo/) ------------------------##
+# The zorm showcase: zorm is the protagonist, mcp-cpp is the third-party MCP
+# protocol library it links. Builds zorm_analytics_server (multi-backend MCP
+# demo) and zorm_server (single-backend minimal example).
+if(TARGET mcp)
+  add_subdirectory(./demo)
+endif()

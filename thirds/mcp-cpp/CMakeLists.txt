@@ -94,13 +94,6 @@ endif()
 add_executable(minimal_server examples/minimal_server.cpp)
 target_link_libraries(minimal_server PRIVATE mcp)
 
-# zorm integration example: built only inside the zorm repo, where the
-# zormlib target and its include dirs exist. Keeps the SDK itself zorm-free.
-if(TARGET zormlib)
-  add_executable(zorm_server examples/zorm_server.cpp)
-  target_link_libraries(zorm_server PRIVATE mcp zormlib)
-endif()
-
 # ---- benchmarks (not registered with CTest; run manually) --------------------
 
 add_executable(mcp_bench_parse bench/bench_parse.cpp)
