@@ -257,6 +257,19 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
   auto cnt = client.callTool("db_count", Json(R"({"db":"sqlite","table":"orders"})"));
   ASSERT_TRUE(cnt.has_value());
   EXPECT_NE((*cnt).toString().find("500"), std::string::npos);
+
+  // Negative paths: unknown db and unknown table are InvalidParams (-32602).
+  auto badDb = client.callTool("db_list_tables", Json(R"({"db":"oracle"})"));
+  ASSERT_FALSE(badDb.has_value());
+  EXPECT_EQ(badDb.error().code, McpErrorCode::InvalidParams);
+  auto badTable = client.callTool("db_count", Json(R"({"db":"sqlite","table":"nope"})"));
+  ASSERT_FALSE(badTable.has_value());
+  EXPECT_EQ(badTable.error().code, McpErrorCode::InvalidParams);
+  // Schema enforcement: size out of range -> rejected before the handler.
+  auto badSize = client.callTool(
+      "db_query", Json(R"({"db":"sqlite","table":"orders","size":100000})"));
+  ASSERT_FALSE(badSize.has_value());
+  EXPECT_EQ(badSize.error().code, McpErrorCode::InvalidParams);
 }
 
 TEST(ZormAnalyticsE2E, ResourcesAndCompletion) {

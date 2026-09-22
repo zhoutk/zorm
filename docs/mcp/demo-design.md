@@ -165,6 +165,8 @@ inputResponses.approved != true → 返回 complete + content 说明"已取消"�
 
 ## 三、详细实现计划（4 步，~4~6 天）
 
+> **执行状态（2026-09-22）：四步全部完成。** M1 `0d02c60`（多后端路由 + 智能查询）、M2 `9b941e7`+`978cb8e`（MRTR/completion + e2e 5 用例，修复递归 spawn 卡死）、M3 `6daab23`（自演示剧本 + run-demo 脚本 + README_demo）、M4 `e7fe4b7`（--http 纯 HTTP 模式）。后续补充：db_query 的 size/page schema 边界 + 负路径 e2e 断言。回归：mcp 11/11 + zorm local/utils/pool 全绿。
+
 ### 步骤 1：demo 核心闭环（~1.5 天）
 
 | # | 任务 | 产出 |
