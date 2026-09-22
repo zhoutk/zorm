@@ -134,7 +134,61 @@ TEST(RequestMeta, MissingRequiredFieldsAreInvalidParams) {
   auto r4 = decodeRequestMeta(Json(R"({"_meta":5})"));
   ASSERT_FALSE(r4.has_value());
 }
+TEST(RequestMeta, RelaxedDecodeServesPartialMeta) {
+  // No _meta at all: defaults + complete=false.
+  auto r1 = decodeRequestMetaRelaxed(Json(R"({"name":"t"})"));
+  ASSERT_TRUE(r1.has_value());
+  EXPECT_FALSE(r1->complete);
+  EXPECT_EQ(r1->protocolVersion, "2026-07-28");
+  EXPECT_TRUE(r1->clientCapabilities.isObject());
 
+  // Empty _meta object (what some AI clients send): served with defaults.
+  auto r2 = decodeRequestMetaRelaxed(Json(R"({"_meta":{}})"));
+  ASSERT_TRUE(r2.has_value());
+  EXPECT_FALSE(r2->complete);
+  EXPECT_EQ(r2->protocolVersion, "2026-07-28");
+
+  // Partial: only clientCapabilities present.
+  auto r3 = decodeRequestMetaRelaxed(
+      Json(R"({"_meta":{"io.modelcontextprotocol\/clientCapabilities":{"tools":{}}}})"));
+  ASSERT_TRUE(r3.has_value());
+  EXPECT_FALSE(r3->complete);
+  EXPECT_TRUE(capabilitiesInclude(r3->clientCapabilities, "tools"));
+
+  // Partial: only protocolVersion present.
+  auto r4 = decodeRequestMetaRelaxed(
+      Json(R"({"_meta":{"io.modelcontextprotocol\/protocolVersion":"2025-11-25"}})"));
+  ASSERT_TRUE(r4.has_value());
+  EXPECT_FALSE(r4->complete);
+  EXPECT_EQ(r4->protocolVersion, "2025-11-25");
+
+  // Complete meta: complete=true, fields preserved.
+  auto r5 = decodeRequestMetaRelaxed(
+      Json(R"({"_meta":{"io.modelcontextprotocol\/protocolVersion":"2025-06-18","io.modelcontextprotocol\/clientCapabilities":{"tools":{}}}})"));
+  ASSERT_TRUE(r5.has_value());
+  EXPECT_TRUE(r5->complete);
+  EXPECT_EQ(r5->protocolVersion, "2025-06-18");
+
+  // _meta present but not an object: still an error (nothing to fall back on).
+  auto r6 = decodeRequestMetaRelaxed(Json(R"({"_meta":5})"));
+  ASSERT_FALSE(r6.has_value());
+  EXPECT_EQ(r6.error().code, McpErrorCode::InvalidParams);
+}
+
+TEST(RequestMeta, RelaxedDecodeHandlesNullParams) {
+  // Parameterless methods (tools/list etc.) send params:null; legacy mode
+  // must serve them with defaults instead of failing.
+  auto r1 = decodeRequestMetaRelaxed(Json(nullptr));
+  ASSERT_TRUE(r1.has_value());
+  EXPECT_FALSE(r1->complete);
+  EXPECT_EQ(r1->protocolVersion, "2026-07-28");
+  EXPECT_TRUE(r1->clientCapabilities.isObject());
+
+  // Non-object, non-null params are still rejected.
+  auto r2 = decodeRequestMetaRelaxed(Json(R"(5)"));
+  ASSERT_FALSE(r2.has_value());
+  EXPECT_EQ(r2.error().code, McpErrorCode::InvalidParams);
+}
 TEST(RequestMeta, WireRoundtripThroughFullRequest) {
   // encode meta -> embed as params -> full request -> decode back.
   Json params = encodeRequestMeta("2026-07-28", Json(R"({"roots":{}})"), std::nullopt);

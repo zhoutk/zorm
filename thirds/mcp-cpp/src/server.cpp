@@ -169,28 +169,36 @@ void Server::processLine(const std::string& line, ITransport& out) {
   }
 
   // Stateless protocol: every request carries its own metadata. Dual-era
-  // relaxation: a request with NO _meta member at all is served with default
-  // metadata (legacy clients); an ILL-FORMED _meta still fails -32602.
-  auto meta = decodeRequestMeta(req.params);
-  if (!meta.has_value()) {
-    const bool hasMetaObject = member(req.params, "_meta").isObject();
-    if (acceptLegacy_ && !hasMetaObject) {
-      meta = RequestMeta{std::string(toString(ProtocolVersion::Latest)), Json(R"({})"),
-                         std::nullopt};
-    } else {
-      (void)out.write(encodeErrorResponse(req.id, toErrorValue(meta.error())));
-      return;
-    }
+  // relaxation: when legacy clients are accepted, a request with NO _meta
+  // member at all - or with a PARTIAL _meta (e.g. only clientCapabilities,
+  // or an empty object - some AI clients send "_meta":{}) - is served with
+  // default metadata instead of failing. Strict mode keeps the -32602 for
+  // any ill-formed _meta (the 2026-07-28 spec mandates those fields).
+  McpResult<RequestMeta> metaResult = acceptLegacy_
+      ? decodeRequestMetaRelaxed(req.params)
+      : decodeRequestMeta(req.params);
+  if (!metaResult.has_value()) {
+    (void)out.write(encodeErrorResponse(req.id, toErrorValue(metaResult.error())));
+    return;
+  }
+  RequestMeta meta = std::move(*metaResult);
+  if (!meta.complete && !acceptLegacy_) {
+    // Strict mode: partial metadata is invalid. (decodeRequestMeta already
+    // rejects it, so this is defensive for future callers.)
+    (void)out.write(encodeErrorResponse(
+        req.id, toErrorValue(McpErrorCode::InvalidParams,
+                             "request _meta is missing required protocol fields")));
+    return;
   }
 
-  if (!versionSupported(meta->protocolVersion)) {
+  if (!versionSupported(meta.protocolVersion)) {
     JsonRpcErrorValue v = toErrorValue(McpErrorCode::UnsupportedProtocolVersion,
                                        "Unsupported protocol version");
     Json data;
     Json versions = Json("[]");
     for (const auto& wire : supported_) versions.push_back(Json::str(std::string(wire)));
     data.add("supported", std::move(versions));
-    data.add("requested", Json::str(meta->protocolVersion));
+    data.add("requested", Json::str(meta.protocolVersion));
     v.data = std::move(data);
     (void)out.write(encodeErrorResponse(req.id, v));
     return;
@@ -229,7 +237,7 @@ void Server::processLine(const std::string& line, ITransport& out) {
   if (!cancelFlag) cancelFlag = std::make_shared<std::atomic_bool>(false);
   const std::function<bool()> cancelled = [cancelFlag] { return cancelFlag->load(); };
 
-  McpResult<Json> result = dispatchRequest(req, *meta, cancelled);
+  McpResult<Json> result = dispatchRequest(req, meta, cancelled);
   if (result.has_value()) {
     // Spec: servers implementing this version MUST include resultType on
     // every result. Handlers that forgot it get "complete".

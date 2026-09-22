@@ -316,6 +316,9 @@ TEST(ZormAnalyticsE2E, MrtrWriteConfirmation) {
   auto first = client.callTool("db_insert", args);
   ASSERT_TRUE(first.has_value());
   EXPECT_EQ((*first)["resultType"].toString(), "input_required");
+  // Claude Code validates every tools/call result as CallToolResult: content
+  // is mandatory even on input_required results. Guard against regression.
+  EXPECT_TRUE((*first)["content"].isArray());
   const std::string state = (*first)["requestState"].toString();
   EXPECT_FALSE(state.empty());
 

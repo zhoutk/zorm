@@ -61,6 +61,23 @@ Json textResult(const std::string& text) {
   return result;
 }
 
+// Wraps a structured tool result in the MCP-spec tools/call envelope:
+//   {"content":[{type:"text", text:"<json>"}], <structured fields>...}
+// The `content` array is REQUIRED by the spec (AI clients iterate it - a
+// bare structured result makes them fail with "r.content is not iterable").
+// The structured fields are also flattened at the top level so programmatic
+// clients (and the e2e tests) keep their old access paths.
+Json toolResult(const Json& structured) {
+  Json result = textResult(structured.toString());
+  if (structured.isObject()) {
+    for (const auto& k : structured.getAllKeys().toVector()) {
+      const std::string kk = k.toString();
+      result.add(kk, structured[kk]);
+    }
+  }
+  return result;
+}
+
 // Converts a zorm Json to the mcp Json by re-parsing its wire text.
 Json toMcpJson(const ZORM::Json& zj) {
   std::string err;
@@ -178,7 +195,7 @@ McpResult<Json> toolListTables(Ctx& c) {
   for (const auto& t : tables) out.push_back(Json::str(t));
   Json result;
   result.add("tables", std::move(out));
-  return Ok(std::move(result));
+  return Ok(toolResult(std::move(result)));
 }
 
 // db_query - the zorm smart query, all reserved params passed through.
@@ -277,7 +294,7 @@ McpResult<Json> toolQuery(Ctx& c) {
     return Err(McpErrorCode::InvalidParams,
                "query failed: " + rs["info"].toString());
   }
-  return Ok(toMcpJson(rs));
+  return Ok(toolResult(toMcpJson(rs)));
 }
 
 McpResult<Json> toolCount(Ctx& c) {
@@ -293,7 +310,7 @@ McpResult<Json> toolCount(Ctx& c) {
   const ZORM::Json rs = db->select(table, params);
   if (rs["status"].toInt() != 200)
     return Err(McpErrorCode::InvalidParams, "count failed: " + rs["info"].toString());
-  return Ok(toMcpJson(rs));
+  return Ok(toolResult(toMcpJson(rs)));
 }
 
 // ---- MRTR write confirmation ------------------------------------------------
@@ -302,6 +319,13 @@ McpResult<Json> toolCount(Ctx& c) {
 Json inputRequiredConfirm(const std::string& requestState, const std::string& message) {
   Json result;
   result.add(std::string(kResultTypeKey), Json::str(std::string(kResultTypeInputRequired)));
+  // CallToolResult requires content even for input_required results.
+  Json content = Json(R"([])");
+  Json text;
+  text.add("type", Json::str("text"));
+  text.add("text", Json::str(message));
+  content.add(text);
+  result.add("content", std::move(content));
   result.add("requestState", Json::str(requestState));
   Json inputRequests;
   Json confirm;
@@ -414,7 +438,7 @@ McpResult<Json> executeWrite(const std::string& dbName, const std::string& table
     srv->notifyResourceUpdated("db://schema/" + dbName + "/" + table);
     srv->notifyListChanged("resources");
   }
-  return Ok(toMcpJson(rs));
+  return Ok(toolResult(toMcpJson(rs)));
 }
 
 McpResult<Json> toolInsert(Ctx& c) { return stageWrite(c, "insert"); }

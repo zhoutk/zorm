@@ -441,16 +441,53 @@ TEST(ServerLegacy, RequestsWithoutMetaServedWhenEnabled) {
   ASSERT_NE(o.result, nullptr);
   EXPECT_EQ(o.result->result["ok"].isTrue(), true);
 
-  // ILL-FORMED _meta (present but missing required fields) still fails.
-  Out bad = serveOnce(server, encodeRequest(RequestId(int64_t(2)), "tools/call",
-                                            Json(R"({"name":"t","_meta":{"foo":1}})")));
+  // Empty _meta object (some AI clients send this): also served.
+  Out o2 = serveOnce(server, encodeRequest(RequestId(int64_t(2)), "tools/call",
+                                           Json(R"({"name":"t","_meta":{}})")));
+  ASSERT_NE(o2.result, nullptr);
+  EXPECT_EQ(o2.result->result["ok"].isTrue(), true);
+
+  // Partial _meta (missing required fields): served with defaults in legacy.
+  Out o3 = serveOnce(server, encodeRequest(RequestId(int64_t(3)), "tools/call",
+                                           Json(R"({"name":"t","_meta":{"foo":1}})")));
+  ASSERT_NE(o3.result, nullptr);
+  EXPECT_EQ(o3.result->result["ok"].isTrue(), true);
+
+  // _meta present but not an object: still an error.
+  Out bad = serveOnce(server, encodeRequest(RequestId(int64_t(4)), "tools/call",
+                                            Json(R"({"name":"t","_meta":5})")));
   ASSERT_NE(bad.error, nullptr);
   EXPECT_EQ(bad.error->error.code, -32602);
+
+  // Parameterless request (params:null) - legacy clients call tools/list
+  // without params; it must be served with defaults.
+  Out o4 = serveOnce(server, encodeRequest(RequestId(int64_t(5)), "tools/list",
+                                           Json(nullptr)));
+  ASSERT_NE(o4.result, nullptr);
+  EXPECT_TRUE(o4.result->result["tools"].isArray());
 
   // notifications/initialized is a notification: silently ignored.
   MemTransport t({});
   server->processLine(encodeNotification("notifications/initialized", Json(nullptr)), t);
   EXPECT_TRUE(t.output_.empty());
+}
+
+TEST(ServerLegacy, PartialMetaStillStrictWhenDisabled) {
+  Builder b;  // acceptLegacyClients NOT enabled
+  b.simpleTool("t", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({"ok":true})")); });
+  auto server = b.build();
+
+  // Empty _meta object fails in strict mode.
+  Out o = serveOnce(server, encodeRequest(RequestId(int64_t(1)), "tools/call",
+                                          Json(R"({"name":"t","_meta":{}})")));
+  ASSERT_NE(o.error, nullptr);
+  EXPECT_EQ(o.error->error.code, -32602);
+
+  // No _meta at all fails in strict mode.
+  Out o2 = serveOnce(server, encodeRequest(RequestId(int64_t(2)), "tools/call",
+                                           Json(R"({"name":"t"})")));
+  ASSERT_NE(o2.error, nullptr);
+  EXPECT_EQ(o2.error->error.code, -32602);
 }
 
 TEST(ServerLegacy, StrictByDefault) {

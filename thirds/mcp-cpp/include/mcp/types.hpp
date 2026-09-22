@@ -91,12 +91,22 @@ struct RequestMeta {
   std::string protocolVersion;         // required (a wire version string)
   Json clientCapabilities;             // required (object; Null only in decode failure)
   std::optional<Implementation> clientInfo;  // optional
+  // True when _meta carried the modern-required fields (protocolVersion +
+  // clientCapabilities). Strict callers reject !complete; relaxed callers
+  // (legacy mode) serve such requests with defaults.
+  bool complete = true;
 };
 
-// Decodes params._meta. Fails with InvalidParams when _meta is missing, not
-// an object, or any required field is missing/ill-typed - the caller maps
-// that to the -32602 response the spec mandates.
+// Decodes params._meta in STRICT mode. Fails with InvalidParams when _meta is
+// missing, not an object, or any required field is missing/ill-typed - the
+// caller maps that to the -32602 response the spec mandates.
 McpResult<RequestMeta> decodeRequestMeta(const Json& params);
+
+// Decodes params._meta in RELAXED mode. Fails only when _meta is present but
+// not an object. A missing/partial _meta yields a RequestMeta with defaults
+// (Latest protocol version, empty capabilities) and complete=false, letting
+// legacy clients with partial metadata be served when the server opts in.
+McpResult<RequestMeta> decodeRequestMetaRelaxed(const Json& params);
 
 // Builds a params._meta object for outgoing client requests (M3).
 Json encodeRequestMeta(std::string_view protocolVersion,

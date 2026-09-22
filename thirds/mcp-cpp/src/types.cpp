@@ -1,4 +1,5 @@
 #include <mcp/types.hpp>
+#include <mcp/version.hpp>
 
 namespace mcp {
 
@@ -91,6 +92,46 @@ McpResult<RequestMeta> decodeRequestMeta(const Json& params) {
   RequestMeta m;
   m.protocolVersion = std::string(pv.toString());
   m.clientCapabilities = caps;
+  const Json info = member(meta, kMetaClientInfo);
+  if (info.isObject()) m.clientInfo = decodeImplementation(info);
+  return Ok(std::move(m));
+}
+
+// Relaxed decoding shared by decodeRequestMetaRelaxed: a present-but-partial
+// _meta is filled with defaults and marked !complete instead of failing. Only
+// a non-object _meta (or non-object params) is an error.
+McpResult<RequestMeta> decodeRequestMetaRelaxed(const Json& params) {
+  // Parameterless methods (tools/list, prompts/list, ...) send params:null
+  // (normalized to Json(nullptr) by the JSON-RPC layer). Treat null params
+  // as an empty object so legacy clients can call them without metadata.
+  const bool noParams = params.isNull();
+  if (!params.isObject() && !noParams) {
+    return Err(McpErrorCode::InvalidParams, "request params must be an object");
+  }
+  const bool hasMeta = params.isObject() && params.contains(std::string("_meta"));
+  if (!hasMeta) {
+    // No _meta at all: caller (legacy mode) serves with defaults.
+    RequestMeta m;
+    m.protocolVersion = std::string(toString(ProtocolVersion::Latest));
+    m.clientCapabilities = Json(R"({})");
+    m.complete = false;
+    return Ok(std::move(m));
+  }
+  const Json meta = member(params, "_meta");
+  if (!meta.isObject()) {
+    // _meta present but not an object: nothing sensible to decode.
+    return Err(McpErrorCode::InvalidParams,
+               "request _meta must be an object when present");
+  }
+  const Json pv = member(meta, kMetaProtocolVersion);
+  const Json caps = member(meta, kMetaClientCapabilities);
+  const bool haveVersion = pv.isString() && !pv.toString().empty();
+  const bool haveCaps = caps.isObject();
+  RequestMeta m;
+  m.protocolVersion = haveVersion ? std::string(pv.toString())
+                                  : std::string(toString(ProtocolVersion::Latest));
+  m.clientCapabilities = haveCaps ? caps : Json(R"({})");
+  m.complete = haveVersion && haveCaps;
   const Json info = member(meta, kMetaClientInfo);
   if (info.isObject()) m.clientInfo = decodeImplementation(info);
   return Ok(std::move(m));
