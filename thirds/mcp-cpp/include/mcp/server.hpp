@@ -154,9 +154,9 @@ class Server {
   long discoverTtlMs_ = 0;    // 0 = discover result immediately stale
   long listTtlMs_ = -1;       // -1 = no CacheableResult on lists
   std::string listCacheScope_ = "public";
-  Handler completionsHandler_;
   std::string name_ = "mcp-cpp-server";
   std::string version_ = "0.1.0";
+  Handler completionsHandler_;
 
   // request id (string form) -> cancel flag
   std::map<std::string, std::shared_ptr<std::atomic_bool>> cancellations_;

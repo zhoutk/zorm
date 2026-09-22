@@ -20,6 +20,10 @@ Client::Client(std::string clientName, std::string clientVersion, Json clientCap
 
 void Client::connect(ITransport& transport) { transport_ = &transport; }
 
+void Client::closeSubscriptions() {
+  if (transport_ != nullptr) transport_->closeSubscriptions();
+}
+
 void Client::setProtocolVersion(ProtocolVersion v) { protocolVersion_ = std::string(toString(v)); }
 
 void Client::onNotification(NotificationSink sink) { onNotification_ = std::move(sink); }

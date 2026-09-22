@@ -38,6 +38,13 @@ class ITransport {
   // Optional per-message header injection (Streamable HTTP mirrored headers).
   // No-op on transports without a header layer (stdio).
   virtual void setHeader(std::string /*name*/, std::string /*value*/) {}
+
+  // Terminates all open subscription streams and waits for their background
+  // threads to exit. Base no-op: only transports that host long-lived
+  // subscription streams (Streamable HTTP) override this. Safe to call
+  // multiple times; after it returns, no further notification lines are
+  // delivered to read().
+  virtual void closeSubscriptions() {}
 };
 
 // Framing over arbitrary C++ streams. Skips empty/blank input lines (the

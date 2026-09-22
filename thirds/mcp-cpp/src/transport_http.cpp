@@ -13,6 +13,7 @@
 #include <condition_variable>
 #include <map>
 #include <deque>
+#include <set>
 #include <thread>
 #include <utility>
 
@@ -408,8 +409,14 @@ McpResult<void> HttpServerTransport::runAsync(const std::string& host, int port)
 void HttpServerTransport::stop() {
   // Signal SSE providers BEFORE svr.stop(): httplib's stop() joins worker
   // threads, and is_running() only clears after that join - the providers
-  // would deadlock waiting on it.
+  // would deadlock waiting on it. Each open subscription's pump is closed
+  // first so its chunked_content_provider exits its waitPop immediately
+  // instead of idling up to the 15s keep-alive cadence.
   impl_->running = false;
+  {
+    std::lock_guard<std::mutex> lock(impl_->pumpMutex);
+    for (const auto& pump : impl_->pumps) pump->close();
+  }
   impl_->svr.stop();
   if (impl_->thread.joinable()) impl_->thread.join();
 }
@@ -438,6 +445,29 @@ struct HttpClientTransport::Impl {
     queueCv.notify_one();
   }
 
+  // ---- subscription lifecycle --------------------------------------------
+  // Each subscriptions/listen spawns a dedicated background connection whose
+  // receiver runs until the server closes the stream, the transport is
+  // destroyed, or closeSubscriptions() is called. `subscriptionsClosed`
+  // flips on shutdown; each background thread registers its client handle so
+  // closeSubscriptions() can stop() it, then signals completion.
+
+  std::mutex subMutex;                                   // guards sub fields
+  std::condition_variable subCv;
+  std::set<httplib::Client*> activeSubscriptions;        // handles to stop()
+  size_t subscriptionThreads = 0;                        // still-running count
+  bool subscriptionsClosed = false;
+
+  void registerSubscription(httplib::Client* c) {
+    std::lock_guard<std::mutex> lock(subMutex);
+    activeSubscriptions.insert(c);
+  }
+  void unregisterSubscription(httplib::Client* c) {
+    std::lock_guard<std::mutex> lock(subMutex);
+    activeSubscriptions.erase(c);
+    if (--subscriptionThreads == 0) subCv.notify_all();
+  }
+
   // Fresh connection per SSE stream: keeps the shared cli single-threaded.
   std::unique_ptr<httplib::Client> streamClient;
 
@@ -451,7 +481,11 @@ HttpClientTransport::HttpClientTransport(std::string host, int port, std::string
   impl_->cli.set_read_timeout(30, 0);  // long enough for SSE test streams
 }
 
-HttpClientTransport::~HttpClientTransport() = default;
+HttpClientTransport::~HttpClientTransport() {
+  // Stop any live subscription streams so their background threads do not
+  // outlive the transport (they would push into a destroyed queue).
+  closeSubscriptions();
+}
 
 void HttpClientTransport::setHeader(std::string name, std::string value) {
   if (value.empty()) {
@@ -459,6 +493,21 @@ void HttpClientTransport::setHeader(std::string name, std::string value) {
   } else {
     impl_->headers[name] = std::move(value);
   }
+}
+
+void HttpClientTransport::closeSubscriptions() {
+  std::vector<httplib::Client*> toStop;
+  {
+    std::lock_guard<std::mutex> lock(impl_->subMutex);
+    if (impl_->subscriptionsClosed) return;  // idempotent
+    impl_->subscriptionsClosed = true;
+    toStop.assign(impl_->activeSubscriptions.begin(), impl_->activeSubscriptions.end());
+  }
+  // Stop() forces the blocked Post to return promptly; each background
+  // thread then unregisters itself and signals completion.
+  for (httplib::Client* c : toStop) c->stop();
+  std::unique_lock<std::mutex> lock(impl_->subMutex);
+  impl_->subCv.wait(lock, [&] { return impl_->subscriptionThreads == 0; });
 }
 
 McpResult<std::optional<std::string>> HttpClientTransport::read() {
@@ -522,8 +571,22 @@ McpResult<void> HttpClientTransport::postOne(std::string_view message) {
     auto headersCopy = headers;
     auto stream = std::make_unique<httplib::Client>(impl_->cli.host(), impl_->cli.port());
     stream->set_connection_timeout(5);
+    stream->set_read_timeout(1, 0);  // 1s cadence so closeSubscriptions() can break in
+    httplib::Client* raw = stream.get();
+
+    // Register the handle BEFORE the thread starts so a racing
+    // closeSubscriptions() sees it (or the thread's already-stopped flag).
+    {
+      std::lock_guard<std::mutex> lock(impl_->subMutex);
+      if (impl_->subscriptionsClosed) {
+        return Ok();  // transport already shut down; don't start a stream
+      }
+      ++impl_->subscriptionThreads;
+      impl_->activeSubscriptions.insert(raw);
+    }
+
     std::thread([this, stream = std::move(stream), body = std::move(body),
-                 headersCopy = std::move(headersCopy)]() mutable {
+                 headersCopy = std::move(headersCopy), raw]() mutable {
       std::string acc;
       auto receiver = [this, &acc](const char* data, size_t len) -> bool {
         acc.append(data, len);
@@ -538,10 +601,13 @@ McpResult<void> HttpClientTransport::postOne(std::string_view message) {
           }
         }
         for (auto& e : events) impl_->pushQueue(std::move(e));
-        return true;
+        // Returning false aborts the connection; stop() also forces a short
+        // read-timeout wakeup so a blocking Post returns here promptly.
+        return !impl_->subscriptionsClosed;
       };
       // Blocks until the server closes the stream (graceful closure, stop,
-      // or transport drop) - exactly the subscription lifetime.
+      // or transport drop), closeSubscriptions() stops the connection, or
+      // the 1s read timeout elapses while subscriptionsClosed is set.
       (void)stream->Post(impl_->endpoint.c_str(), headersCopy, body, "application/json",
                          receiver);
       {
@@ -556,6 +622,7 @@ McpResult<void> HttpClientTransport::postOne(std::string_view message) {
         }
         for (auto& e : events) impl_->pushQueue(std::move(e));
       }
+      impl_->unregisterSubscription(raw);
     }).detach();
     return Ok();
   }

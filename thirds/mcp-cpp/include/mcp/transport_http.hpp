@@ -94,6 +94,12 @@ class HttpClientTransport final : public ITransport {
   // per-request mirrored headers (Mcp-Param-*). Empty value removes.
   void setHeader(std::string name, std::string value) override;
 
+  // Terminates all open subscription streams (background SSE connections)
+  // and waits for their threads to finish. Safe to call from any thread;
+  // idempotent. Called automatically by the destructor. After this returns,
+  // no further notification lines will be queued.
+  void closeSubscriptions() override;
+
  private:
   McpResult<void> postOne(std::string_view message);
   void queueSseBody(const std::string& body);

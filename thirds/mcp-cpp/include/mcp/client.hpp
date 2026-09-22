@@ -71,6 +71,12 @@ class Client {
   // result response carrying the subscriptionId in _meta).
   void onSubscriptionClosed(std::function<void(const std::string& subscriptionId)> cb);
 
+  // Terminates all subscription streams opened through subscribe() and waits
+  // for their background threads to exit. No further notifications will be
+  // delivered after this returns. Safe to call multiple times (idempotent);
+  // a no-op when the transport does not expose subscription control.
+  void closeSubscriptions();
+
   // Generic request when the SDK has no dedicated wrapper yet.
   McpResult<Json> request(std::string_view method, const Json& extraParams);
 

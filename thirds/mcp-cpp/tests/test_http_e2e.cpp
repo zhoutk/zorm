@@ -186,6 +186,11 @@ TEST(HttpE2E, SubscriptionStreamDeliversNotifications) {
   }
   EXPECT_GE(listChanged.load(), 2);
   EXPECT_FALSE(subId.empty());
+
+  // Close the subscription stream so the background SSE thread exits and the
+  // test process can terminate cleanly. Without this the long-lived stream
+  // keeps the transport (and the fixture's server thread) alive forever.
+  client->closeSubscriptions();
 }
 
 #endif  // MCP_HAS_HTTP
