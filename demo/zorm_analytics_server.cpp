@@ -283,8 +283,9 @@ McpResult<Json> toolCount(Ctx& c) {
   ZORM::Idb* db = g.db(dbName);
   if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName);
 
+  // zorm count expects "col,alias" pairs (e.g. "*,total").
   ZORM::Json params;
-  params.add("count", ZORM::Json("1"));
+  params.add("count", ZORM::Json("*,total"));
   const ZORM::Json rs = db->select(table, params);
   if (rs["status"].toInt() != 200)
     return Err(McpErrorCode::InvalidParams, "count failed: " + rs["info"].toString());
@@ -363,7 +364,7 @@ McpResult<Json> stageWrite(Ctx& c, const std::string& kind) {
     if (kind == "delete" && member(args, "where").isObject()) {
       ZORM::Json wp;
       wp.add("where", toZormJson(member(args, "where")));
-      wp.add("count", ZORM::Json("1"));
+      wp.add("count", ZORM::Json("*,total"));
       const ZORM::Json rs = db->select(table, wp);
       if (rs["status"].toInt() == 200 && !rs["data"].isError()) {
         impact = std::to_string(rs["data"].size()) + " rows";
@@ -583,11 +584,11 @@ void registerAll(Builder& b) {
          toolQuery);
   b.tool(Json(R"({"name":"db_count","description":"Count rows in a table.","inputSchema":{"type":"object","required":["db","table"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"where":{"type":"object"}}}})"),
          toolCount);
-  b.tool(Json(R"({"name":"db_insert","description":"Insert one row (requires confirmation).","inputSchema":{"type":"object","required":["db","table","data"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"data":{"type":"object"}}}})"),
+  b.tool(Json(R"({"name":"db_insert","description":"Insert one row (requires confirmation).","inputSchema":{"type":"object","required":["db","table","data"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"data":{"type":"object"},"requestState":{"type":"string"},"inputResponses":{"type":"object"}}}})"),
          toolInsert);
-  b.tool(Json(R"({"name":"db_update","description":"Update rows matching where (requires confirmation; where must carry id).","inputSchema":{"type":"object","required":["db","table","data","where"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"data":{"type":"object"},"where":{"type":"object"}}}})"),
+  b.tool(Json(R"({"name":"db_update","description":"Update rows matching where (requires confirmation; where must carry id).","inputSchema":{"type":"object","required":["db","table","data","where"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"data":{"type":"object"},"where":{"type":"object"},"requestState":{"type":"string"},"inputResponses":{"type":"object"}}}})"),
          toolUpdate);
-  b.tool(Json(R"({"name":"db_delete","description":"Delete rows matching where (requires confirmation).","inputSchema":{"type":"object","required":["db","table","where"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"where":{"type":"object"}}}})"),
+  b.tool(Json(R"({"name":"db_delete","description":"Delete rows matching where (requires confirmation).","inputSchema":{"type":"object","required":["db","table","where"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"where":{"type":"object"},"requestState":{"type":"string"},"inputResponses":{"type":"object"}}}})"),
          toolDelete);
   if (g.allowSql) {
     b.tool(Json(R"({"name":"db_exec_sql","description":"Execute parameterized SQL (dangerous; confirmation required).","inputSchema":{"type":"object","required":["db","sql"],"properties":{"db":{"type":"string"},"sql":{"type":"string"}}}})"),

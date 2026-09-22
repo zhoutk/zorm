@@ -35,6 +35,11 @@ McpResult<void> StreamTransport::write(std::string_view message) {
   }
   out_.write(message.data(), static_cast<std::streamsize>(message.size()));
   out_.put('\n');
+  // Flush after every frame: stdio MCP requires the response to be readable
+  // immediately. stdout is line-buffered on a terminal but FULLY buffered
+  // when piped/redirected - without this, a piped client (or MCP host) may
+  // never see the response until the stream closes.
+  out_.flush();
   if (!out_) return Err(McpErrorCode::InternalError, "stdio write failed");
   return Ok();
 }
