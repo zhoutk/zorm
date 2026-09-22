@@ -136,6 +136,7 @@ class Server {
                                   const std::function<bool()>& cancelled);
 
   McpResult<Json> handleDiscover(const RequestMeta& meta);
+  McpResult<Json> handleInitialize(const JsonRpcRequest& req);
   McpResult<Json> handlePaginatedList(const Registry& reg, const Json& params,
                                       std::string_view arrayKey);
   McpResult<Json> handleToolCall(const JsonRpcRequest& req, const RequestMeta& meta,
@@ -153,6 +154,7 @@ class Server {
   int pageSize_ = 0;          // 0 = no pagination on *\/list
   long discoverTtlMs_ = 0;    // 0 = discover result immediately stale
   long listTtlMs_ = -1;       // -1 = no CacheableResult on lists
+  bool acceptLegacy_ = false;
   std::string listCacheScope_ = "public";
   std::string name_ = "mcp-cpp-server";
   std::string version_ = "0.1.0";
@@ -199,6 +201,15 @@ class Builder {
 
   // Adds ttlMs/cacheScope (CacheableResult) to *\/list responses.
   Builder& listCache(long ttlMs, std::string cacheScope = "public");
+
+  // Dual-era server: also accept LEGACY clients (initialize handshake, no
+  // per-request _meta - e.g. Claude Code / VS Code on protocol revisions
+  // <= 2025-11-25). Default off: the 2026-07-28 stateless gates stay strict.
+  // When on:
+  //   * `initialize` is served (legacy handshake) with an InitializeResult
+  //   * requests without params._meta are served with default metadata
+  //   * requests WITH an ill-formed _meta still fail -32602 (modern clients)
+  Builder& acceptLegacyClients(bool on = true);
 
   std::shared_ptr<Server> build();
 

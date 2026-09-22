@@ -147,6 +147,13 @@ int main(int argc, char** argv) {
                                    "where":{"type":"object"}}})"),
          [](Ctx& c) { return deleteTool(c); });
 
+  b.acceptLegacyClients(true);  // Claude Code / VS Code speak legacy initialize
+  b.supports(ProtocolVersion::V2024_11_05)
+      .supports(ProtocolVersion::V2025_03_26)
+      .supports(ProtocolVersion::V2025_06_18)
+      .supports(ProtocolVersion::V2025_11_25)
+      .supports(ProtocolVersion::Latest);
+
   auto server = b.build();
   StdioTransport transport;
   const McpResult<void> r = server->run(transport);

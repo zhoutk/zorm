@@ -403,3 +403,62 @@ TEST(ServerM4, ListCacheHints) {
   ASSERT_NE(d.result, nullptr);
   EXPECT_TRUE(d.result->result["ttlMs"].isError());
 }
+
+// ---- legacy dual-era mode (acceptLegacyClients) ------------------------------------
+
+TEST(ServerLegacy, InitializeHandshakeWhenEnabled) {
+  Builder b;
+  b.acceptLegacyClients(true)
+      .supports(ProtocolVersion::V2025_06_18)
+      .supports(ProtocolVersion::Latest);
+  auto server = b.build();
+
+  const std::string initLine = encodeRequest(
+      RequestId(int64_t(1)), "initialize",
+      Json(R"({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cc","version":"1"}})"));
+  Out o = serveOnce(server, initLine);
+  ASSERT_NE(o.result, nullptr);
+  EXPECT_EQ(o.result->result["protocolVersion"].toString(), "2025-06-18");
+  EXPECT_EQ(o.result->result["serverInfo"]["name"].toString(), "mcp-cpp-server");
+
+  // Unsupported legacy version -> -32022 with the supported list.
+  Out bad = serveOnce(server, encodeRequest(
+      RequestId(int64_t(2)), "initialize",
+      Json(R"({"protocolVersion":"1999-01-01","capabilities":{}})")));
+  ASSERT_NE(bad.error, nullptr);
+  EXPECT_EQ(bad.error->error.code, -32022);
+}
+
+TEST(ServerLegacy, RequestsWithoutMetaServedWhenEnabled) {
+  Builder b;
+  b.acceptLegacyClients(true);
+  b.simpleTool("t", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({"ok":true})")); });
+  auto server = b.build();
+
+  // No _meta at all: served with default metadata.
+  Out o = serveOnce(server, encodeRequest(RequestId(int64_t(1)), "tools/call",
+                                          Json(R"({"name":"t"})")));
+  ASSERT_NE(o.result, nullptr);
+  EXPECT_EQ(o.result->result["ok"].isTrue(), true);
+
+  // ILL-FORMED _meta (present but missing required fields) still fails.
+  Out bad = serveOnce(server, encodeRequest(RequestId(int64_t(2)), "tools/call",
+                                            Json(R"({"name":"t","_meta":{"foo":1}})")));
+  ASSERT_NE(bad.error, nullptr);
+  EXPECT_EQ(bad.error->error.code, -32602);
+
+  // notifications/initialized is a notification: silently ignored.
+  MemTransport t({});
+  server->processLine(encodeNotification("notifications/initialized", Json(nullptr)), t);
+  EXPECT_TRUE(t.output_.empty());
+}
+
+TEST(ServerLegacy, StrictByDefault) {
+  Builder b;  // acceptLegacyClients NOT enabled
+  auto server = b.build();
+  Out o = serveOnce(server, encodeRequest(
+      RequestId(int64_t(1)), "initialize",
+      Json(R"({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cc","version":"1"}})")));
+  ASSERT_NE(o.error, nullptr);
+  EXPECT_EQ(o.error->error.code, -32601);
+}

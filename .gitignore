@@ -11,7 +11,8 @@ refer/
 *.user
 *.opensdf
 *.suo
-*.db
+/*.db
+/*.json
 main
 *.o
 Makefile

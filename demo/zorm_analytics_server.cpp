@@ -679,6 +679,14 @@ bool discoverAllSchemas() {
 // Builds (or rebuilds) the MCP server with the current tool/resource set.
 std::shared_ptr<Server> buildServer() {
   Builder b;
+  b.acceptLegacyClients(true);  // Claude Code / VS Code speak legacy initialize
+  // Tools are version-agnostic; speak every protocol revision so legacy
+  // clients (initialize with 2025-06-18 etc.) negotiate successfully.
+  b.supports(ProtocolVersion::V2024_11_05)
+      .supports(ProtocolVersion::V2025_03_26)
+      .supports(ProtocolVersion::V2025_06_18)
+      .supports(ProtocolVersion::V2025_11_25)
+      .supports(ProtocolVersion::Latest);
   registerAll(b);
   auto server = b.build();
   g.server = server;

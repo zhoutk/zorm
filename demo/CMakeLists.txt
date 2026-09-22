@@ -22,6 +22,20 @@ add_executable(zorm_analytics_server
   demo_data.h)
 target_link_libraries(zorm_analytics_server PRIVATE mcp zormlib)
 
+# Runtime DLLs (libpq/sqlite3/dmdpi/...) must resolve when an AI client
+# spawns the servers - Claude Code does NOT have run-test's PATH setup.
+# Copy them next to the executables (Windows searches the exe dir first).
+if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/thirds/bin/win10")
+  file(GLOB ZORM_RUNTIME_DLLS "${CMAKE_SOURCE_DIR}/thirds/bin/win10/*.dll")
+  foreach(t zorm_server zorm_analytics_server)
+    add_custom_command(TARGET ${t} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ZORM_RUNTIME_DLLS}
+                $<TARGET_FILE_DIR:${t}>)
+  endforeach()
+endif()
+
+
+
 # ---- e2e test ---------------------------------------------------------------
 
 if(TARGET gtest)

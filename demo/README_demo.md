@@ -105,7 +105,8 @@ UI 里可以逐个调用工具、读 Resources、观察 `input_required` 确认�
 
 ## 五、常见问题
 
-- **报找不到 DLL（LIBPQ.dll 等）**：用 `run-demo.cmd`/`run-demo.sh` 启动（已设好 `thirds/bin/win10` 路径），或把该目录加入 PATH。
+- **报找不到 DLL（LIBPQ.dll 等）**：构建时已自动把运行 DLL 复制到 exe 同目录（`build/demo/`），正常无感；若手动搬移 exe，请连 DLL 一起带或用 `run-demo.cmd`/`run-demo.sh` 启动。
+- **AI 客户端显示连接失败**：确认用的是最新构建——服务器现在支持 legacy `initialize` 握手（Claude Code/VS Code 的接入方式）与无 `_meta` 请求，协议版本 2024-11-05 全系支持。改代码后需重新构建并重启 AI 客户端会话。
 - **演示数据想重置**：删除 `demo.db` 与 `analytics.json` 后重跑 `--setup`。
 - **接入 mysql/postgres/dm8**：写一个 config JSON（参见 `demo-design.md` §2.6），用 `--config` 启动；这些后端需要对应数据库服务器在运行。
 - **AI 不会写确认弹窗**：Claude Code 等客户端对 elicitation 的支持程度不同；若客户端不支持，AI 会看到 `input_required` 的确认请求并转述给用户，用户回复后 AI 带 `inputResponses` 重试——这正是 MRTR 的设计意图。

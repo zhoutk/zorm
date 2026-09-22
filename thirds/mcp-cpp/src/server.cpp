@@ -19,6 +19,7 @@ struct MethodRoute {
 
 constexpr MethodRoute kRoutes[] = {
     {"server/discover", "", ""},
+    {"initialize", "", ""},  // legacy handshake; served only when acceptLegacy_
     {"subscriptions/listen", "", ""},
     {"tools/list", "tools", "tools"},
     {"tools/call", "tools", "tools"},
@@ -96,6 +97,7 @@ Server::Server(Server&& other) noexcept
       pageSize_(other.pageSize_),
       discoverTtlMs_(other.discoverTtlMs_),
       listTtlMs_(other.listTtlMs_),
+      acceptLegacy_(other.acceptLegacy_),
       listCacheScope_(std::move(other.listCacheScope_)),
       name_(std::move(other.name_)),
       version_(std::move(other.version_)),
@@ -145,11 +147,40 @@ void Server::processLine(const std::string& line, ITransport& out) {
 
   const JsonRpcRequest& req = std::get<JsonRpcRequest>(parsed);
 
-  // Stateless protocol: every request carries its own metadata.
+  // Legacy dual-era: `initialize` handshake (params carry protocolVersion at
+  // the root, no _meta by definition). Strict mode answers MethodNotFound.
+  if (req.method == "initialize") {
+    if (!acceptLegacy_) {
+      (void)out.write(encodeErrorResponse(
+          req.id, toErrorValue(McpErrorCode::MethodNotFound,
+                               "Method not found: initialize (legacy mode disabled)")));
+      return;
+    }
+    McpResult<Json> initResult = handleInitialize(req);
+    if (initResult.has_value()) {
+      if (initResult->isObject() && !initResult->contains(std::string(kResultTypeKey))) {
+        initResult->add(std::string(kResultTypeKey), Json::str(std::string(kResultTypeComplete)));
+      }
+      (void)out.write(encodeResultResponse(req.id, *initResult));
+    } else {
+      (void)out.write(encodeErrorResponse(req.id, toErrorValue(initResult.error())));
+    }
+    return;
+  }
+
+  // Stateless protocol: every request carries its own metadata. Dual-era
+  // relaxation: a request with NO _meta member at all is served with default
+  // metadata (legacy clients); an ILL-FORMED _meta still fails -32602.
   auto meta = decodeRequestMeta(req.params);
   if (!meta.has_value()) {
-    (void)out.write(encodeErrorResponse(req.id, toErrorValue(meta.error())));
-    return;
+    const bool hasMetaObject = member(req.params, "_meta").isObject();
+    if (acceptLegacy_ && !hasMetaObject) {
+      meta = RequestMeta{std::string(toString(ProtocolVersion::Latest)), Json(R"({})"),
+                         std::nullopt};
+    } else {
+      (void)out.write(encodeErrorResponse(req.id, toErrorValue(meta.error())));
+      return;
+    }
   }
 
   if (!versionSupported(meta->protocolVersion)) {
@@ -428,6 +459,39 @@ Json Server::findToolDefinition(const std::string& name) const {
   return Json("null");  // parsed Null - callers probe isObject()
 }
 
+// Legacy `initialize` handshake (revisions <= 2025-11-25): params carry
+// protocolVersion/clientInfo at the ROOT (no _meta), and the result echoes
+// the negotiated version + capabilities + serverInfo. The 2026 resultType
+// injection still applies (harmless extra field for legacy clients).
+McpResult<Json> Server::handleInitialize(const JsonRpcRequest& req) {
+  const Json requested = member(req.params, "protocolVersion");
+  std::string negotiated = std::string(toString(ProtocolVersion::Latest));
+  if (requested.isString()) {
+    if (!versionSupported(requested.toString())) {
+      McpError e;
+      e.code = McpErrorCode::UnsupportedProtocolVersion;
+      e.message = "Unsupported protocol version";
+      Json data;
+      Json versions = Json("[]");
+      for (const auto& wire : supported_) versions.push_back(Json::str(std::string(wire)));
+      data.add("supported", std::move(versions));
+      data.add("requested", Json::str(requested.toString()));
+      e.data = std::move(data);
+      return Err(std::move(e));
+    }
+    negotiated = std::string(requested.toString());
+  }
+  Json result;
+  result.add("protocolVersion", Json::str(negotiated));
+  result.add("capabilities", capabilities_);
+  Json info;
+  info.add("name", Json::str(name_));
+  info.add("version", Json::str(version_));
+  result.add("serverInfo", std::move(info));
+  if (!instructions_.empty()) result.add("instructions", Json::str(instructions_));
+  return Ok(std::move(result));
+}
+
 bool Server::versionSupported(std::string_view wire) const {
   const auto v = fromString(wire);
   return v.has_value() && supportedSet_.count(*v) > 0;
@@ -447,6 +511,11 @@ Builder& Builder::completions(Handler handler) {
     Json empty;
     server_.capabilities_.add("completions", std::move(empty));
   }
+  return *this;
+}
+
+Builder& Builder::acceptLegacyClients(bool on) {
+  server_.acceptLegacy_ = on;
   return *this;
 }
 
