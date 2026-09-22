@@ -64,7 +64,14 @@ AI 会自动：发现表 → 读 schema → 智能查询跨库 → 发起写入 
 }
 ```
 
-### MCP Inspector（看协议细节）
+### curl 冒烟（HTTP 模式）
+
+```bash
+build\demo\zorm_analytics_server.exe --http 18099 --yes &
+curl -s --noproxy '*' -X POST http://127.0.0.1:18099/mcp   -H "Content-Type: application/json" -H "Accept: application/json"   -H "MCP-Protocol-Version: 2026-07-28" -H "Mcp-Method: server/discover"   -d '{"jsonrpc":"2.0","id":"1","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+### MCP Inspector（看协议细节；HTTP 模式下选 SSE/Streamable HTTP 传输并填 URL）
 
 ```bash
 npx @modelcontextprotocol/inspector build/demo/zorm_analytics_server.exe
@@ -90,7 +97,7 @@ UI 里可以逐个调用工具、读 Resources、观察 `input_required` 确认�
 | --- | --- |
 | `--setup` | 建库建表 + 样例数据（幂等），完成后退出 |
 | `--demo` | 自演示剧本（自 spawn 真实子进程 + client API 驱动） |
-| `--http <port>` | 额外开启 Streamable HTTP 端点（stdio 同时可用） |
+| `--http <port>` | **纯 HTTP 模式**（不跑 stdio）：Streamable HTTP 单端点 `http://127.0.0.1:<port>/mcp`，浏览器 Inspector / curl / 远程 AI 客户端接入用 |
 | `--yes` | 关闭写确认（自动化/测试专用，**勿在演示中使用**——确认环节是亮点） |
 | `--allow-sql` | 暴露参数化 SQL 工具 |
 | `--config <file>` | 多后端配置（mysql/pg/dm8 接入点），默认内置 sqlite + jsonfile |

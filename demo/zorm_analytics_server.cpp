@@ -30,6 +30,9 @@
 
 #include <cstdio>
 #include <cstring>
+#ifdef _WIN32
+#include <io.h>
+#endif
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -746,19 +749,27 @@ int main(int argc, char** argv) {
     return runScriptedDemo(server);
   }
 
-  // --http: serve Streamable HTTP on a background thread alongside stdio.
+  // --http: HTTP-ONLY serving (stdio not run).
+  std::unique_ptr<mcp::http::HttpServerTransport> http;
   if (doHttp) {
-    std::unique_ptr<mcp::http::HttpServerTransport> http;
     try {
       http = std::make_unique<mcp::http::HttpServerTransport>(*server);
-      auto bound = http->bind("127.0.0.1");
-      if (bound.has_value()) {
-        httpPort = *bound;
-        std::thread([&] { (void)http->run(); }).detach();
-        std::cerr << "[zorm-analytics] HTTP serving on 127.0.0.1:" << httpPort << "/mcp" << std::endl;
+      if (http->runAsync("127.0.0.1", httpPort).has_value()) {
+        std::cerr << "[zorm-analytics] HTTP serving on 127.0.0.1:" << httpPort << "/mcp"
+                  << std::endl;
+      } else {
+        std::cerr << "[zorm-analytics] HTTP listen failed" << std::endl;
+        http.reset();
       }
     } catch (...) {
-      std::cerr << "[zorm-analytics] HTTP transport unavailable (built without httplib?)" << std::endl;
+      std::cerr << "[zorm-analytics] HTTP transport unavailable (built without httplib?)"
+                << std::endl;
+    }
+    // Deterministic: --http means HTTP-ONLY serving (the stdio loop would
+    // exit on immediate EOF when stdin is /dev/null, killing the process).
+    if (http) {
+      while (http->running()) std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      return 0;
     }
   }
 
