@@ -291,6 +291,13 @@ void flushToDisk(const fs::path& path) {
 // Atomic replace. Mirrors QSaveFile: the payload goes to a sibling temp file and
 // is then renamed over the destination, so readers only ever observe the old or
 // the new complete content.
+//
+// Fallback: when the atomic replace fails because another process holds the
+// destination WITHOUT delete sharing (e.g. a text editor has analytics.json
+// open - editors typically deny DELETE but share READ/WRITE), we degrade to a
+// truncate-and-write in place. This trades atomicity for availability in the
+// editor-open case; the cross-process file lock still serializes writers, and
+// readers re-load from disk before every operation (writeWithLock step 3).
 bool writeFileAtomic(const std::string& filePath, const std::string& payload) {
 	const fs::path target = fsPath(filePath);
 	const fs::path temp = fsPath(filePath + ".tmp." + std::to_string(currentProcessId()) + "." + generateId());
@@ -317,19 +324,58 @@ bool writeFileAtomic(const std::string& filePath, const std::string& payload) {
 
 #ifdef _WIN32
 	if (::MoveFileExW(temp.c_str(), target.c_str(),
-					  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0) {
+					  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
+		return true;
+	}
+	// Atomic replace failed (likely the destination is open without delete
+	// sharing). Fall back to in-place write so the operation still succeeds
+	// while an editor/viewer has the file open.
+	{
+		std::ofstream output(target, std::ios::binary | std::ios::trunc);
+		if (!output.is_open()) {
+			std::error_code removeError;
+			fs::remove(temp, removeError);
+			return false;
+		}
+		if (!payload.empty()) {
+			output.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+		}
+		output.flush();
+		const bool written = output.good();
+		output.close();
 		std::error_code removeError;
 		fs::remove(temp, removeError);
-		return false;
+		if (!written || output.fail()) {
+			return false;
+		}
 	}
+	flushToDisk(target);
+	return true;
 #else
 	if (::rename(temp.c_str(), target.c_str()) != 0) {
+		// POSIX fallback mirrors the Windows one: in-place write when the
+		// destination cannot be replaced (e.g. held by another process).
+		std::ofstream output(target, std::ios::binary | std::ios::trunc);
+		if (!output.is_open()) {
+			std::error_code removeError;
+			fs::remove(temp, removeError);
+			return false;
+		}
+		if (!payload.empty()) {
+			output.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+		}
+		output.flush();
+		const bool written = output.good();
+		output.close();
 		std::error_code removeError;
 		fs::remove(temp, removeError);
-		return false;
+		if (!written || output.fail()) {
+			return false;
+		}
+		flushToDisk(target);
 	}
-#endif
 	return true;
+#endif
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
