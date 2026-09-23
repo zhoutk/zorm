@@ -293,7 +293,7 @@ void flushToDisk(const fs::path& path) {
 // the new complete content.
 //
 // Fallback: when the atomic replace fails because another process holds the
-// destination WITHOUT delete sharing (e.g. a text editor has analytics.json
+// destination WITHOUT delete sharing (e.g. a text editor has the JSON file
 // open - editors typically deny DELETE but share READ/WRITE), we degrade to a
 // truncate-and-write in place. This trades atomicity for availability in the
 // editor-open case; the cross-process file lock still serializes writers, and

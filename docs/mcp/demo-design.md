@@ -142,7 +142,7 @@ inputResponses.approved != true → 返回 complete + content 说明"已取消"�
 {
   "databases": {
     "sqlite":   { "type": "sqlite3",  "options": { "connString": "demo.db" } },
-    "jsonfile": { "type": "jsonfile", "options": { "connString": "analytics.json" } },
+    "jsonfile": { "type": "jsonfile", "options": { "connString": "demo.json" } },
     "mysql":    { "type": "mysql",    "options": { "..." } },   // 可选
     "postgres": { "type": "postgres", "options": { "..." } },   // 可选
     "dm8":      { "type": "dm8",      "options": { "..." } }    // 可选

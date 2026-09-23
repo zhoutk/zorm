@@ -118,7 +118,7 @@ std::map<std::string, DbSpec> defaultDatabases() {
   // parameterized:true - 使用参数化 SQL(占位符绑定), 否则非参数化路径会把
   // ins/lks 的字符串值裸拼进 SQL(如 in (electronics)), 导致 "no such column"。
   dbs["sqlite"] = {"sqlite3", ZORM::Json(R"({"connString":"demo.db","DbLogClose":true,"parameterized":true})")};
-  dbs["jsonfile"] = {"jsonfile", ZORM::Json(R"({"connString":"analytics.json","DbLogClose":true})")};
+  dbs["jsonfile"] = {"jsonfile", ZORM::Json(R"({"connString":"demo.json","DbLogClose":true})")};
   return dbs;
 }
 
@@ -1140,10 +1140,10 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
   std::cout << kYellow << "  两个演示数据库文件:\n" << kReset;
   std::error_code ec;
   const auto sqlitePath = std::filesystem::absolute("demo.db", ec);
-  const auto jsonPath = std::filesystem::absolute("analytics.json", ec);
+  const auto jsonPath = std::filesystem::absolute("demo.json", ec);
   std::cout << "    sqlite   : " << (ec ? "demo.db" : sqlitePath.string())
             << "  [测试数据] orders/users/products 3 张表\n";
-  std::cout << "    jsonfile : " << (ec ? "analytics.json" : jsonPath.string())
+  std::cout << "    jsonfile : " << (ec ? "demo.json" : jsonPath.string())
             << "  [输出库] 初始为空, 演示过程写入汇总结果\n";
   std::cout << kReset;
   if (!autoMode) {
@@ -1344,11 +1344,11 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
       std::cout << kGreen << "  -> 实际落盘 " << kMagenta << actualRows << kReset
                 << " 行 (db_count 验证)\n";
       pause(demoDelayMs());
-      if (afterStep(stepDone("打开 analytics.json: 现在应有 region_sales 表, " +
+      if (afterStep(stepDone("打开 demo.json: 现在应有 region_sales 表, " +
                                std::to_string(actualRows) + " 行(每个地区一行), "
                                "字段 {region, total_amount}。"))) return 0;
     } else {
-      std::cout << kYellow << "  -> 没有任何地区写入成功! 检查 analytics.json 是否被其他程序打开占用。\n"
+      std::cout << kYellow << "  -> 没有任何地区写入成功! 检查 demo.json 是否被其他程序打开占用。\n"
                 << kReset;
       pause(demoDelayMs());
     }
@@ -1455,7 +1455,7 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
         second->contains("status") && (*second)["status"].toInt() == 200) {
       std::cout << kGreen << "  -> ok" << kReset << "  对比结论已写入 jsonfile.analytics (用户批准后真正落库)\n";
       pause(demoDelayMs());
-      if (afterStep(stepDone("打开 analytics.json: 现在应有 2 张表 - region_sales(5 行地区汇总) 和 "
+      if (afterStep(stepDone("打开 demo.json: 现在应有 2 张表 - region_sales(5 行地区汇总) 和 "
                                "analytics(对比结论, 含 expensive_product_count 字段)。"))) return 0;
     } else {
       const std::string errMsg = second.has_value()
@@ -1488,7 +1488,7 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
             << kReset << " 行 (2026 各地区汇总) | analytics 表 " << kMagenta << analyticsTotal
             << kReset << " 行 (对比结论)\n";
   pause(demoDelayMs() * 2);
-  if (afterStep(stepDone("打开 analytics.json: 应看到 2 张表 - region_sales(" + std::to_string(regionTotal) +
+  if (afterStep(stepDone("打开 demo.json: 应看到 2 张表 - region_sales(" + std::to_string(regionTotal) +
                            " 行) 和 analytics(" + std::to_string(analyticsTotal) + " 行)。"))) return 0;
 
   // [8] 收尾: 清空 analytics 统计表, 保留 region_sales 汇总表
@@ -1550,7 +1550,7 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
   if (cleaned) {
     std::cout << kGreen << "  -> analytics 已清空(统计空表) | region_sales 汇总保留\n" << kReset;
     pause(demoDelayMs());
-    if (afterStep(stepDone("最终 analytics.json: region_sales 表(5 行地区汇总) + analytics 表(空数组 [] 统计空表)。"
+    if (afterStep(stepDone("最终 demo.json: region_sales 表(5 行地区汇总) + analytics 表(空数组 [] 统计空表)。"
                              "测试数据仍在 sqlite demo.db。"))) return 0;
   } else {
     std::cout << kYellow << "  (清理失败或无需清理)\n" << kReset;
@@ -1568,7 +1568,7 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
 
   std::cout << "\n" << kBold << "=== demo complete 演示完成 ===" << kReset << "\n";
   std::cout << "数据流: sqlite 测试数据 -> 查询/统计 -> 结果写入 jsonfile 输出库。\n";
-  std::cout << "最终 jsonfile(analytics.json) 含 2 张表:\n";
+  std::cout << "最终 jsonfile(demo.json) 含 2 张表:\n";
   std::cout << "  - region_sales  2026 年订单按地区汇总销售额 (5 行)\n";
   std::cout << "  - analytics     统计空表 (输出容器)\n";
   std::cout << "测试数据仍在 sqlite(demo.db): orders/users/products。\n";
