@@ -17,17 +17,39 @@ demo\run-demo.cmd
 ./demo/run-demo.sh
 ```
 
+**演示模式**：
+
+| 命令 | 模式 |
+|------|------|
+| `run-demo.cmd` / `./demo/run-demo.sh` | **自动模式**（默认，`--auto true`），连贯播放完整剧本 |
+| `run-demo.cmd --auto false` / `./demo/run-demo.sh --auto false` | **分步模式**：每步结束后暂停，提示「验证方法」（如用 `sqlite3 demo.db ".tables"` 交叉验证），按回车继续，输入 `q` 提前退出 |
+
+**两个演示数据库文件**（演示开场会打印绝对路径）：
+
+| 数据库 | 文件 | 角色 | 说明 |
+|--------|------|------|------|
+| sqlite | `demo.db`（项目根目录） | **测试数据** | orders(500)/users(50)/products(20) |
+| jsonfile | `analytics.json`（项目根目录） | **输出库** | 初始为空，演示过程写入汇总结果 |
+
+**数据流设计**：测试数据放 sqlite，jsonfile 是输出库。查询统计基于 sqlite，结果写入 jsonfile——json 内容少、方便查看。
+
 脚本自动完成：建库建表（幂等）→ 启动真实子进程 MCP server → 用 mcp-cpp 自己的 client API 跑完整剧本：
 
 1. `server/discover` —— 版本协商与能力宣告
 2. `tools/list` —— 6 个数据库工具（无一行 SQL）
-3. `db_list_tables` —— 表发现
-4. `db_query` —— **智能查询**：`lks:{order_date:"2026"}` + `group:"region"` + `sum:"amount"`，按地区汇总 2026 订单
-5. 跨库：同一语义查 **jsonfile** 的产品目录
+3. `db_list_tables` —— sqlite 测试库的表发现
+4. `db_query` —— **智能查询**：`lks:{order_date:"2026"}` + `group:"region"` + `sum:"amount"`，按地区汇总 2026 订单（数据在 sqlite）
+5. `db_insert` —— 汇总结果**写入 jsonfile.region_sales**（输出库落盘，MRTR 确认）
 6. `resources/read` —— server 自描述表结构
-7. `db_insert` —— **MRTR 人机确认**：server 返回 `input_required`，暂停展示确认文案，"人类批准"后重试落盘
-8. `db_count` —— 证明数据真的写进去了
-9. stdin EOF —— 优雅关停
+7. `db_query` 完整对比 —— 2026 订单汇总 vs 单价>100 产品（`price:">,100"` 比较操作符）
+8. `db_insert` —— 对比结论**写入 jsonfile.analytics**（MRTR 确认）
+9. `db_count` —— 验证两个输出表都写入了
+10. `db_delete` —— 收尾：清空 analytics 统计空表，保留 region_sales 汇总
+11. stdin EOF —— 优雅关停
+
+**最终 jsonfile**：`region_sales`（5 行地区汇总）+ `analytics`（空，统计空表容器）。
+
+> **终端编码**：演示输出为 UTF-8。cmd / PowerShell 下程序会自动切换控制台代码页（`SetConsoleOutputCP(CP_UTF8)`），无需手动 `chcp 65001`；MSYS2 mintty 默认 UTF-8 可直接显示。若在自定义终端仍遇乱码，请确认终端字符集为 UTF-8。
 
 ## 二、接入真实 AI 客户端（自然语言模式）
 

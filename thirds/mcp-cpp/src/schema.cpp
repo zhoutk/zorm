@@ -293,7 +293,9 @@ struct Validator {
         for (const auto& key : value.getAllKeys().toVector()) {
           const std::string keyStr(key.toString());
           const Json prop = direct(properties, keyStr.c_str());
-          if (!prop.isError()) {
+          // direct() returns Json(nullptr) for an absent key (null doubles as
+          // "absent" here, NOT an error) - use isNull(), not isError().
+          if (!prop.isNull()) {
             matched.insert(keyStr);
             if (!check(value[keyStr], prop, path + "/" + keyStr, depth + 1)) return false;
           }

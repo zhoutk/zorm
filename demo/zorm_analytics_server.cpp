@@ -17,6 +17,7 @@
 //   --setup     create/seed demo tables idempotently, then exit
 //   --demo      self-driven scripted demo via the mcp-cpp client API
 //               (spawns itself as a child over real stdio pipes)
+//   --auto      true (default) = 全自动演示; false = 每步暂停等按键 + 验证提示
 //   --http N    also serve Streamable HTTP on 127.0.0.1:N
 //   --yes       disable MRTR write confirmation (automation/tests only)
 //   --allow-sql expose db_exec_sql (dangerous; default hidden)
@@ -34,6 +35,7 @@
 #include <io.h>
 #endif
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -85,6 +87,14 @@ Json toMcpJson(const ZORM::Json& zj) {
   return parsed.isError() ? Json(nullptr) : parsed;
 }
 
+// zorm 的"成功"状态码: STSUCCESS(200) 正常返回, STQUERYEMPTY(202) 查无结果。
+// 202 不是错误 - jsonfile 后端对"查无结果"返回 202 (SQL 后端统一返回 200),
+// AI 客户端应当把 202 视为空结果集而不是失败。所有工具判断状态时都走这里。
+bool okStatus(const ZORM::Json& rs) {
+  const int code = rs["status"].toInt();
+  return code == 200 || code == 202;
+}
+
 ZORM::Json toZormJson(const Json& j) { return ZORM::Json(j.toString().c_str()); }
 
 // Pretty-prints a Json for tool result text.
@@ -105,7 +115,9 @@ struct DbSpec {
 // stdout to carry ONLY JSON-RPC messages (logs would corrupt the stream).
 std::map<std::string, DbSpec> defaultDatabases() {
   std::map<std::string, DbSpec> dbs;
-  dbs["sqlite"] = {"sqlite3", ZORM::Json(R"({"connString":"demo.db","DbLogClose":true})")};
+  // parameterized:true - 使用参数化 SQL(占位符绑定), 否则非参数化路径会把
+  // ins/lks 的字符串值裸拼进 SQL(如 in (electronics)), 导致 "no such column"。
+  dbs["sqlite"] = {"sqlite3", ZORM::Json(R"({"connString":"demo.db","DbLogClose":true,"parameterized":true})")};
   dbs["jsonfile"] = {"jsonfile", ZORM::Json(R"({"connString":"analytics.json","DbLogClose":true})")};
   return dbs;
 }
@@ -154,6 +166,27 @@ struct DemoServer {
 
 DemoServer g;
 
+// ---- jsonfile schema helpers ---------------------------------------------------
+
+// jsonfile 后端没有"列出所有表"的 API(metadataQueryResult 只查单表), 而输出库
+// 的表是运行时动态创建的(sqlite 测试数据 -> 汇总结果写入 jsonfile)。这里直接读
+// 存储文件(demo 是纯 JSON 数组 [{table, rows}, ...]), 返回实际存在的表名。
+// 空/缺失文件返回空表(与后端语义一致)。
+std::vector<std::string> jsonfileTableNames(const ZORM::Json& options) {
+  std::vector<std::string> tables;
+  const std::string file = options["connString"].toString();
+  std::ifstream in(file, std::ios::binary);
+  if (!in) return tables;  // 文件不存在/不可读 -> 空表
+  std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string err;
+  Json doc = Json::ParseJson(raw, err);
+  if (doc.isError() || !doc.isArray()) return tables;
+  for (const auto& item : doc.toVector()) {
+    if (item.isObject() && item.contains("table")) tables.push_back(item["table"].toString());
+  }
+  return tables;
+}
+
 // ---- per-tool handlers --------------------------------------------------------
 
 McpResult<Json> toolListTables(Ctx& c) {
@@ -173,13 +206,9 @@ McpResult<Json> toolListTables(Ctx& c) {
       for (const auto& row : rs["data"].toVector()) tables.push_back(row["name"].toString());
     }
   } else if (type == "jsonfile") {
-    // The whole store is one JSON array of {table, columns, rows}; we read it
-    // through querySql with a special marker the backend understands, or via
-    // the storage file. Simplest portable path: count-based probe is avoided;
-    // jsonfile's select on a fake table errors - instead read the file keys.
-    // For the demo we keep the schema known from setup (see schemaCache) and
-    // list tables from the cache if populated, else a fixed default set.
-    tables = {"orders", "users", "products", "analytics"};
+    // jsonfile 是"输出库": 表由运行时写入自动创建(首次 insert 建表)。动态
+    // 读取存储文件实际存在的表 - 空文件返回空清单。
+    tables = jsonfileTableNames(g.specs[dbName].options);
   } else {
     // mysql/postgres/dm8: information_schema (best-effort; only when the
     // backend is configured - not exercised in the open-box demo).
@@ -283,6 +312,21 @@ McpResult<Json> toolQuery(Ctx& c) {
     const Json v = member(args, key);
     if (!v.isError() && !v.isNull()) params.add(key, toZormJson(v));
   }
+  // 透传其余 key 作为普通列条件: 等值 {price:100} 或带比较操作符的
+  // 字符串 {price:">,100"}(zorm 比较前缀: >, >=, <, <=, <>, =)。
+  // 这样 AI 客户端可以写 {price:">,100"} 查单价大于 100 的产品。
+  for (const auto& k : args.getAllKeys().toVector()) {
+    const std::string kk = k.toString();
+    if (kk == "db" || kk == "table" || kk == "fields" || kk == "lks" || kk == "ins" ||
+        kk == "ors" || kk == "group" || kk == "sort" || kk == "sum" || kk == "count" ||
+        kk == "fuzzy" || kk == "page" || kk == "size") {
+      continue;  // 保留 key 已处理
+    }
+    const Json v = member(args, kk);
+    if (v.isError() || v.isNull()) continue;
+    // 数值/布尔直接透传; 字符串若带比较前缀(>, >= 等)原样透传, 否则当等值。
+    params.add(kk, toZormJson(v));
+  }
   std::vector<std::string> fields;
   const Json f = member(args, "fields");
   if (f.isArray()) {
@@ -290,9 +334,9 @@ McpResult<Json> toolQuery(Ctx& c) {
   }
 
   const ZORM::Json rs = db->select(table, params, fields);
-  if (rs["status"].toInt() != 200) {
+  if (!okStatus(rs)) {
     return Err(McpErrorCode::InvalidParams,
-               "query failed: " + rs["info"].toString());
+               "query failed: " + rs["message"].toString());
   }
   return Ok(toolResult(toMcpJson(rs)));
 }
@@ -308,8 +352,8 @@ McpResult<Json> toolCount(Ctx& c) {
   ZORM::Json params;
   params.add("count", ZORM::Json("*,total"));
   const ZORM::Json rs = db->select(table, params);
-  if (rs["status"].toInt() != 200)
-    return Err(McpErrorCode::InvalidParams, "count failed: " + rs["info"].toString());
+  if (!okStatus(rs))
+    return Err(McpErrorCode::InvalidParams, "count failed: " + rs["message"].toString());
   return Ok(toolResult(toMcpJson(rs)));
 }
 
@@ -390,11 +434,18 @@ McpResult<Json> stageWrite(Ctx& c, const std::string& kind) {
     // Pre-count rows that a delete would affect for the confirmation text.
     std::string impact = "1 row";
     if (kind == "delete" && member(args, "where").isObject()) {
+      // 预计影响行数: select 的 where 条件在顶层(与 zorm 语义一致),
+      // count 是保留字, 由后端聚合。
       ZORM::Json wp;
-      wp.add("where", toZormJson(member(args, "where")));
+      const Json where = member(args, "where");
+      if (where.contains("id")) {
+        wp.add("id", toZormJson(where["id"]));
+      } else {
+        wp.add("where", toZormJson(where));
+      }
       wp.add("count", ZORM::Json("*,total"));
       const ZORM::Json rs = db->select(table, wp);
-      if (rs["status"].toInt() == 200 && !rs["data"].isError()) {
+      if (okStatus(rs) && !rs["data"].isError()) {
         impact = std::to_string(rs["data"].size()) + " rows";
       }
     }
@@ -418,20 +469,26 @@ McpResult<Json> executeWrite(const std::string& dbName, const std::string& table
     elements.push_back(toZormJson(member(args, "data")));
     rs = db->insertBatch(table, elements, "id");
   } else if (kind == "update") {
+    // zorm update: params must carry the target id at the TOP level
+    // (buildUpdateSql reads params["id"]) plus the columns to change.
+    // The client-facing shape is {data:{cols}, where:{id}} - flatten here.
     ZORM::Json params = toZormJson(member(args, "data"));
-    params.add("where", toZormJson(member(args, "where")));
-    // zorm update: needs an id in the where clause (buildUpdateSql uses id).
-    // For demo simplicity we only support id-based updates via the where.id.
+    const Json where = member(args, "where");
+    const std::string id = where["id"].toString();
+    if (!id.empty()) params.add("id", ZORM::Json(id.c_str()));
     rs = db->update(table, params);
   } else if (kind == "delete") {
+    // zorm remove: params["id"] at the TOP level (buildDeleteSql / jsonfile
+    // remove both require it). The client-facing where:{id} flattens here.
     ZORM::Json params;
-    params.add("where", toZormJson(member(args, "where")));
+    const Json where = member(args, "where");
+    params.add("id", toZormJson(where["id"]));
     rs = db->remove(table, params);
   } else if (kind == "exec_sql") {
     rs = db->execSql(member(args, "sql").toString());
   }
-  if (rs["status"].toInt() != 200)
-    return Err(McpErrorCode::InternalError, "write failed: " + rs["info"].toString());
+  if (!okStatus(rs))
+    return Err(McpErrorCode::InternalError, "write failed: " + rs["message"].toString());
 
   // Notify resource subscribers that this table changed (mcp-cpp fan-out).
   if (auto srv = g.server.lock()) {
@@ -608,7 +665,7 @@ void registerAll(Builder& b) {
 
   b.tool(Json(R"({"name":"db_list_tables","description":"List tables in a backend.","inputSchema":{"type":"object","required":["db"],"properties":{"db":{"type":"string"}}}})"),
          toolListTables);
-  b.tool(Json(R"({"name":"db_query","description":"Smart query over a table. Structured JSON, no SQL needed. lks/ins/ors are objects mapping columns to values; group/sum/sort accept arrays or strings.","inputSchema":{"type":"object","required":["db","table"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"fields":{"type":"array","items":{"type":"string"}},"lks":{"type":"object","description":"fuzzy matches with percent-wildcards"},"ins":{"type":"object","description":"IN-list matches"},"ors":{"type":"object","description":"OR matches"},"group":{"oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},"sum":{"oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},"sort":{"oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},"page":{"type":"integer","minimum":1},"size":{"type":"integer","minimum":1,"maximum":500},"count":{"type":"string"}}}})"),
+  b.tool(Json(R"({"name":"db_query","description":"Smart query over a table. Structured JSON, no SQL needed. lks/ins/ors are objects mapping columns to values; group/sum/sort accept arrays or strings; any other key is a plain column condition (equal, or a string with a compare prefix like \">,100\" for greater-than).","inputSchema":{"type":"object","required":["db","table"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"fields":{"type":"array","items":{"type":"string"}},"lks":{"type":"object","description":"fuzzy matches with percent-wildcards"},"ins":{"type":"object","description":"IN-list matches"},"ors":{"type":"object","description":"OR matches"},"group":{"oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},"sum":{"oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},"sort":{"oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},"page":{"type":"integer","minimum":1},"size":{"type":"integer","minimum":1,"maximum":500},"count":{"type":"string"}},"additionalProperties":true}})"),
          toolQuery);
   b.tool(Json(R"({"name":"db_count","description":"Count rows in a table.","inputSchema":{"type":"object","required":["db","table"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"where":{"type":"object"}}}})"),
          toolCount);
@@ -659,7 +716,9 @@ bool setupDatabases(const std::map<std::string, DbSpec>& specs, bool seed) {
       return false;
     }
     g.backends[dbName] = std::move(db);
-    if (seed) {
+    if (seed && spec.type != "jsonfile") {
+      // 设计: 测试数据全部放在 sqlite; jsonfile 是"输出库", 保持空文件,
+      // 由演示步骤在运行时写入(首次写入自动建表)。
       if (!zorm_demo::setupDemoData(g.backends[dbName].get(), spec.type, dbName)) {
         std::cerr << "[zorm-analytics] seeding " << dbName << " failed" << std::endl;
         return false;
@@ -678,7 +737,8 @@ bool discoverAllSchemas() {
     if (db == nullptr) continue;
     std::vector<std::string> tables;
     if (spec.type == "jsonfile") {
-      tables = {"orders", "users", "products", "analytics"};
+      // 输出库: 表运行时动态创建, 从存储文件读取实际表名(空文件 -> 无表)。
+      tables = jsonfileTableNames(spec.options);
     } else if (spec.type == "sqlite3") {
       ZORM::Json rs = db->querySql(
           "select name from sqlite_master where type='table' and name not like 'sqlite_%'");
@@ -725,6 +785,7 @@ int main(int argc, char** argv) {
   bool doSetup = false, doDemo = false, doHttp = false;
   int httpPort = 8080;
   std::string configPath;
+  bool autoMode = true;  // --auto 默认 true: 自动完成演示
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--setup") doSetup = true;
@@ -732,11 +793,16 @@ int main(int argc, char** argv) {
     else if (a == "--http") { doHttp = true; if (i + 1 < argc) httpPort = std::atoi(argv[++i]); }
     else if (a == "--yes") g.confirmWrites = false;
     else if (a == "--allow-sql") g.allowSql = true;
+    else if (a == "--auto" && i + 1 < argc) {
+      const std::string v = argv[++i];
+      // 接受 "true/false" 或 "1/0" 或 "yes/no"
+      autoMode = (v == "true" || v == "1" || v == "yes");
+    }
     else if (a == "--config" && i + 1 < argc) configPath = argv[++i];
     else if (a == "--child") { /* internal: spawned by --demo */ }
     else {
-      std::cerr << "usage: zorm_analytics_server [--setup] [--demo] [--http <port>] "
-                   "[--yes] [--allow-sql] [--config <file>]\n";
+      std::cerr << "usage: zorm_analytics_server [--setup] [--demo] [--auto true|false] "
+                   "[--http <port>] [--yes] [--allow-sql] [--config <file>]\n";
       return 2;
     }
   }
@@ -768,6 +834,14 @@ int main(int argc, char** argv) {
   if (!setupDatabases(g.specs, needSeed)) return 1;
   discoverAllSchemas();
   if (doSetup) {
+    // --setup: sqlite 已 seed; jsonfile 是"输出库", 重置为空文件(写空数组),
+    // 保证每次演示从干净的输出起点开始。
+    for (const auto& [dbName, spec] : g.specs) {
+      if (spec.type != "jsonfile") continue;
+      std::ofstream out(spec.options["connString"].toString(),
+                        std::ios::binary | std::ios::trunc);
+      if (out) out << "[]";
+    }
     std::cout << "[zorm-analytics] setup complete. databases: " << g.dbListText() << std::endl;
     return 0;
   }
@@ -777,8 +851,8 @@ int main(int argc, char** argv) {
   // --demo: self-driven scripted demo over real stdio pipes (spawn self as child).
   if (doDemo) {
     // Forward declaration defined below.
-    extern int runScriptedDemo(const std::shared_ptr<Server>&);
-    return runScriptedDemo(server);
+    extern int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode);
+    return runScriptedDemo(server, autoMode);
   }
 
   // --http: HTTP-ONLY serving (stdio not run).
@@ -943,11 +1017,23 @@ PipeChild spawnSelfChild() {
 
 #ifdef _WIN32
 // Windows 10+ terminals support ANSI/VT once enabled on the stdout handle.
+// Also switch the console code page to UTF-8 (CP_UTF8 / 65001) so the
+// Chinese demo text displays correctly in cmd / PowerShell / mintty alike.
+// Notes:
+//  - SetConsoleOutputCP affects the console output codepage; without it,
+//    cmd (cp936/GBK) renders the UTF-8 byte stream as mojibake.
+//  - Only call when attached to a real console (GetConsoleMode succeeds);
+//    piped stdout (e.g. run-demo.sh | cat, the --child server) must NOT be
+//    touched - the parent terminal owns the console.
 void enableVirtualTerminal() {
   HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
   DWORD mode = 0;
   if (GetConsoleMode(out, &mode)) {
     SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    // Best-effort: switch both input and output to UTF-8. The console may
+    // refuse (older Windows) - output stays readable in mintty regardless.
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
   }
 }
 #else
@@ -982,122 +1068,380 @@ struct PipeTransport final : mcp::ITransport {
   McpResult<void> flush() override { return Ok(); }
 };
 
-int runScriptedDemo(const std::shared_ptr<Server>&) {
+int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
   using namespace demo_color;
   enableVirtualTerminal();
 
-  std::cout << "\n" << kBold << "=== Zorm Analytics MCP - self-driven demo ===" << kReset << "\n";
-  std::cout << kCyan << "One AI assistant, many databases, zero SQL dialects.\n" << kReset;
-  std::cout << "(a real child MCP server over real OS pipes, driven by mcp-cpp's own client API)\n\n";
-
+  // 演示节奏控制: 默认模拟真人操作节奏(每步停顿), 设 ZORM_DEMO_FAST=1
+  // 可加速(CI/自动化), 设 ZORM_DEMO_STEP_MS=<毫秒> 自定义每步停顿。
+  auto demoDelayMs = []() -> long {
+    static const long step = []() -> long {
+      const char* v = std::getenv("ZORM_DEMO_STEP_MS");
+      if (v != nullptr && *v != '\0') return std::strtol(v, nullptr, 10);
+      return 1200L;  // 默认每步约 1.2 秒
+    }();
+    return step;
+  };
+  const bool fastMode = std::getenv("ZORM_DEMO_FAST") != nullptr;
+  auto pause = [&](long ms) {
+    if (!fastMode) std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  };
+  // 模拟"AI 正在处理请求"的间隔(请求发出后到结果返回前的思考时间)。
+  auto thinking = [&]() {
+    if (fastMode) return;
+    std::cout << kYellow << "      ··· 调用中" << kReset << std::flush;
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    std::cout << "\r      \r" << std::flush;  // 清掉占位符
+  };
+  // 分步模式(--auto false): 每步结束后暂停, 提示用户如何验证刚才这一步。
+  // 用户按键继续; 显示"q"可提前结束演示。
   PipeChild child = spawnSelfChild();
   PipeTransport transport(child);
   Client client("zorm-analytics-demo", "0.1.0");
   client.connect(transport);
 
+  // 分步模式(--auto false): 每步结束后暂停, 提示用户如何验证刚才这一步。
+  // 用户按键继续; 输入 q 提前结束演示(返回 false)。自动模式直接返回 true。
+  auto stepDone = [&](const std::string& verifyHint) -> bool {
+    if (autoMode) return true;  // 自动模式: 不停顿, 继续
+    std::cout << "\n" << kMagenta << "  ── 本步已完成 ──" << kReset << "\n";
+    if (!verifyHint.empty()) {
+      std::cout << kYellow << "  验证方法: " << kReset << verifyHint << "\n";
+    }
+    std::cout << kCyan << "  按回车键继续下一演示步骤 (输入 q 退出)... " << kReset << std::flush;
+    std::string line;
+    std::getline(std::cin, line);
+    if (line == "q" || line == "Q" || line == "quit") {
+      std::cout << kYellow << "  演示提前结束。\n" << kReset;
+      return false;
+    }
+    return true;
+  };
+  // 每步调用 stepDone 后的统一检查: 返回 false 则优雅关停子进程并结束演示。
+  auto afterStep = [&](bool keepGoing) {
+    if (!keepGoing) {
+      child.closeStdin();
+#ifdef _WIN32
+      WaitForSingleObject(child.pi.hProcess, 3000);
+#else
+      waitpid(child.pid, nullptr, 0);
+#endif
+      std::cout << kYellow << "(演示已由用户提前结束。)\n" << kReset;
+      return true;  // 需要结束整个函数
+    }
+    return false;
+  };
+
+  std::cout << "\n" << kBold << "=== Zorm Analytics MCP - 自驱动演示 ===" << kReset << "\n";
+  std::cout << kCyan << "一个 AI 助手，多种数据库，零 SQL 方言差异。\n" << kReset;
+  std::cout << "(通过真实 OS 管道驱动一个 MCP 子进程服务器，由 mcp-cpp 客户端 API 调用 - "
+               "与 AI 客户端完全相同的调用路径)\n\n";
+  // 数据库文件位置: 与当前工作目录相关, 用绝对路径打印, 方便用户去查看/验证。
+  std::cout << kYellow << "  两个演示数据库文件:\n" << kReset;
+  std::error_code ec;
+  const auto sqlitePath = std::filesystem::absolute("demo.db", ec);
+  const auto jsonPath = std::filesystem::absolute("analytics.json", ec);
+  std::cout << "    sqlite   : " << (ec ? "demo.db" : sqlitePath.string())
+            << "  [测试数据] orders/users/products 3 张表\n";
+  std::cout << "    jsonfile : " << (ec ? "analytics.json" : jsonPath.string())
+            << "  [输出库] 初始为空, 演示过程写入汇总结果\n";
+  std::cout << kReset;
+  if (!autoMode) {
+    std::cout << kCyan << "\n  当前为【分步演示模式】: 每步结束后会暂停, 可按提示打开数据库文件验证.\n"
+              << kReset;
+  } else {
+    std::cout << kYellow << "  自动模式: 如需逐步验证, 用 ./demo/run-demo.sh --auto false 重新运行\n"
+              << kReset;
+  }
+  pause(demoDelayMs() * 2);  // 开场让观众读完说明
+
   int step = 0;
   auto headline = [&](const char* text) {
     std::cout << "\n" << kBold << "[" << ++step << "] " << text << kReset << "\n";
-  };
-  auto report = [&](const char* label, const McpResult<Json>& r) {
-    std::cout << kGreen << "  -> ok" << kReset << "  " << label << "\n";
-    if (!r.has_value()) std::cout << kYellow << "  (failed: " << r.error().message << ")\n" << kReset;
+    pause(demoDelayMs());  // 标题后停顿, 让观众读
   };
 
   // [1] discover
-  headline("server/discover - version negotiation, capabilities");
+  headline("server/discover - 协议版本协商与能力发现");
+  std::cout << kYellow << "  请求: server/discover  <- 服务器告知支持的协议版本与能力\n" << kReset;
+  thinking();
   auto disc = client.discover();
-  report("supportedVersions + tools/resources/completions capabilities", disc);
+  if (disc.has_value()) {
+    const Json versions = member(*disc, "supportedVersions");
+    std::cout << kGreen << "  -> ok" << kReset << "  支持 " << versions.size()
+              << " 个协议版本: ";
+    for (const auto& v : versions.toVector()) std::cout << v.toString() << " ";
+    std::cout << "\n";
+    std::cout << kYellow << "  说明: 新版(2026)客户端无需握手, 每请求自带协议元数据;\n"
+              << "       旧版(Claude Code 等)走 legacy initialize - 服务器两者都兼容。\n" << kReset;
+    pause(demoDelayMs());
+    if (afterStep(stepDone("这是一个协议层步骤, 无需查数据库; 观察上方返回的 5 个版本号即可。"))) return 0;
+  } else {
+    std::cout << kYellow << "  discover failed: " << disc.error().message << "\n" << kReset;
+  }
 
   // [2] tools/list
-  headline("tools/list - the whole DB surface without any SQL");
+  headline("tools/list - 整个数据库操作面, 不写一行 SQL");
+  thinking();
   auto tools = client.listTools();
   if (tools.has_value()) {
     const Json arr = member(*tools, "tools");
-    std::cout << kGreen << "  -> " << arr.size() << " tools:" << kReset << " ";
-    for (const auto& t : arr.toVector()) std::cout << t["name"].toString() << " ";
+    std::cout << kGreen << "  -> ok" << kReset << "  共 " << arr.size() << " 个工具: ";
+    for (const auto& t : arr.toVector()) std::cout << kCyan << t["name"].toString() << kReset << " ";
     std::cout << "\n";
+    std::cout << kYellow << "  说明: 这 6 个工具覆盖 查表/查询/计数/增/改/删, 对所有后端一致。\n" << kReset;
+    pause(demoDelayMs());
+    if (afterStep(stepDone("协议层步骤; 观察上方的工具清单即可。"))) return 0;
   } else {
     std::cout << kYellow << "  tools/list failed\n" << kReset;
   }
 
   // [3] db_list_tables
-  headline("db_list_tables(sqlite) - schema discovery");
+  headline("db_list_tables(sqlite) - schema discovery 表清单发现");
+  std::cout << kYellow << "  请求: db_list_tables {db: \"sqlite\"}  <- 一个方法，不写任何 SQL\n" << kReset;
+  thinking();
   auto tables = client.callTool("db_list_tables", Json(R"({"db":"sqlite"})"));
-  report("orders / users / products", tables);
+  if (tables.has_value()) {
+    const Json arr = member(*tables, "tables");
+    std::cout << kGreen << "  -> ok" << kReset << "  共发现 " << arr.size() << " 张表:\n";
+    // 真实返回的表清单（与 AI 客户端看到的一致），附中文说明。
+    for (const auto& t : arr.toVector()) {
+      const std::string name = t.toString();
+      std::cout << "      - " << kCyan << name << kReset;
+      if (name == "orders") std::cout << "  订单表 (500 行: 地区/日期/金额/状态/商品)";
+      else if (name == "users") std::cout << "  用户表 (50 行: 姓名/注册日期)";
+      else if (name == "products") std::cout << "  产品表 (20 行: 名称/价格/类别)";
+      else if (name == "analytics") std::cout << "  分析结果表 (演示写操作的落点)";
+      std::cout << "\n";
+    }
+    std::cout << kYellow << "  说明: 同一句调用换 db 参数即可查其他库 - 五种后端零差异\n" << kReset;
+    pause(demoDelayMs() * 2);  // 表清单信息量大, 多停一会儿
+    if (afterStep(stepDone("打开 demo.db 查看: 终端执行  sqlite3 demo.db \".tables\"  (应看到 4 张表: "
+                             "orders/users/products/analytics)。"))) return 0;
+  } else {
+    std::cout << kYellow << "  db_list_tables failed: " << tables.error().message << "\n" << kReset;
+  }
 
-  // [4] smart query: group + sum
-  headline("db_query - natural semantics, no dialect: 2026 orders grouped by region");
+  // [4] smart query: group + sum (基于 sqlite 测试数据)
+  headline("db_query - 智能查询: 2026 年订单按地区汇总销售额 (数据在 sqlite)");
+  std::cout << kYellow << "  请求: db_query {db:\"sqlite\", table:\"orders\", lks:{order_date:\"2026\"}, "
+               "group:\"region\", sum:\"amount\"}\n"
+            << kReset
+            << kYellow << "  含义: 测试数据放在 sqlite - 过滤 2026 年订单 -> 按地区分组 -> 求和金额。"
+               "全程无 SQL。\n" << kReset;
   Json qargs;
   qargs.add("db", Json::str("sqlite"));
   qargs.add("table", Json::str("orders"));
   qargs.add("lks", Json(R"({"order_date":"2026"})"));
   qargs.add("group", Json::str("region"));
   qargs.add("sum", Json::str("amount"));
+  thinking();
   auto query = client.callTool("db_query", qargs);
   if (query.has_value()) {
     const Json data = member(*query, "data");
+    double total = 0.0;
+    std::cout << kGreen << "  -> ok" << kReset << "  2026 年各地区销售额汇总:\n";
     for (const auto& row : data.toVector()) {
       char sumBuf[64];
       std::snprintf(sumBuf, sizeof(sumBuf), "%.2f", row["amount"].toDouble());
-      std::cout << "  " << kCyan << row["region"].toString() << kReset << ": "
-                << sumBuf << "\n";
+      total += row["amount"].toDouble();
+      std::cout << "      - " << kCyan << row["region"].toString() << kReset
+                << " 地区: " << kMagenta << sumBuf << kReset << "\n";
+      pause(demoDelayMs() / 2);  // 逐行显示, 模拟 AI 逐条输出
     }
+    char totalBuf[64];
+    std::snprintf(totalBuf, sizeof(totalBuf), "%.2f", total);
+    std::cout << kYellow << "      合计: " << totalBuf << "  (等价 SQL: select region, sum(amount) "
+                 "from orders where order_date like '%2026%' group by region)\n"
+              << kReset;
+    pause(demoDelayMs() * 2);
+    if (afterStep(stepDone("用 SQL 交叉验证(sqlite 测试库): 终端执行  sqlite3 demo.db \"select region, "
+                             "sum(amount) from orders where order_date like '%2026%' group by region;\"  "
+                             "应得到相同的各地区金额。下一步会把结果写入 jsonfile 输出库。"))) return 0;
   } else {
     std::cout << kYellow << "  db_query failed: " << query.error().message << "\n" << kReset;
   }
 
-  // [5] cross-DB: jsonfile products filtered
-  headline("db_query on a DIFFERENT backend - same semantics (jsonfile products)");
-  Json pargs;
-  pargs.add("db", Json::str("jsonfile"));
-  pargs.add("table", Json::str("products"));
-  pargs.add("ins", Json(R"({"category":"electronics"})"));
-  auto products = client.callTool("db_query", pargs);
-  if (products.has_value()) {
-    const Json data = member(*products, "data");
-    std::cout << kGreen << "  -> " << data.size() << " electronics products" << kReset;
-    if (data.isArray() && data.size() > 0) {
-      std::cout << " (e.g. " << data[0]["name"].toString() << ")";
+  // [4b] 把汇总结果写入 jsonfile 的 region_sales 表 (MRTR 确认后落盘)
+  headline("db_insert - 汇总结果写入 jsonfile.region_sales (输出库落盘)");
+  std::cout << kYellow << "  含义: 测试数据在 sqlite, jsonfile 是输出库。把刚才的汇总结果写进去, "
+               "json 内容少、方便查看。\n" << kReset;
+  if (query.has_value()) {
+    const Json data = member(*query, "data");
+    // 逐地区写入 (每行一条, 演示多行批量插入的真实感; 数据量小, 逐条确认太啰嗦,
+    // 用一次 MRTR 确认 + 循环 retry 的简化方式: 先插第一条看确认流程, 其余跟进)。
+    bool firstRow = true;
+    int writtenCount = 0;  // 实际写入成功的行数(不是查询结果行数!)
+    for (const auto& row : data.toVector()) {
+      Json iargs;
+      iargs.add("db", Json::str("jsonfile"));
+      iargs.add("table", Json::str("region_sales"));
+      Json rowData;
+      rowData.add("region", Json::str(row["region"].toString()));
+      char sumBuf[64];
+      std::snprintf(sumBuf, sizeof(sumBuf), "%.2f", row["amount"].toDouble());
+      rowData.add("total_amount", Json::str(sumBuf));
+      iargs.add("data", std::move(rowData));
+      thinking();
+      auto ires = client.callTool("db_insert", iargs);
+      if (ires.has_value() && (*ires)["resultType"].toString() == "input_required") {
+        const std::string state = (*ires)["requestState"].toString();
+        if (firstRow) {
+          std::cout << kGreen << "  -> 服务器请求确认 (MRTR)" << kReset << "\n";
+          std::cout << kYellow << "  提示: " << kReset
+                    << (*ires)["inputRequests"]["confirm"]["params"]["message"].toString() << "\n";
+          pause(demoDelayMs());
+          std::cout << kMagenta << "  用户点击『批准』 -> 带 inputResponses 重发" << kReset << "\n";
+          pause(demoDelayMs());
+          firstRow = false;
+        }
+        Json iretry;
+        iretry.add("db", Json::str("jsonfile"));
+        iretry.add("table", Json::str("region_sales"));
+        Json ird;
+        ird.add("region", Json::str(row["region"].toString()));
+        char sBuf[64];
+        std::snprintf(sBuf, sizeof(sBuf), "%.2f", row["amount"].toDouble());
+        ird.add("total_amount", Json::str(sBuf));
+        iretry.add("data", std::move(ird));
+        iretry.add("requestState", Json::str(state));
+        Json iresp;
+        Json icf;
+        icf.add("approved", Json(true));
+        iresp.add("confirm", std::move(icf));
+        iretry.add("inputResponses", std::move(iresp));
+        thinking();
+        auto isecond = client.callTool("db_insert", iretry);
+        if (isecond.has_value()) {
+          // executeWrite 返回成功(200/202)才算真正落盘; has_value() 只说明
+          // MCP 响应正常, 写入可能被 zorm 拒绝(如文件被占用)。
+          const Json res = *isecond;
+          const bool ok = res["status"].isNumber() && res["status"].toInt() == 200;
+          if (ok) {
+            ++writtenCount;
+            std::cout << kGreen << "  -> 已写入 " << kCyan << row["region"].toString()
+                      << kReset << " 地区: " << sBuf << "\n";
+          } else {
+            std::cout << kYellow << "  -> 写入失败: " << res["message"].toString() << "\n" << kReset;
+          }
+        } else {
+          std::cout << kYellow << "  -> 写入失败: " << isecond.error().message << "\n" << kReset;
+        }
+        pause(demoDelayMs() / 2);
+      }
     }
-    std::cout << "\n";
-  } else {
-    std::cout << kYellow << "  db_query failed: " << products.error().message << "\n" << kReset;
+    if (writtenCount > 0) {
+      std::cout << kGreen << "  -> ok" << kReset << "  " << writtenCount
+                << " 个地区报告已写入, 用 db_count 确认实际落盘行数\n";
+      // 主动验证: 实际查询 jsonfile 里的 region_sales 行数, 与提示一致。
+      auto verifyCnt = client.callTool("db_count",
+                                       Json(R"({"db":"jsonfile","table":"region_sales"})"));
+      long long actualRows = 0;
+      if (verifyCnt.has_value()) {
+        const Json vdata = member(*verifyCnt, "data");
+        if (vdata.isArray() && vdata.size() > 0) actualRows = vdata[0]["total"].toInt64();
+      }
+      std::cout << kGreen << "  -> 实际落盘 " << kMagenta << actualRows << kReset
+                << " 行 (db_count 验证)\n";
+      pause(demoDelayMs());
+      if (afterStep(stepDone("打开 analytics.json: 现在应有 region_sales 表, " +
+                               std::to_string(actualRows) + " 行(每个地区一行), "
+                               "字段 {region, total_amount}。"))) return 0;
+    } else {
+      std::cout << kYellow << "  -> 没有任何地区写入成功! 检查 analytics.json 是否被其他程序打开占用。\n"
+                << kReset;
+      pause(demoDelayMs());
+    }
   }
 
-  // [6] resources
-  headline("resources/read - the server describes its own schema");
+  // [5] resources
+  headline("resources/read - 服务器自描述 schema (资源读取)");
+  std::cout << kYellow << "  请求: resources/read db://schema/sqlite/orders\n" << kReset;
+  thinking();
   auto schema = client.readResource("db://schema/sqlite/orders");
   if (schema.has_value()) {
     const Json contents = member(*schema, "contents");
     if (contents.isArray() && contents.size() > 0) {
-      std::cout << "  " << contents[0]["text"].toString() << "\n";
+      std::cout << kGreen << "  -> ok" << kReset << "  服务器返回 orders 表结构:\n";
+      std::cout << "      " << contents[0]["text"].toString() << "\n";
     }
+    std::cout << kYellow << "  说明: 资源(MCP resources)让客户端在动手查询前先了解数据结构。\n" << kReset;
+    pause(demoDelayMs());
+    if (afterStep(stepDone("用 SQL 交叉验证: 终端执行  sqlite3 demo.db \".schema orders\"  应显示 orders 表的 "
+                             "6 个字段 (id/region/order_date/amount/status/product)。"))) return 0;
   } else {
     std::cout << kYellow << "  resources/read failed: " << schema.error().message << "\n" << kReset;
   }
 
-  // [7] MRTR write confirmation
-  headline("db_insert - writes need HUMAN confirmation (MRTR)");
+  // [6] 完整操作: sqlite 2026 订单按地区汇总 + sqlite 高价产品 -> 对比 -> 写 jsonfile
+  headline("db_query 完整对比 - 2026 订单汇总 vs 单价>100 产品 (数据都在 sqlite)");
+  std::cout << kYellow << "  请求1: db_query {db:\"sqlite\", table:\"orders\", lks:{order_date:\"2026\"}, "
+               "group:\"region\", sum:\"amount\"}\n"
+            << kReset
+            << kYellow << "  请求2: db_query {db:\"sqlite\", table:\"products\", price:\">,100\"}\n"
+            << kReset
+            << kYellow << "  含义: 2026 年订单按地区分组汇总金额, 再查出单价超过 100 的产品做对比。\n"
+            << kReset;
+  // 高价产品查询 (products 在 sqlite, 用比较操作符 >,100)
+  Json pargs;
+  pargs.add("db", Json::str("sqlite"));
+  pargs.add("table", Json::str("products"));
+  pargs.add("price", Json::str(">,100"));
+  thinking();
+  auto products = client.callTool("db_query", pargs);
+  int expensiveCount = 0;
+  double expensiveTotal = 0.0;
+  if (products.has_value()) {
+    const Json data = member(*products, "data");
+    expensiveCount = static_cast<int>(data.size());
+    std::cout << kGreen << "  -> ok" << kReset << "  单价 > 100 的产品 " << kCyan
+              << expensiveCount << kReset << " 件: ";
+    std::string names;
+    for (const auto& p : data.toVector()) {
+      if (!names.empty()) names += ", ";
+      names += p["name"].toString();
+      expensiveTotal += p["price"].toDouble();
+    }
+    std::cout << names << "\n";
+    pause(demoDelayMs());
+  } else {
+    std::cout << kYellow << "  db_query(products) failed: " << products.error().message << "\n" << kReset;
+  }
+
+  // 对比结论 + 写入 jsonfile analytics 表 (MRTR 确认)
+  headline("db_insert - 对比结论写入 jsonfile.analytics (MRTR 人机确认)");
+  std::cout << kYellow << "  请求: db_insert {db:\"jsonfile\", table:\"analytics\", data:{...}}\n"
+            << kReset
+            << kYellow << "  含义: 把两边的统计对比结果存到输出库。写操作不立即执行 - "
+               "先返回 input_required, 由人工确认后落盘。\n" << kReset;
   Json args;
   args.add("db", Json::str("jsonfile"));
   args.add("table", Json::str("analytics"));
   Json data;
-  data.add("note", Json::str("demo summary - regions compared"));
+  char expTotalBuf[64];
+  std::snprintf(expTotalBuf, sizeof(expTotalBuf), "%.2f", expensiveTotal);
+  data.add("summary", Json::str("2026 orders by region vs expensive products"));
+  data.add("expensive_product_count", Json(expensiveCount));
+  data.add("expensive_product_total", Json::str(expTotalBuf));
   args.add("data", std::move(data));
+  thinking();
   auto first = client.callTool("db_insert", args);
   if (first.has_value() && (*first)["resultType"].toString() == "input_required") {
     const std::string state = (*first)["requestState"].toString();
-    std::cout << kYellow << "  server asks: " << kReset
-              << (*first)["inputRequests"].toString() << "\n";
-    std::cout << "  (the AI client would now show this to the human...)\n";
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    std::cout << kMagenta << "  human approves -> retry with inputResponses" << kReset << "\n";
+    std::cout << kGreen << "  -> 服务器请求确认 (resultType=input_required)" << kReset << "\n";
+    std::cout << kYellow << "  提示: " << kReset
+              << (*first)["inputRequests"]["confirm"]["params"]["message"].toString() << "\n";
+    std::cout << "     (真实 AI 客户端此时会把这个确认请求展示给用户...)\n";
+    pause(demoDelayMs() * 2);  // 展示确认框, 让观众读
+    std::cout << kMagenta << "  用户点击『批准』 -> 带 inputResponses 重发" << kReset << "\n";
+    pause(demoDelayMs());  // 模拟用户思考后点击
     Json retry;
     retry.add("db", Json::str("jsonfile"));
     retry.add("table", Json::str("analytics"));
     Json data2;
-    data2.add("note", Json::str("demo summary - regions compared"));
+    data2.add("summary", Json::str("2026 orders by region vs expensive products"));
+    data2.add("expensive_product_count", Json(expensiveCount));
+    data2.add("expensive_product_total", Json::str(expTotalBuf));
     retry.add("data", std::move(data2));
     retry.add("requestState", Json::str(state));
     Json responses;
@@ -1105,21 +1449,116 @@ int runScriptedDemo(const std::shared_ptr<Server>&) {
     confirm.add("approved", Json(true));
     responses.add("confirm", std::move(confirm));
     retry.add("inputResponses", std::move(responses));
+    thinking();
     auto second = client.callTool("db_insert", retry);
-    report(second.has_value() ? "persisted to jsonfile" : "FAILED", second);
+    if (second.has_value() && second->isObject() &&
+        second->contains("status") && (*second)["status"].toInt() == 200) {
+      std::cout << kGreen << "  -> ok" << kReset << "  对比结论已写入 jsonfile.analytics (用户批准后真正落库)\n";
+      pause(demoDelayMs());
+      if (afterStep(stepDone("打开 analytics.json: 现在应有 2 张表 - region_sales(5 行地区汇总) 和 "
+                               "analytics(对比结论, 含 expensive_product_count 字段)。"))) return 0;
+    } else {
+      const std::string errMsg = second.has_value()
+          ? (*second)["message"].toString()
+          : second.error().message;
+      std::cout << kYellow << "  db_insert retry failed: " << errMsg << "\n" << kReset;
+    }
   } else if (first.has_value()) {
     std::cout << kYellow << "  (unexpected: executed without confirmation)\n" << kReset;
   } else {
     std::cout << kYellow << "  db_insert failed: " << first.error().message << "\n" << kReset;
   }
 
-  // [8] count as proof
-  headline("db_count - the write is really there");
-  auto cnt = client.callTool("db_count", Json(R"({"db":"jsonfile","table":"analytics"})"));
-  std::cout << "  " << (cnt.has_value() ? cnt->toString() : "failed") << "\n";
+  // [7] count as proof (验证两个 jsonfile 输出表)
+  headline("db_count - 验证写入真的生效 (两个输出表的计数)");
+  std::cout << kYellow << "  请求: db_count {db:\"jsonfile\", table:\"region_sales\"}  /  "
+               "db_count {db:\"jsonfile\", table:\"analytics\"}\n" << kReset;
+  auto cntRegion = client.callTool("db_count", Json(R"({"db":"jsonfile","table":"region_sales"})"));
+  auto cntAnalytics = client.callTool("db_count", Json(R"({"db":"jsonfile","table":"analytics"})"));
+  long long regionTotal = 0, analyticsTotal = 0;
+  if (cntRegion.has_value()) {
+    const Json data = member(*cntRegion, "data");
+    if (data.isArray() && data.size() > 0) regionTotal = data[0]["total"].toInt64();
+  }
+  if (cntAnalytics.has_value()) {
+    const Json data = member(*cntAnalytics, "data");
+    if (data.isArray() && data.size() > 0) analyticsTotal = data[0]["total"].toInt64();
+  }
+  std::cout << kGreen << "  -> ok" << kReset << "  region_sales 表 " << kMagenta << regionTotal
+            << kReset << " 行 (2026 各地区汇总) | analytics 表 " << kMagenta << analyticsTotal
+            << kReset << " 行 (对比结论)\n";
+  pause(demoDelayMs() * 2);
+  if (afterStep(stepDone("打开 analytics.json: 应看到 2 张表 - region_sales(" + std::to_string(regionTotal) +
+                           " 行) 和 analytics(" + std::to_string(analyticsTotal) + " 行)。"))) return 0;
+
+  // [8] 收尾: 清空 analytics 统计表, 保留 region_sales 汇总表
+  // 最终 jsonfile = 2026 订单按地区汇总销售额表(有数据) + 统计空表(输出容器)。
+  headline("db_delete - 收尾: 清空 analytics 统计表 (保留 region_sales 汇总)");
+  std::cout << kYellow << "  含义: 演示结束, analytics 作为『统计空表』容器清空; "
+               "region_sales 汇总结果保留, 方便查看。\n" << kReset;
+  Json delQuery;
+  delQuery.add("db", Json::str("jsonfile"));
+  delQuery.add("table", Json::str("analytics"));
+  delQuery.add("lks", Json(R"({"summary":"2026"})"));
+  thinking();
+  auto delRows = client.callTool("db_query", delQuery);
+  bool cleaned = true;
+  if (delRows.has_value()) {
+    const Json rows = member(*delRows, "data");
+    if (rows.size() > 0) {
+      std::cout << kGreen << "  -> ok" << kReset << "  找到 " << rows.size()
+                << " 条 analytics 记录, 逐条删除\n";
+      pause(demoDelayMs());
+    }
+    for (const auto& row : rows.toVector()) {
+      Json delArgs;
+      delArgs.add("db", Json::str("jsonfile"));
+      delArgs.add("table", Json::str("analytics"));
+      Json where;
+      where.add("id", Json::str(row["id"].toString()));
+      delArgs.add("where", std::move(where));
+      thinking();
+      auto delFirst = client.callTool("db_delete", delArgs);
+      if (delFirst.has_value() && (*delFirst)["resultType"].toString() == "input_required") {
+        const std::string state = (*delFirst)["requestState"].toString();
+        std::cout << kGreen << "  -> 请求确认删除 id=" << row["id"].toString() << kReset << "\n";
+        pause(demoDelayMs() / 2);
+        std::cout << kMagenta << "  用户点击『批准』" << kReset << "\n";
+        Json delRetry;
+        delRetry.add("db", Json::str("jsonfile"));
+        delRetry.add("table", Json::str("analytics"));
+        Json where2;
+        where2.add("id", Json::str(row["id"].toString()));
+        delRetry.add("where", std::move(where2));
+        delRetry.add("requestState", Json::str(state));
+        Json delResponses;
+        Json delConfirm;
+        delConfirm.add("approved", Json(true));
+        delResponses.add("confirm", std::move(delConfirm));
+        delRetry.add("inputResponses", std::move(delResponses));
+        auto delSecond = client.callTool("db_delete", delRetry);
+        if (delSecond.has_value()) {
+          std::cout << kGreen << "  -> 已删除 id=" << row["id"].toString() << kReset << "\n";
+        } else {
+          std::cout << kYellow << "  -> 删除失败: " << delSecond.error().message << "\n" << kReset;
+          cleaned = false;
+        }
+        pause(demoDelayMs() / 2);
+      }
+    }
+  }
+  if (cleaned) {
+    std::cout << kGreen << "  -> analytics 已清空(统计空表) | region_sales 汇总保留\n" << kReset;
+    pause(demoDelayMs());
+    if (afterStep(stepDone("最终 analytics.json: region_sales 表(5 行地区汇总) + analytics 表(空数组 [] 统计空表)。"
+                             "测试数据仍在 sqlite demo.db。"))) return 0;
+  } else {
+    std::cout << kYellow << "  (清理失败或无需清理)\n" << kReset;
+  }
 
   // graceful shutdown
-  headline("stdin EOF - graceful shutdown");
+  headline("stdin EOF - 优雅关停 (客户端断开即退出)");
+  pause(demoDelayMs() / 2);
   child.closeStdin();
 #ifdef _WIN32
   WaitForSingleObject(child.pi.hProcess, 5000);
@@ -1127,8 +1566,15 @@ int runScriptedDemo(const std::shared_ptr<Server>&) {
   waitpid(child.pid, nullptr, 0);
 #endif
 
-  std::cout << "\n" << kBold << "=== demo complete ===" << kReset << "\n";
-  std::cout << "Now connect a real AI client (see README_demo.md):\n";
+  std::cout << "\n" << kBold << "=== demo complete 演示完成 ===" << kReset << "\n";
+  std::cout << "数据流: sqlite 测试数据 -> 查询/统计 -> 结果写入 jsonfile 输出库。\n";
+  std::cout << "最终 jsonfile(analytics.json) 含 2 张表:\n";
+  std::cout << "  - region_sales  2026 年订单按地区汇总销售额 (5 行)\n";
+  std::cout << "  - analytics     统计空表 (输出容器)\n";
+  std::cout << "测试数据仍在 sqlite(demo.db): orders/users/products。\n";
+  std::cout << "\n覆盖的协议能力: 版本协商 / 工具发现 / 智能查询(聚合/比较) /\n";
+  std::cout << "资源读取 / MRTR 写入确认 / 优雅关停。\n";
+  std::cout << "\n用真实 AI 客户端连接 (见 README_demo.md):\n";
   std::cout << kCyan << "  claude mcp add zorm-analytics -- <path-to>/zorm_analytics_server.exe\n" << kReset;
   return 0;
 }

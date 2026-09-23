@@ -244,14 +244,28 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
   EXPECT_GE(data.size(), 1u);  // at least one region
   EXPECT_NE((*qr).toString().find("central"), std::string::npos);
 
-  // jsonfile: products IN electronics.
+  // sqlite: products IN electronics.  (products 现在在 sqlite; jsonfile 是空输出库)
   Json p;
-  p.add("db", Json::str("jsonfile"));
+  p.add("db", Json::str("sqlite"));
   p.add("table", Json::str("products"));
   p.add("ins", Json(R"({"category":"electronics"})"));
   auto pr = client.callTool("db_query", p);
   ASSERT_TRUE(pr.has_value());
   EXPECT_NE((*pr).toString().find("gadget"), std::string::npos);
+
+  // 比较操作符: price > 100 (zorm 的 >, 前缀, 之前被 schema 校验误拒, 回归保护)。
+  Json pq;
+  pq.add("db", Json::str("sqlite"));
+  pq.add("table", Json::str("products"));
+  pq.add("price", Json::str(">,100"));
+  auto pr2 = client.callTool("db_query", pq);
+  ASSERT_TRUE(pr2.has_value());
+  EXPECT_NE((*pr2).toString().find("gadget"), std::string::npos);  // gadget 120 > 100
+
+  // jsonfile 输出库: 空文件 -> 无表 (不再是硬编码的 4 张表)。
+  auto jt = client.callTool("db_list_tables", Json(R"({"db":"jsonfile"})"));
+  ASSERT_TRUE(jt.has_value());
+  EXPECT_NE((*jt).toString().find("tables"), std::string::npos);
 
   // db_count.
   auto cnt = client.callTool("db_count", Json(R"({"db":"sqlite","table":"orders"})"));
@@ -342,6 +356,39 @@ TEST(ZormAnalyticsE2E, MrtrWriteConfirmation) {
   auto cnt = client.callTool("db_count", Json(R"({"db":"jsonfile","table":"analytics"})"));
   ASSERT_TRUE(cnt.has_value());
   EXPECT_NE((*cnt).toString().find("\"total\""), std::string::npos);
+
+  // Cleanup: remove the rows this test wrote so demo runs always start
+  // from a clean analytics table (the demo's [7]-[9] steps expect that).
+  auto rows = client.callTool("db_query",
+                              Json(R"({"db":"jsonfile","table":"analytics","lks":{"note":"e2e-mrtr"}})"));
+  if (rows.has_value()) {
+    const Json data = member(*rows, "data");
+    for (const auto& row : data.toVector()) {
+      Json delArgs;
+      delArgs.add("db", Json::str("jsonfile"));
+      delArgs.add("table", Json::str("analytics"));
+      Json where;
+      where.add("id", Json::str(row["id"].toString()));
+      delArgs.add("where", std::move(where));
+      auto delFirst = client.callTool("db_delete", delArgs);
+      if (delFirst.has_value() && (*delFirst)["resultType"].toString() == "input_required") {
+        const std::string state = (*delFirst)["requestState"].toString();
+        Json delRetry;
+        delRetry.add("db", Json::str("jsonfile"));
+        delRetry.add("table", Json::str("analytics"));
+        Json where2;
+        where2.add("id", Json::str(row["id"].toString()));
+        delRetry.add("where", std::move(where2));
+        delRetry.add("requestState", Json::str(state));
+        Json delResponses;
+        Json delConfirm;
+        delConfirm.add("approved", Json(true));
+        delResponses.add("confirm", std::move(delConfirm));
+        delRetry.add("inputResponses", std::move(delResponses));
+        (void)client.callTool("db_delete", delRetry);
+      }
+    }
+  }
 }
 
 TEST(ZormAnalyticsE2E, GracefulShutdownOnEof) {

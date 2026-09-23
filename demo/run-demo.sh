@@ -1,6 +1,10 @@
 #!/bin/sh
 # run-demo.sh - one-command launcher for the Zorm Analytics MCP demo.
 # Sets up the zorm runtime DLL path, then runs the self-driven demo.
+# Usage:
+#   ./run-demo.sh             # 自动模式 (默认)
+#   ./run-demo.sh --auto false  # 分步模式: 每步暂停等按键 + 验证提示
+# 其余参数原样透传给 zorm_analytics_server --demo。
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT="$SCRIPT_DIR/.."
 
@@ -14,4 +18,4 @@ if [ ! -x "$EXE" ]; then
 fi
 
 "$EXE" --setup || exit 1
-exec "$EXE" --demo
+exec "$EXE" --demo "$@"
