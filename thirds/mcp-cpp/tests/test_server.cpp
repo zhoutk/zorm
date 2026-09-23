@@ -247,6 +247,10 @@ TEST(ServerRegistrys, ResourcesAndPrompts) {
                                          Json(R"({"uri":"file:///etc/motd"})")));
   ASSERT_NE(rr.result, nullptr);
   EXPECT_EQ(rr.result->result["contents"][0]["text"].toString(), "hello");
+  // CacheableResult is required on resources/read by 2026-07-28, so a handler
+  // that omitted the hints still gets the conformant defaults injected.
+  EXPECT_EQ(rr.result->result["ttlMs"].toInt64(), 0);
+  EXPECT_EQ(rr.result->result["cacheScope"].toString(), "public");
 
   Out pl = serveOnce(server, makeRequest("p1", "prompts/list", Json(nullptr)));
   ASSERT_NE(pl.result, nullptr);
@@ -395,13 +399,48 @@ TEST(ServerM4, ListCacheHints) {
   EXPECT_EQ(o.result->result["ttlMs"].toInt64(), 60000);
   EXPECT_EQ(o.result->result["cacheScope"].toString(), "private");
 
-  // default: no cache hints (still needs the tools capability)
+  // default: CacheableResult is REQUIRED by 2026-07-28, so a plain builder
+  // emits ttlMs 0 / public rather than omitting the fields (still needs the
+  // tools capability).
   Builder plain;
   plain.simpleTool("t2", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({})")); });
   auto pserver = plain.build();
   Out d = serveOnce(pserver, makeRequest("h2", "tools/list", Json(nullptr)));
   ASSERT_NE(d.result, nullptr);
-  EXPECT_TRUE(d.result->result["ttlMs"].isError());
+  EXPECT_EQ(d.result->result["ttlMs"].toInt64(), 0);
+  EXPECT_EQ(d.result->result["cacheScope"].toString(), "public");
+
+  // Same for resources/read, whose hints the server injects for the handler.
+  // (A fresh Builder: build() moves the internal Server, so a builder must
+  // not be reused for a second build - the moved-from cacheScope would be empty.)
+  Builder plain2;
+  plain2.simpleTool("t2", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({})")); });
+  plain2.resource(Json(R"({"uri":"file:///a","name":"a"})"),
+                  [](Ctx&) -> McpResult<Json> {
+                    Json result;
+                    Json contents = Json("[]");
+                    Json item;
+                    item.add("uri", Json::str("file:///a"));
+                    item.add("text", Json::str("aa"));
+                    contents.push_back(std::move(item));
+                    result.add("contents", std::move(contents));
+                    return Ok(std::move(result));
+                  });
+  auto rserver = plain2.build();
+  Out rd = serveOnce(rserver, makeRequest("h3", "resources/read", Json(R"({"uri":"file:///a"})")));
+  ASSERT_NE(rd.result, nullptr);
+  EXPECT_EQ(rd.result->result["ttlMs"].toInt64(), 0);
+  EXPECT_EQ(rd.result->result["cacheScope"].toString(), "public");
+
+  // Explicit opt-out (legacy-only servers, wire probing) omits both fields.
+  Builder off;
+  off.listCache(-1);
+  off.simpleTool("t3", "", [](Ctx&) -> McpResult<Json> { return Ok(Json(R"({})")); });
+  auto oserver = off.build();
+  Out x = serveOnce(oserver, makeRequest("h4", "tools/list", Json(nullptr)));
+  ASSERT_NE(x.result, nullptr);
+  EXPECT_TRUE(x.result->result["ttlMs"].isError());
+  EXPECT_TRUE(x.result->result["cacheScope"].isError());
 }
 
 // ---- legacy dual-era mode (acceptLegacyClients) ------------------------------------

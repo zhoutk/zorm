@@ -153,7 +153,11 @@ class Server {
   std::string instructions_;
   int pageSize_ = 0;          // 0 = no pagination on *\/list
   long discoverTtlMs_ = 0;    // 0 = discover result immediately stale
-  long listTtlMs_ = -1;       // -1 = no CacheableResult on lists
+  // 2026-07-28 makes CacheableResult (ttlMs + cacheScope) REQUIRED on */list and
+  // resources/read, so the conformant default is 0 (immediately stale) rather
+  // than "absent"; strict modern clients (MCP SDK 2.0+) reject results without it.
+  // listCache(-1) opts out explicitly (legacy-only servers / wire probing).
+  long listTtlMs_ = 0;
   bool acceptLegacy_ = false;
   std::string listCacheScope_ = "public";
   std::string name_ = "mcp-cpp-server";
@@ -199,7 +203,9 @@ class Builder {
   // capability. The handler receives the full params (ref + argument).
   Builder& completions(Handler handler);
 
-  // Adds ttlMs/cacheScope (CacheableResult) to *\/list responses.
+  // CacheableResult hints (ttlMs/cacheScope) for */list and resources/read.
+  // On by default with ttlMs 0 (required by 2026-07-28); pass a positive ttlMs
+  // to let clients cache, or -1 to omit the fields entirely.
   Builder& listCache(long ttlMs, std::string cacheScope = "public");
 
   // Dual-era server: also accept LEGACY clients (initialize handshake, no

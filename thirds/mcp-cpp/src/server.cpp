@@ -279,7 +279,19 @@ McpResult<Json> Server::dispatchRequest(const JsonRpcRequest& req, const Request
       return Err(McpErrorCode::InvalidParams, "Unknown resource: " + std::string(uri.toString()));
     }
     Ctx ctx{req.params, meta, cancelled};
-    return it->second(ctx);
+    McpResult<Json> read = it->second(ctx);
+    // 2026-07-28 requires CacheableResult (ttlMs + cacheScope) on resources/read
+    // too: a strict modern client rejects the result without them, so a handler
+    // that omitted the hints inherits the builder's cache settings. Opt-out
+    // (listTtlMs_ < 0) and input_required results are left untouched.
+    if (read.has_value() && read->isObject() && listTtlMs_ >= 0 &&
+        resultTypeOf(*read) == std::string(kResultTypeComplete)) {
+      if (!read->contains(std::string("ttlMs")))
+        read->add(std::string("ttlMs"), Json(static_cast<int64_t>(listTtlMs_)));
+      if (!read->contains(std::string("cacheScope")))
+        read->add(std::string("cacheScope"), Json::str(std::string(listCacheScope_)));
+    }
+    return read;
   }
 
   if (req.method == "prompts/get") {

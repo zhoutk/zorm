@@ -19,7 +19,7 @@ Independent MCP (Model Context Protocol) C++ SDK — C++17, no dependencies beyo
 | `notifications/cancelled` + queryable cancellation flag | ✅ | ✅ |
 | MRTR: `input_required` results + `inputResponses` retry | ✅ | ✅ |
 | `completion/complete` | ✅ | ✅ |
-| CacheableResult (`ttlMs`/`cacheScope`) on discover + lists | ✅ | ✅ |
+| CacheableResult (`ttlMs`/`cacheScope`) on discover, `*/list`, and `resources/read` | ✅ on by default (`ttlMs 0` / `public`; `listCache(-1)` opts out — strict 2026-07-28 clients reject results without them) | ✅ |
 | JSON Schema 2020-12 validator (local `$ref`, resource bounds, no remote refs) | ✅ | TS: ajv / py: pydantic / go: gojsonschema / rust: jsonschema |
 | `x-mcp-header` mirroring (client) + server-side validation | ✅ | ✅ |
 | Roots / Sampling (deprecated by SEP-2577) | ❌ intentionally | Tier-1 keeps compat shims |
