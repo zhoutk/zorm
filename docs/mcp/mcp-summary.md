@@ -154,13 +154,14 @@ Tools 是**模型可调用**的函数，每个工具由 `name` 唯一标识并�
     }
   ],
   "nextCursor": "…",        // 分页游标
-  "ttlMs": 300000,          // 缓存 TTL（可选）
-  "cacheScope": "public"    // 缓存作用域（可选）
+  "ttlMs": 300000,          // 缓存 TTL（2026-07-28 起必填）
+  "cacheScope": "public"    // 缓存作用域（2026-07-28 起必填："public"|"private"）
 }
 ```
 
 - 服务器**必须**声明 `tools` capability（可带 `listChanged: true`）。
 - `tools/list` 支持分页与缓存；`tools/call` 调用工具，返回 `content: [{type:"text", text:"…"}]` 及 `isError`。
+- **缓存必填**（2026-07-28 changelog 第 5 条）：`ttlMs` + `cacheScope` 是 `CacheableResult` 接口的一部分，`tools/list`、`prompts/list`、`resources/list`、`resources/read`、`resources/templates/list` 的结果**必须携带**这两个字段——严格现代客户端（MCP SDK 2.0+，如 DeepSeek Harness）会拒绝缺失它们的结果；`ttlMs: 0` 表示立即过期（等价不缓存）。
 - 安全要求：**必须有真人参与（human-in-the-loop）**，可拒绝工具调用；UI 要明示哪些工具暴露给模型、调用时给视觉提示。
 
 ### 5.2 Resources（资源）
@@ -180,7 +181,7 @@ Tools 是**模型可调用**的函数，每个工具由 `name` 唯一标识并�
 - **分页**：不透明游标（`cursor`/`nextCursor`），服务器定页大小。
 - **补全**：`completion/complete` 为参数提供候选项（可用于表名、字段名补全）。
 - **日志**：`logging/setLevel`、`notifications/message`。
-- **缓存**：`ttlMs` + `cacheScope`（`public`/`session`/`connection`），客户端可缓存 list 结果。
+- **缓存**：`ttlMs` + `cacheScope`（`public`/`private`；2026-07-28 起在 `*/list` 与 `resources/read` 结果上必填），客户端可缓存 list 结果。
 - **取消**：`notifications/cancelled`。
 - **进度**：`notifications/progress`。
 

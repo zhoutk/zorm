@@ -258,7 +258,8 @@ inputResponses.approved != true → 返回 complete + content 说明"已取消"�
 1. Claude Code 注册：`claude mcp add zorm-analytics -- build/bin/zorm_analytics_server.exe`
 2. 输入 §1.1 话术，确认 AI 自动完成 跨库查询 → 汇总 → MRTR 确认弹窗 → 落盘
 3. VS Code / Cursor 用 README_demo 片段重复一次
-4. （步骤 4 后）`--http` + 浏览器 Inspector 走一遍
+4. DeepSeek Harness 用 README_demo 的 cordis.patch.yml 片段重复一次（严格客户端，可验证 2026-07-28 CacheableResult 兼容性）
+5. （步骤 4 后）`--http` + 浏览器 Inspector 走一遍
 
 ---
 

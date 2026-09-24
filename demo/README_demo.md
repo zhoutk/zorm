@@ -86,6 +86,39 @@ AI 会自动：发现表 → 读 schema → 智能查询跨库 → 发起写入 
 }
 ```
 
+### DeepSeek Harness（dsh）
+
+DeepSeek Harness 使用 MCP SDK 2.0（协议 2026-07-28），是**严格客户端**：`tools/list` 等结果缺 `ttlMs`/`cacheScope` 会直接拒绝（表现为 `Invalid result for tools/list: ttlMs expected number` → `server is disconnected`）。因此**必须用最新构建的 server**（mcp-cpp 已默认注入这两个字段），Claude Code 等宽容客户端能掩盖旧构建的问题，DSH 不能。
+
+**接入方法**（profile patch 层，不新建文件）：
+
+1. 编辑 `~/.dsh/profiles/web/cordis.patch.yml`（Windows: `C:\Users\<user>\.dsh\profiles\web\cordis.patch.yml`），在数组末尾**追加**：
+
+```yaml
+# Zorm Analytics MCP (C++ stdio server, sqlite + jsonfile backends).
+# Tools surface as mcp__zorm-analytics__<tool>.
+- insert:
+    - id: mcp-zorm-analytics
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: zorm-analytics
+        transport: stdio
+        command: D:/codes/zorm/build/demo/zorm_analytics_server.exe
+        cwd: D:/codes/zorm
+```
+
+   `cwd` 指到仓库根目录，server 打开的就是根目录下的 `demo.db` / `demo.json`。
+
+2. 保存即生效——profile 默认 `patchReload: "live"`（`package.json` 里 `dsh.profile.patchReload`），热加载并重连，无需重启 dsh。日志出现 `mcp-client(zorm-analytics)` 注册即成功；若看到 `server is disconnected`，先确认 exe 是最新构建再排查。
+
+3. 会话里直接问（与 Claude Code 相同的自然语言用法）：
+
+> 根目录下的 demo.db 中有哪些表？
+
+> 把 sqlite 里订单表的 2026 年订单按地区分组汇总金额，结果存到 jsonfile 的 analytics 表。
+
+**验证要点**：`tools/list` 应列出 6 个工具（`mcp__zorm-analytics__db_list_tables` 等）；写入工具触发 MRTR `input_required` 确认。DSH 对结果信封校验严格，通过即说明 2026-07-28 协议兼容性完好。
+
 ### curl 冒烟（HTTP 模式）
 
 ```bash
@@ -129,6 +162,7 @@ UI 里可以逐个调用工具、读 Resources、观察 `input_required` 确认�
 
 - **报找不到 DLL（LIBPQ.dll 等）**：构建时已自动把运行 DLL 复制到 exe 同目录（`build/demo/`），正常无感；若手动搬移 exe，请连 DLL 一起带或用 `run-demo.cmd`/`run-demo.sh` 启动。
 - **AI 客户端显示连接失败**：确认用的是最新构建——服务器现在支持 legacy `initialize` 握手（Claude Code/VS Code 的接入方式）与无 `_meta` 请求，协议版本 2024-11-05 全系支持。改代码后需重新构建并重启 AI 客户端会话。
+- **严格客户端（DeepSeek Harness / MCP SDK 2.0+）报 `Invalid result for tools/list: ttlMs expected number`**：2026-07-28 规范要求 `*/list` 与 `resources/read` 结果必带 `ttlMs`/`cacheScope`（CacheableResult），mcp-cpp 现已默认注入（`ttlMs 0`/`public`，`listCache(-1)` 显式退出）。旧构建缺这两个字段，宽容客户端（Claude Code）不校验所以无感——重新构建 server 即可。
 - **演示数据想重置**：删除 `demo.db` 与 `demo.json` 后重跑 `--setup`。
 - **接入 mysql/postgres/dm8**：写一个 config JSON（参见 `demo-design.md` §2.6），用 `--config` 启动；这些后端需要对应数据库服务器在运行。
 - **AI 不会写确认弹窗**：Claude Code 等客户端对 elicitation 的支持程度不同；若客户端不支持，AI 会看到 `input_required` 的确认请求并转述给用户，用户回复后 AI 带 `inputResponses` 重试——这正是 MRTR 的设计意图。
