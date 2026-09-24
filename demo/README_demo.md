@@ -136,6 +136,8 @@ UI 里可以逐个调用工具、读 Resources、观察 `input_required` 确认�
 
 ## 三、工具一览
 
+所有工具的 `db` 路由参数取**后端注册名**：默认内置 `sqlite3`（demo.db）与 `jsonfile`（demo.json）。注意是 `sqlite3` 不是 `sqlite`——与 zorm 的后端类型名保持一致，AI 客户端容易想当然写成 `sqlite`；写错会收到列出全部可用后端名的报错，按提示改正即可。
+
 | 工具 | 写? | 说明 |
 | --- | --- | --- |
 | `db_list_tables` `{db}` | | 列出某后端的所有表 |
@@ -165,4 +167,74 @@ UI 里可以逐个调用工具、读 Resources、观察 `input_required` 确认�
 - **严格客户端（DeepSeek Harness / MCP SDK 2.0+）报 `Invalid result for tools/list: ttlMs expected number`**：2026-07-28 规范要求 `*/list` 与 `resources/read` 结果必带 `ttlMs`/`cacheScope`（CacheableResult），mcp-cpp 现已默认注入（`ttlMs 0`/`public`，`listCache(-1)` 显式退出）。旧构建缺这两个字段，宽容客户端（Claude Code）不校验所以无感——重新构建 server 即可。
 - **演示数据想重置**：删除 `demo.db` 与 `demo.json` 后重跑 `--setup`。
 - **接入 mysql/postgres/dm8**：写一个 config JSON（参见 `demo-design.md` §2.6），用 `--config` 启动；这些后端需要对应数据库服务器在运行。
-- **AI 不会写确认弹窗**：Claude Code 等客户端对 elicitation 的支持程度不同；若客户端不支持，AI 会看到 `input_required` 的确认请求并转述给用户，用户回复后 AI 带 `inputResponses` 重试——这正是 MRTR 的设计意图。
+- **AI 不会写确认弹窗**：Claude Code 等客户端对 elicitation 的支持程度不同；若客户端不支持，AI 会看到 `input_required` 的确认请求并转述给用户，用户回复后 AI 带 `inputResponses` 重试——这正是 MRTR 的设计意图。服务器对客户端回传确认的多种形态做了容错（`confirm`/`content`/`value`/`params` 嵌套或顶层 `approved`，及 `action: accept/decline`），详见 `demo-design.md` §MRTR。
+- **`SQLITE_READONLY`，写入失败，但文件可写、磁盘无只读、属性只有 `A`**：这是 Windows 的**完整性级别（Integrity Level）**问题，不是文件只读，也不是服务器 bug。Claude Code 在 Windows 上以**低完整性（Low integrity）**运行 MCP 服务器等原生子进程；低完整性进程**能读**普通（中完整性）文件、**不能写**（无"写升"）。于是查询/读表一切正常，只有写操作报 `SQLITE_READONLY`。**最容易触发的情形**：在 Claude Code 会话里用 `mkdir`/`! mkdir` 在 Windows 下新建一个目录（如 `D:\tmp`）并把 `demo.db` 放进去——新目录默认中完整性，低完整性服务器写不进去。修复：把库文件和所在目录的完整性级别降为 Low（`icacls /setintegritylevel Low`，见下一节「六」），或把库放到能被低完整性进程写入的位置。
+
+---
+
+## 六、Windows 完整性级别（Integrity Level）与 icacls
+
+### 6.1 为什么会遇到：Claude Code 的低完整性沙箱
+
+从 Windows Vista 起，系统有**强制完整性控制（Mandatory Integrity Control）**：每个进程与文件/目录都带一个完整性级别标签，级别从低到高为 **Untrusted → Low → Medium → High → System**。规则是进程可以**读同级或更低**、**写同级**，但**不能写比它更高完整性级别的对象**（无"写升"，Write-Up 被禁）。默认新建的目录与文件是**中完整性（Medium）**。
+
+Claude Code 出于进程沙箱安全，在 Windows 上以**低完整性（Low）**运行其原生子进程——MCP 服务器正是其中之一。因此：
+
+| 操作 | 对象 | 结果 |
+| --- | --- | --- |
+| 读 | 中完整性数据库文件 | ✅ 允许（查询/`db_list_tables` 正常） |
+| 写 | 中完整性数据库文件 | ❌ 拒绝（`ACCESS_DENIED`）→ SQLite 退回只读 → `SQLITE_READONLY` |
+| 写 | 低完整性数据库文件 | ✅ 允许 |
+
+SQLite 在写打开失败时**静默降级为只读打开**（`sqlite3_open_v2` 返回成功但连接是只读的），直到 `sqlite3_step` 写那条才爆出 `SQLITE_READONLY`——所以现象永远是"读得好好的，一写就报只读"，极易误判为文件权限/磁盘只读/服务器配置。
+
+**判定方法**：在 PowerShell / cmd 里执行 `icacls "<路径>"`。文件若含 `Mandatory Label\...:(NW)` 这一行，说明被显式标记了完整性级别；若无此行的常规文件默认中完整性。也可用进程工具确认：Claude Code 孵化的 server 进程完整性级别为 Low（0x1000）。
+
+### 6.2 icacls 功能简介
+
+`icacls`（Integrated Cacls）是 Windows 自带的 ACL 查看/修改工具，既管 DACL（谁对谁有什么权限），也管完整性标签（MIC）。基本形态：
+
+```
+icacls <path> [/grant <user>:(权限)] [/remove <user>] [/setintegritylevel <级别>] [/T] [/inheritance:r] ...
+```
+
+常用子命令：
+
+| 子命令 | 作用 |
+| --- | --- |
+| `icacls <path>` | 查看路径的 ACL（含继承标记与 `Mandatory Label\` 完整性行） |
+| `icacls <path> /grant <user>:(OI)(CI)F` | 授予用户权限。`F`=完全控制、`M`=修改、`RX`=读执行、`W`=写。`(OI)`=对象继承、`(CI)`=容器继承（目录专用，让子文件/子目录继承） |
+| `icacls <path> /remove <user>` | 移除该用户的权限 |
+| `icacls <path> /setintegritylevel [(CI)(OI)] Low` | **设置完整性级别**（`Low`/`Medium`/`High`/`System`），不触碰任何人的 DACL 权限 |
+| `icacls <path> /T` | 递归应用到所有子文件/子目录 |
+| `icacls <path> /inheritance:r` | 移除继承，仅保留显式 ACE |
+| `icacls <path> /reset` | 重置为继承父级的 ACL |
+
+### 6.3 用 icacls 修复"低完整性进程写不进库"
+
+目标：把 `demo.db` 及其所在目录的完整性级别设为 Low，使低完整性的 MCP 服务器可以写入。在 **PowerShell / cmd** 里执行：
+
+```powershell
+icacls "D:\tmp" /setintegritylevel Low
+icacls "D:\tmp\demo.db" /setintegritylevel Low
+```
+
+**两条都要**，原因：
+- **目录**设 Low —— SQLite 用 DELETE 日志模式写库时，要在**同目录**创建 `demo.db-journal` 日志文件，目录若是中完整性，低完整性进程连日志都建不了。
+- **文件**设 Low —— 已存在的文件**不会**自动继承目录新设的标签，必须对文件本身单独 `setintegritylevel`。（若目录已设为 Low，之后再新建/放进去的文件会自动继承 Low，可只设目录一次。）
+
+验证是否生效：`icacls "D:\tmp\demo.db"` 应出现 `Mandatory Label\Low Mandatory Level:(NW)` 一行，然后用客户端重跑 `db_insert`。
+
+> **MSYS2/Git Bash 注意事项**：MSYS2 会把以 `/` 开头的参数误当作路径转换（如 `/setintegritylevel` 被改成 `D:/msys64/setintegritylevel`）。在 Git Bash 里请加 `MSYS2_ARG_CONV_EXCL='*'` 前缀，或干脆用 PowerShell/cmd 执行：
+>
+> ```bash
+> MSYS2_ARG_CONV_EXCL='*' icacls 'D:\tmp' /setintegritylevel Low
+> ```
+
+**可逆性**：`/setintegritylevel` 只改完整性标签，不删除任何人的读写权限、不动数据；把 `Low` 改回 `Medium` 即完全恢复。它不属于"修改 ACL 授权"，但确实是安全级别的放宽——只应在需要让沙箱进程写入的目录上使用。
+
+### 6.4 其他可选方案
+
+- **换一个低完整性可写的目录**：仓库 `build/` 等由工具链生成的目录树往往已被标为 Low，把库放那里即可无感写入（本演示在仓库根目录的 `demo.db` 即属此列）。
+- **让 Claude Code 的 MCP 服务器以正常完整性运行**（不走低完整性沙箱）：属进程启动层面配置，视客户端版本支持而定；若可关闭 Windows 子进程沙箱，则无需改任何文件 ACL。服务器对客户端回传确认的多种形态做了容错（`confirm`/`content`/`value`/`params` 嵌套或顶层 `approved`，及 `action: accept/decline`），详见 `demo-design.md` §MRTR。
+- **`SQLITE_READONLY`，写入失败，但文件可写、磁盘无只读、属性只有 `A`**：这是 Windows 的**完整性级别（Integrity Level）**问题，不是文件只读，也不是服务器 bug。Claude Code 在 Windows 上以**低完整性（Low integrity）**运行 MCP 服务器等原生子进程；低完整性进程**能读**普通（中完整性）文件、**不能写**（无"写升"）。于是查询/读表一切正常，只有写操作报 `SQLITE_READONLY`。**最容易触发的情形**：在 Claude Code 会话里用 `mkdir`/`! mkdir` 在 Windows 下新建一个目录（如 `D:\tmp`）并把 `demo.db` 放进去——新目录默认中完整性，低完整性服务器写不进去。修复：把库文件和所在目录的完整性级别降为 Low（`icacls /setintegritylevel Low`，见下一节「六」），或把库放到能被低完整性进程写入的位置。

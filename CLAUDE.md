@@ -19,7 +19,7 @@ Tests are config-driven (gels-style): one contract suite (`tests/ContractSuite.h
 
 ```bash
 ./run-test                # default: sqlitemem + jsonfile hardening + dbutils + pool
-./run-test local          # sqlitemem + sqlite(file) + json(file) + dbutils + pool
+./run-test local          # sqlitemem + sqlite3(file) + json(file) + dbutils + pool
 ./run-test remote         # mysql + postgres + dm8 (servers on 10.0.0.7, docker)
 ./run-test all            # all 13 registrations — the regression gate
 ./run-test mysqlplain     # parameterized=false variant (also pgplain/dmplain/sqliteplain)
@@ -50,7 +50,7 @@ src/backends/       # private per-backend .h/.cpp pairs + FileLock.h/.cpp,
 
 ## Architecture
 
-- **`SqlBackendBase`** (`src/base/SqlBackendBase.h/.cpp`) is an abstract base (no CRTP anymore) holding the 8 `Idb` method skeletons, SQL builders, `genSql` smart-query assembly (reserved words: page/size/sort/fuzzy/lks/ins/ors/count/sum/group), pagination counters, and the transaction loop — compiled once in `SqlBackendBase.cpp`. Backends drive the driver through the **`IDbConnection`** interface (`src/base/DbConnection.h`): each backend defines a small `Connection` class wrapping its native handle, pooled via `DbPool::HandlePool<IDbConnection*>` with RAII `Lease` (blocking wait, `invalidate` self-heal).
+- **`SqlBackendBase`** (`src/base/SqlBackendBase.h/.cpp`) is an abstract base (no CRTP anymore) holding the 8 `Idb` method skeletons, SQL builders, `genSql` smart-query assembly (reserved words: page/size/sort/fuzzy/lks/ins/ors/count/sum/group), pagination counters, and the transaction loop — compiled once in `SqlBackendBase.cpp`. Backends drive the driver through the **`IDbConnection`** interface (`src/base/DbConnection.h`): each backend defines a small `Connection` class wrapping its native handle, pooled via `DbPool::HandlePool<IDbConnection*>` with RAII `Lease` (blocking wait, `invalidate` self-heal). On a driver-level **write failure** the base calls the `selfHealConnections()` hook (virtual, default no-op; `Sqlit3Db` overrides it to `pool.invalidate()`) so a wedged handle (e.g. a database file that was transiently read-only) is dropped and rebuilt on the next acquire instead of failing forever.
 - **Dialect = virtual hook overrides.** Base defaults cover the plain-SQL majority (`?` placeholders, identity quoting, `limit o,n`, comma-join projections, `ON CONFLICT ... excluded` upsert, quote-doubling escaping). Similar backends share defaults naturally — sqlite needs ZERO overrides; postgres overrides 5 (placeholders `$n`, `numberedPlaceholders`, LIKE CAST, limit syntax, `$` sniffing); mysql overrides upsert + escaping; dm8 carries the quoted-lowercase identifier group plus read-then-write upsert overrides of `create`/`insertBatch`. Adding a backend = writing a `Connection` + overriding only the hooks that differ.
 - **jsonfile backend** (`JsonFileDb.h/.cpp` + `FileLock.h/.cpp`, ~2.5k lines) is independent of the SQL stack: single JSON-file storage with cross-process file lock, atomic writes, corrupt-file backup, O(1) per-table id index. The `JsonFile::detail` helpers stay header-only (inline) because `tests/test_jsonfile.cpp` uses them directly.
 - **Compiler flags matter**: `-fsigned-char` is set project-wide for GCC/Clang (ARM `char` is unsigned by default) — keep it.

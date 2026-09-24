@@ -41,6 +41,10 @@ namespace ZORM {
 
 			Lease acquireConnection(string& err) override;
 
+			// 写失败自愈: 文件级后端的连接一旦陷入坏状态(如文件瞬时只读),
+			// 必须丢弃重建 —— 见 SqlBackendBase::selfHealConnections。
+			void selfHealConnections() override { pool.invalidate(); }
+
 		private:
 			class Connection;
 

@@ -85,6 +85,15 @@ protected:
 	// ─────────────────────────────────────────────────────────────────────
 	virtual Lease acquireConnection(string& err) = 0;
 
+	// Self-heal hook: called when a WRITE fails at the driver level. A failed
+	// write can leave the pooled connection wedged (e.g. the database file was
+	// transiently read-only or the handle went stale), and the pool never
+	// recovers it on its own - every later write would keep failing on the
+	// same handle. Backends that pool should override this to drop their idle
+	// connections (DbPool::HandlePool::invalidate); the next acquire rebuilds
+	// a fresh one. Default: no-op (nothing pooled / nothing to heal).
+	virtual void selfHealConnections() {}
+
 	// ─────────────────────────────────────────────────────────────────────
 	// Dialect hooks - defaults cover the plain-SQL majority; override
 	// only the lines your dialect writes differently.

@@ -224,7 +224,7 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
   client.connect(t);
 
   // sqlite: list tables.
-  auto tables = client.callTool("db_list_tables", Json(R"({"db":"sqlite"})"));
+  auto tables = client.callTool("db_list_tables", Json(R"({"db":"sqlite3"})"));
   ASSERT_TRUE(tables.has_value());
   const std::string tablesText = (*tables).toString();
   EXPECT_NE(tablesText.find("orders"), std::string::npos);
@@ -232,7 +232,7 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
 
   // sqlite: 2026 orders grouped by region with summed amounts.
   Json q;
-  q.add("db", Json::str("sqlite"));
+  q.add("db", Json::str("sqlite3"));
   q.add("table", Json::str("orders"));
   q.add("lks", Json(R"({"order_date":"2026"})"));
   q.add("group", Json::str("region"));
@@ -246,7 +246,7 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
 
   // sqlite: products IN electronics.  (products 现在在 sqlite; jsonfile 是空输出库)
   Json p;
-  p.add("db", Json::str("sqlite"));
+  p.add("db", Json::str("sqlite3"));
   p.add("table", Json::str("products"));
   p.add("ins", Json(R"({"category":"electronics"})"));
   auto pr = client.callTool("db_query", p);
@@ -255,7 +255,7 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
 
   // 比较操作符: price > 100 (zorm 的 >, 前缀, 之前被 schema 校验误拒, 回归保护)。
   Json pq;
-  pq.add("db", Json::str("sqlite"));
+  pq.add("db", Json::str("sqlite3"));
   pq.add("table", Json::str("products"));
   pq.add("price", Json::str(">,100"));
   auto pr2 = client.callTool("db_query", pq);
@@ -268,7 +268,7 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
   EXPECT_NE((*jt).toString().find("tables"), std::string::npos);
 
   // db_count.
-  auto cnt = client.callTool("db_count", Json(R"({"db":"sqlite","table":"orders"})"));
+  auto cnt = client.callTool("db_count", Json(R"({"db":"sqlite3","table":"orders"})"));
   ASSERT_TRUE(cnt.has_value());
   EXPECT_NE((*cnt).toString().find("500"), std::string::npos);
 
@@ -276,12 +276,12 @@ TEST(ZormAnalyticsE2E, CrossDatabaseSmartQuery) {
   auto badDb = client.callTool("db_list_tables", Json(R"({"db":"oracle"})"));
   ASSERT_FALSE(badDb.has_value());
   EXPECT_EQ(badDb.error().code, McpErrorCode::InvalidParams);
-  auto badTable = client.callTool("db_count", Json(R"({"db":"sqlite","table":"nope"})"));
+  auto badTable = client.callTool("db_count", Json(R"({"db":"sqlite3","table":"nope"})"));
   ASSERT_FALSE(badTable.has_value());
   EXPECT_EQ(badTable.error().code, McpErrorCode::InvalidParams);
   // Schema enforcement: size out of range -> rejected before the handler.
   auto badSize = client.callTool(
-      "db_query", Json(R"({"db":"sqlite","table":"orders","size":100000})"));
+      "db_query", Json(R"({"db":"sqlite3","table":"orders","size":100000})"));
   ASSERT_FALSE(badSize.has_value());
   EXPECT_EQ(badSize.error().code, McpErrorCode::InvalidParams);
 }
@@ -292,7 +292,7 @@ TEST(ZormAnalyticsE2E, ResourcesAndCompletion) {
   Client client("e2e", "1.0");
   client.connect(t);
 
-  auto schema = client.readResource("db://schema/sqlite/orders");
+  auto schema = client.readResource("db://schema/sqlite3/orders");
   ASSERT_TRUE(schema.has_value());
   EXPECT_NE((*schema).toString().find("region"), std::string::npos);
   EXPECT_NE((*schema).toString().find("amount"), std::string::npos);

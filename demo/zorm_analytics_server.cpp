@@ -30,6 +30,7 @@
 #include <mcp/transport_http.hpp>
 
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #ifdef _WIN32
 #include <io.h>
@@ -117,7 +118,7 @@ std::map<std::string, DbSpec> defaultDatabases() {
   std::map<std::string, DbSpec> dbs;
   // parameterized:true - 使用参数化 SQL(占位符绑定), 否则非参数化路径会把
   // ins/lks 的字符串值裸拼进 SQL(如 in (electronics)), 导致 "no such column"。
-  dbs["sqlite"] = {"sqlite3", ZORM::Json(R"({"connString":"demo.db","DbLogClose":true,"parameterized":true})")};
+  dbs["sqlite3"] = {"sqlite3", ZORM::Json(R"({"connString":"demo.db","DbLogClose":true,"parameterized":true})")};
   dbs["jsonfile"] = {"jsonfile", ZORM::Json(R"({"connString":"demo.json","DbLogClose":true})")};
   return dbs;
 }
@@ -193,7 +194,7 @@ McpResult<Json> toolListTables(Ctx& c) {
   const Json args = member(c.params, "arguments");
   const std::string dbName = args["db"].toString();
   ZORM::Idb* db = g.db(dbName);
-  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName);
+  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName + " (available: " + g.dbListText() + ")");
 
   // sqlite: query sqlite_master; jsonfile: read the storage file's top-level
   // table keys; other backends: information_schema (only when configured).
@@ -233,7 +234,7 @@ McpResult<Json> toolQuery(Ctx& c) {
   const std::string dbName = args["db"].toString();
   const std::string table = args["table"].toString();
   ZORM::Idb* db = g.db(dbName);
-  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName);
+  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName + " (available: " + g.dbListText() + ")");
   if (table.empty()) return Err(McpErrorCode::InvalidParams, "table is required");
 
   // Forward the smart-query keys zorm understands. zorm's shapes (verified
@@ -346,7 +347,7 @@ McpResult<Json> toolCount(Ctx& c) {
   const std::string dbName = args["db"].toString();
   const std::string table = args["table"].toString();
   ZORM::Idb* db = g.db(dbName);
-  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName);
+  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName + " (available: " + g.dbListText() + ")");
 
   // zorm count expects "col,alias" pairs (e.g. "*,total").
   ZORM::Json params;
@@ -396,6 +397,34 @@ Json inputRequiredConfirm(const std::string& requestState, const std::string& me
 McpResult<Json> executeWrite(const std::string& dbName, const std::string& table,
                              const std::string& kind, const Json& args);
 
+// Extracts the user's approval from an inputResponses payload. Clients echo
+// elicitation answers in different shapes; accept them all:
+//   {"confirm":{"approved":true}}   our canonical form (inputRequests key)
+//   {"approved":true}               flat form
+//   {"content":{"approved":true}}   elicitation/create result form
+//   {"value":{"approved":true}} / {"params":{"approved":true}}
+//   {"action":"accept"} / {"action":"decline"|"reject"|"cancel"}
+// Anything unrecognized counts as NOT approved (fail-safe).
+bool confirmApproved(const Json& responses) {
+  static const char* kNested[] = {"confirm", "content", "value", "params"};
+  for (const char* key : kNested) {
+    const Json nested = member(responses, key);
+    if (nested.isObject()) {
+      const Json approved = member(nested, "approved");
+      // zjson has no isBoolean(); a JSON boolean is exactly isTrue()||isFalse().
+      if (approved.isTrue() || approved.isFalse()) return approved.isTrue();
+    }
+  }
+  const Json flat = member(responses, "approved");
+  if (flat.isTrue() || flat.isFalse()) return flat.isTrue();
+  const Json action = member(responses, "action");
+  if (action.isString()) {
+    const std::string a = action.toString();
+    return a == "accept" || a == "accepted" || a == "approve" || a == "approved";
+  }
+  return false;
+}
+
 // Stages a write and returns input_required (or executes directly with --yes).
 // A retry carrying inputResponses resumes the pending operation by its
 // requestState.
@@ -404,22 +433,57 @@ McpResult<Json> stageWrite(Ctx& c, const std::string& kind) {
   const std::string dbName = args["db"].toString();
   const std::string table = args["table"].toString();
   ZORM::Idb* db = g.db(dbName);
-  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName);
+  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName + " (available: " + g.dbListText() + ")");
 
-  // MRTR retry: inputResponses carries the user's confirmation.
+  // MRTR retry detection. Clients are unreliable about echoing the exact
+  // shape we ask for, so a retry is ANY of:
+  //   - inputResponses present (object; shape-tolerant, see confirmApproved)
+  //   - requestState present (echoed token)
+  //   - a bare top-level "approved" argument (clients that reply in place)
+  // Anything else is a fresh stage.
   const Json responses = member(args, "inputResponses");
-  if (responses.isObject()) {
-    const Json confirm = member(responses, "confirm");
-    const bool approved = confirm["approved"].isTrue();
-    // Locate the pending op for this request's table (the requestState is in
-    // the original result; on retry the client echoes it - we carry it via a
-    // hidden requestState param). Simplify: retry carries requestState.
-    const std::string state = args["requestState"].toString();
-    auto it = g.pending.find(state);
-    if (it == g.pending.end())
-      return Err(McpErrorCode::InvalidParams, "unknown or expired requestState: " + state);
-    const DemoServer::PendingOp op = it->second;
-    g.pending.erase(it);
+  const Json reqStateArg = member(args, "requestState");
+  const Json approvedArg = member(args, "approved");
+  const bool isRetry = responses.isObject() || reqStateArg.isString() ||
+                       approvedArg.isTrue() || approvedArg.isFalse();
+  if (isRetry) {
+    const bool approved = responses.isObject() ? confirmApproved(responses) : approvedArg.isTrue();
+    // Locate the pending op: prefer the echoed requestState; when the client
+    // dropped it, fall back to the pending op for THIS (db, table, kind) —
+    // with several staged (the client looping before confirming), the latest
+    // one wins, which is what the model was trying to confirm.
+    std::string state;
+    DemoServer::PendingOp op;
+    bool found = false;
+    if (reqStateArg.isString()) {
+      const std::string s = reqStateArg.toString();
+      auto it = g.pending.find(s);
+      if (it != g.pending.end()) {
+        state = s;
+        op = it->second;
+        found = true;
+      }
+    }
+    if (!found) {
+      int bestN = -1;
+      for (const auto& [s, po] : g.pending) {
+        if (po.db != dbName || po.table != table || po.kind != kind) continue;
+        int n = 0;
+        try { n = std::stoi(s.substr(s.find_last_of('-') + 1)); } catch (...) { continue; }
+        if (n > bestN) {
+          bestN = n;
+          state = s;
+          op = po;
+          found = true;
+        }
+      }
+    }
+    if (!found)
+      return Err(McpErrorCode::InvalidParams,
+                 "no pending " + kind + " op for " + dbName + "." + table +
+                 " (requestState " + reqStateArg.toString() +
+                 " is unknown or expired) — call again without approved/inputResponses to stage a new one");
+    g.pending.erase(state);
     if (!approved) {
       Json result;
       result.add(std::string(kResultTypeKey), Json::str(std::string(kResultTypeComplete)));
@@ -434,8 +498,9 @@ McpResult<Json> stageWrite(Ctx& c, const std::string& kind) {
     // Pre-count rows that a delete would affect for the confirmation text.
     std::string impact = "1 row";
     if (kind == "delete" && member(args, "where").isObject()) {
-      // 预计影响行数: select 的 where 条件在顶层(与 zorm 语义一致),
-      // count 是保留字, 由后端聚合。
+      // 预计影响行数: select 的 where 条件在顶层(与 zorm 语义一致,
+      // 空 where = 无条件 = 全表); count 是保留字, 由后端聚合成
+      // data[0]["total"] —— 不是 data.size()(后者恒为 1)。
       ZORM::Json wp;
       const Json where = member(args, "where");
       if (where.contains("id")) {
@@ -445,13 +510,25 @@ McpResult<Json> stageWrite(Ctx& c, const std::string& kind) {
       }
       wp.add("count", ZORM::Json("*,total"));
       const ZORM::Json rs = db->select(table, wp);
-      if (okStatus(rs) && !rs["data"].isError()) {
-        impact = std::to_string(rs["data"].size()) + " rows";
+      if (okStatus(rs) && !rs["data"].isError() && rs["data"].size() > 0) {
+        const long long total = rs["data"][0]["total"].toInt64();
+        impact = std::to_string(total) + (total == 1 ? " row" : " rows");
       }
     }
+    // 同一 (db,table,kind) 的新 stage 取代旧的 pending —— 客户端在确认前
+    // 反复重试时, 旧确认请求已无意义, 不清理会一直堆积。
+    for (auto it = g.pending.begin(); it != g.pending.end();) {
+      if (it->second.db == dbName && it->second.table == table && it->second.kind == kind)
+        it = g.pending.erase(it);
+      else
+        ++it;
+    }
     g.pending[state] = {dbName, table, kind, args};
+    // requestState 走确认文本: 严格文本客户端(只展示 content)也拿得到,
+    // MRTR 重试时原样回传即可。
     const std::string msg = "Confirm " + kind + " on " + dbName + "." + table +
-                            " (" + impact + ")? Reply with approved:true to proceed.";
+                            " (" + impact + ")? Reply with approved:true to proceed"
+                            " (requestState: " + state + ").";
     return Ok(inputRequiredConfirm(state, msg));
   }
   // --yes: execute immediately (tests / scripted demo).
@@ -461,7 +538,7 @@ McpResult<Json> stageWrite(Ctx& c, const std::string& kind) {
 McpResult<Json> executeWrite(const std::string& dbName, const std::string& table,
                              const std::string& kind, const Json& args) {
   ZORM::Idb* db = g.db(dbName);
-  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName);
+  if (db == nullptr) return Err(McpErrorCode::InvalidParams, "unknown db: " + dbName + " (available: " + g.dbListText() + ")");
 
   ZORM::Json rs;
   if (kind == "insert") {
@@ -472,23 +549,77 @@ McpResult<Json> executeWrite(const std::string& dbName, const std::string& table
     // zorm update: params must carry the target id at the TOP level
     // (buildUpdateSql reads params["id"]) plus the columns to change.
     // The client-facing shape is {data:{cols}, where:{id}} - flatten here.
+    // Same toString()-renders-"null" trap as delete: test presence explicitly
+    // and reject a missing/absent id instead of silently matching none.
+    const Json idv = member(member(args, "where"), "id");
+    if (!(idv.isString() || idv.isNumber()))
+      return Err(McpErrorCode::InvalidParams,
+                 "db_update requires where:{\"id\": <value>} (single-row update)");
     ZORM::Json params = toZormJson(member(args, "data"));
-    const Json where = member(args, "where");
-    const std::string id = where["id"].toString();
-    if (!id.empty()) params.add("id", ZORM::Json(id.c_str()));
+    params.add("id", toZormJson(idv));
     rs = db->update(table, params);
   } else if (kind == "delete") {
-    // zorm remove: params["id"] at the TOP level (buildDeleteSql / jsonfile
-    // remove both require it). The client-facing where:{id} flattens here.
-    ZORM::Json params;
+    // zorm remove is id-targeted (params["id"] at the TOP level). The
+    // client-facing where:{id} flattens here; an EMPTY where ({}) means
+    // "delete all rows", which structured remove cannot express — fall back
+    // to execSql with a validated table name (demo tables are plain
+    // identifiers; the check keeps client-supplied names out of SQL).
+    // A non-empty where without id (ins/lks/other columns) is rejected with
+    // guidance, NOT treated as delete-all.
+    // NOTE: member() returns Json(nullptr) for a missing key and zjson's
+    // toString() renders Null as the literal "null" — so presence must be
+    // tested with isNull()/isError(), never via toString().empty().
     const Json where = member(args, "where");
-    params.add("id", toZormJson(where["id"]));
-    rs = db->remove(table, params);
+    const Json idv = member(where, "id");
+    if (idv.isString() || idv.isNumber()) {
+      ZORM::Json params;
+      params.add("id", toZormJson(idv));
+      rs = db->remove(table, params);
+    } else if (ZJSON::isEmptyObject(where)) {
+      static const std::string safeChars =
+          "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
+      const bool safeTable = !table.empty() && !std::isdigit(static_cast<unsigned char>(table[0])) &&
+                             table.find_first_not_of(safeChars) == std::string::npos;
+      if (!safeTable)
+        return Err(McpErrorCode::InvalidParams, "invalid table name: " + table);
+      rs = db->execSql("delete from " + table);
+    } else {
+      return Err(McpErrorCode::InvalidParams,
+                 "db_delete supports only where:{\"id\": <value>} (single row) or an empty "
+                 "where:{} (delete ALL rows); other conditions (ins/lks/columns) are not "
+                 "supported — delete by id instead");
+    }
   } else if (kind == "exec_sql") {
     rs = db->execSql(member(args, "sql").toString());
   }
-  if (!okStatus(rs))
-    return Err(McpErrorCode::InternalError, "write failed: " + rs["message"].toString());
+  if (!okStatus(rs)) {
+    // Raw driver codes are opaque to AI clients; map the common sqlite ones
+    // and always name the exact file that was being written (connString is
+    // relative, so the resolved path is what actually matters when the
+    // client-spawned cwd differs from the repo root).
+    std::string msg = rs["message"].toString();
+    const std::string raw = "Error Code : ";
+    const size_t pos = msg.find(raw);
+    if (pos != std::string::npos) {
+      const std::string code = msg.substr(pos + raw.size());
+      if (code == "8")
+        msg += " (SQLITE_READONLY: the database file or its directory is read-only - "
+               "check the file attribute, disk, and the server process's working directory)";
+      else if (code == "5")
+        msg += " (SQLITE_BUSY: the database is locked by another connection/process)";
+      else if (code == "11")
+        msg += " (SQLITE_CORRUPT: the database file is corrupted)";
+      else if (code == "13")
+        msg += " (SQLITE_FULL: disk is full or quota exceeded)";
+      else if (code == "14")
+        msg += " (SQLITE_CANTOPEN: the database file cannot be opened - wrong path or no permission)";
+    }
+    std::string file = g.specs[dbName].options["connString"].toString();
+    try {
+      file = std::filesystem::absolute(file).string();
+    } catch (...) {}
+    return Err(McpErrorCode::InternalError, "write failed: " + msg + " [file: " + file + "]");
+  }
 
   // Notify resource subscribers that this table changed (mcp-cpp fan-out).
   if (auto srv = g.server.lock()) {
@@ -673,7 +804,7 @@ void registerAll(Builder& b) {
          toolInsert);
   b.tool(Json(R"({"name":"db_update","description":"Update rows matching where (requires confirmation; where must carry id).","inputSchema":{"type":"object","required":["db","table","data","where"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"data":{"type":"object"},"where":{"type":"object"},"requestState":{"type":"string"},"inputResponses":{"type":"object"}}}})"),
          toolUpdate);
-  b.tool(Json(R"({"name":"db_delete","description":"Delete rows matching where (requires confirmation).","inputSchema":{"type":"object","required":["db","table","where"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"where":{"type":"object"},"requestState":{"type":"string"},"inputResponses":{"type":"object"}}}})"),
+  b.tool(Json(R"({"name":"db_delete","description":"Delete rows matching where (requires confirmation). where:{\"id\": v} deletes that row; where:{} deletes ALL rows in the table. Other conditions (ins/lks/columns) are not supported - delete by id instead.","inputSchema":{"type":"object","required":["db","table","where"],"properties":{"db":{"type":"string"},"table":{"type":"string"},"where":{"type":"object"},"requestState":{"type":"string"},"inputResponses":{"type":"object"}}}})"),
          toolDelete);
   if (g.allowSql) {
     b.tool(Json(R"({"name":"db_exec_sql","description":"Execute parameterized SQL (dangerous; confirmation required).","inputSchema":{"type":"object","required":["db","sql"],"properties":{"db":{"type":"string"},"sql":{"type":"string"}}}})"),
@@ -1200,7 +1331,7 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
   headline("db_list_tables(sqlite) - schema discovery 表清单发现");
   std::cout << kYellow << "  请求: db_list_tables {db: \"sqlite\"}  <- 一个方法，不写任何 SQL\n" << kReset;
   thinking();
-  auto tables = client.callTool("db_list_tables", Json(R"({"db":"sqlite"})"));
+  auto tables = client.callTool("db_list_tables", Json(R"({"db":"sqlite3"})"));
   if (tables.has_value()) {
     const Json arr = member(*tables, "tables");
     std::cout << kGreen << "  -> ok" << kReset << "  共发现 " << arr.size() << " 张表:\n";
@@ -1230,7 +1361,7 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
             << kYellow << "  含义: 测试数据放在 sqlite - 过滤 2026 年订单 -> 按地区分组 -> 求和金额。"
                "全程无 SQL。\n" << kReset;
   Json qargs;
-  qargs.add("db", Json::str("sqlite"));
+  qargs.add("db", Json::str("sqlite3"));
   qargs.add("table", Json::str("orders"));
   qargs.add("lks", Json(R"({"order_date":"2026"})"));
   qargs.add("group", Json::str("region"));
@@ -1356,9 +1487,9 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
 
   // [5] resources
   headline("resources/read - 服务器自描述 schema (资源读取)");
-  std::cout << kYellow << "  请求: resources/read db://schema/sqlite/orders\n" << kReset;
+  std::cout << kYellow << "  请求: resources/read db://schema/sqlite3/orders\n" << kReset;
   thinking();
-  auto schema = client.readResource("db://schema/sqlite/orders");
+  auto schema = client.readResource("db://schema/sqlite3/orders");
   if (schema.has_value()) {
     const Json contents = member(*schema, "contents");
     if (contents.isArray() && contents.size() > 0) {
@@ -1384,7 +1515,7 @@ int runScriptedDemo(const std::shared_ptr<Server>&, bool autoMode) {
             << kReset;
   // 高价产品查询 (products 在 sqlite, 用比较操作符 >,100)
   Json pargs;
-  pargs.add("db", Json::str("sqlite"));
+  pargs.add("db", Json::str("sqlite3"));
   pargs.add("table", Json::str("products"));
   pargs.add("price", Json::str(">,100"));
   thinking();

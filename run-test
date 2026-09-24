@@ -3,17 +3,17 @@
 #
 # 用法（参照 gels 的 run-tests 模式）:
 #   ./run-test                  # 默认: 本地测试（sqlitemem 内存库 + json 文件库加固）
-#   ./run-test <name>...        # 按名字选择: sqlitemem | sqlite | json | mysql | pg | dm
+#   ./run-test <name>...        # 按名字选择: sqlitemem | sqlite3 | json | mysql | pg | dm
 #                               #            sqliteplain | mysqlplain | pgplain | dmplain
-#                               # 可组合: ./run-test sqlitemem sqlite json
-#   ./run-test local            # 本地: sqlitemem + sqlite(文件) + json(文件) + jsonfile 加固
+#                               # 可组合: ./run-test sqlitemem sqlite3 json
+#   ./run-test local            # 本地: sqlitemem + sqlite3(文件) + json(文件) + jsonfile 加固
 #   ./run-test remote           # 远程数据库: mysql + pg + dm
 #   ./run-test all              # 全部
 #   其余参数透传给 ctest，如: ./run-test -V 或 ./run-test json -R test_contract_jsonfile
 #
 # 名字与测试目标的对应关系 (config-driven suite):
 #   sqlitemem -> test_contract_sqlite3_mem   (内存型 SQLite)
-#   sqlite    -> test_contract_sqlite3       (文件型 SQLite)
+#   sqlite3   -> test_contract_sqlite3       (文件型 SQLite)
 #   json      -> test_contract_jsonfile + test_jsonfile (JSON 文件型契约 + 加固)
 #   mysql     -> test_contract_mysql
 #   pg        -> test_contract_postgres
@@ -51,12 +51,12 @@ NAMES=()
 PASSTHROUGH=()
 for arg in "$@"; do
     case "$arg" in
-        sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|utils|pool|local|remote|all)
+        sqlitemem|sqlite3|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|utils|pool|local|remote|all)
             NAMES+=("$arg") ;;
         -*)
             PASSTHROUGH+=("$arg") ;;
         *)
-            echo "警告: '$arg' 不是有效的测试名（sqlitemem|sqlite|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|utils|pool|local|remote|all），将原样传给 ctest。" >&2
+            echo "警告: '$arg' 不是有效的测试名（sqlitemem|sqlite3|json|mysql|pg|dm|sqliteplain|mysqlplain|pgplain|dmplain|utils|pool|local|remote|all），将原样传给 ctest。" >&2
             PASSTHROUGH+=("$arg") ;;
     esac
 done
@@ -69,7 +69,7 @@ map_name() {
         mysqlplain)        echo "test_contract_mysql_plain" ;;
         pgplain)           echo "test_contract_postgres_plain" ;;
         dmplain)           echo "test_contract_dm8_plain" ;;
-        sqlite)            echo "test_contract_sqlite3" ;;
+        sqlite3)           echo "test_contract_sqlite3" ;;
         json|jsonfile)     echo "test_contract_jsonfile|test_jsonfile" ;;
         mysql)             echo "test_contract_mysql" ;;
         pg|postgres)       echo "test_contract_postgres" ;;

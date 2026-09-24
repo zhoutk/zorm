@@ -37,8 +37,8 @@
  最后把汇总结果存到 jsonfile 的 analytics 表里做留存。"
 
 AI 行为（一次会话内，透明跨库）：
-1. [sqlite]   db_list_tables {db:"sqlite"}           → 发现 orders 表
-2. [sqlite]   db_query {db:"sqlite", table:"orders", lks:{order_date:"2026"},
+1. [sqlite]   db_list_tables {db:"sqlite3"}          → 发现 orders 表
+2. [sqlite]   db_query {db:"sqlite3", table:"orders", lks:{order_date:"2026"},
                         group:["region"], sum:["amount"]}   → 按地区汇总
 3. [jsonfile] db_query {db:"jsonfile", table:"products", gtn:{price:100}} → 过滤
 4. [jsonfile] db_insert {db:"jsonfile", table:"analytics", data:{...}}
@@ -101,7 +101,7 @@ AI 行为（一次会话内，透明跨库）：
 | `db_count` | `{db, table, where?}` | 否 | 计数 |
 | `db_insert` | `{db, table, data}` | ✅MRTR | 插入（内部走 insertBatch 单元素） |
 | `db_update` | `{db, table, data, where}` | ✅MRTR | 更新 |
-| `db_delete` | `{db, table, where}` | ✅MRTR | 删除（高危，确认文案带行数预估） |
+| `db_delete` | `{db, table, where}` | ✅MRTR | 删除（高危，确认文案带行数预估）。`where:{id:v}` 删单行；`where:{}` 删全表（走经白名单校验表名的 `execSql`）；其他条件（ins/lks/多列）不支持，拒绝并给指引 |
 | `db_exec_sql` | `{db, sql, params?}` | ✅MRTR | **默认不注册**，`--allow-sql` 才暴露 |
 
 > 注意：数字比较保留字（gtn/gte/ltn/lte 等）以 zorm `QUERY_EXTRA_KEYS` 实际集合为准，设计文档不虚构；实现时从 `SqlBackendBase` 核对。
@@ -135,13 +135,23 @@ inputResponses.approved != true → 返回 complete + content 说明"已取消"�
 - 确认文案必须含 目标库/表/影响行数预估（count 先行）；
 - `--yes` 参数可关闭确认（仅供自动化测试与 scripted demo 内部使用）。
 
+**实现落地的容错细节（真实客户端验证后收紧）：**
+
+- **重试识别放宽**：客户端回传确认的形态五花八门，凡满足以下任一即视为重试：`inputResponses` 为对象、`requestState` 为字符串、或顶层 `approved` 为布尔。避免"严格只认 inputResponses → 客户端平铺回 approved 被当成新请求 → 无限新 stage"的死循环。
+- **确认值抽取容错**：`confirmApproved()` 接受 `confirm`/`content`/`value`/`params` 嵌套或顶层 `approved`（布尔），以及 `action: accept|approved|decline|reject|cancel`；无法识别一律视为未批准（fail-safe）。
+- **pending 回退匹配**：`requestState` 未命中时，按 `(db, table, kind)` 匹配取最新 `st-N` 的 pending——客户端在确认前反复重试会堆积多个同目标 stage，取最新者正是模型想确认的那次。
+- **同目标 stage 清理**：新 stage 写入前清除同 `(db,table,kind)` 的旧 pending，避免堆积。
+- **requestState 进确认文案**：`Reply with approved:true to proceed (requestState: st-N)`，让严格文本客户端（只展示 content）也能拿到并原样回传。
+- **删除行数预估**：用 `count:"*,total"` 聚合读 `data[0]["total"]`（`data.size()` 恒为 1，不能当行数）。
+- **写失败错误增强**：写错误按 SQLite 主错误码映射常见含义（8 READONLY / 5 BUSY / 11 CORRUPT / 13 FULL / 14 CANTOPEN），并解析出被写文件的**绝对路径**（connString 是相对路径，客户端孵化 server 的 cwd 不同时，真正被写的是哪个文件最关键）。
+
 ### 2.6 配置与数据源
 
 ```jsonc
 // zorm_analytics.json（demo 默认，开箱即跑只含前两个）
 {
   "databases": {
-    "sqlite":   { "type": "sqlite3",  "options": { "connString": "demo.db" } },
+    "sqlite3":  { "type": "sqlite3",  "options": { "connString": "demo.db" } },
     "jsonfile": { "type": "jsonfile", "options": { "connString": "demo.json" } },
     "mysql":    { "type": "mysql",    "options": { "..." } },   // 可选
     "postgres": { "type": "postgres", "options": { "..." } },   // 可选
@@ -228,7 +238,7 @@ inputResponses.approved != true → 返回 complete + content 说明"已取消"�
 | 用例 | 方法 |
 | --- | --- |
 | 建库幂等 | 连跑两次 `--setup`，第二次无副作用（行数不变） |
-| 多后端路由 | `db_query{db:"sqlite"}` / `{db:"jsonfile"}` 各返回各自数据 |
+| 多后端路由 | `db_query{db:"sqlite3"}` / `{db:"jsonfile"}` 各返回各自数据 |
 | 智能查询保留字 | lks/ins/ors/group+sum/sort/page+size 逐个断言（对照 zorm 契约测试已知行为） |
 | 未知 db/table | 返回 -32602（InvalidParams） |
 | 非法参数 | 越界 size、缺 tablename → mcp-cpp schema 校验拦截（-32602） |

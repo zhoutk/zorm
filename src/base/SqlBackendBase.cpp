@@ -40,8 +40,12 @@ Json SqlBackendBase::create(const string& tablename, const Json& params) {
 	if (conn == nullptr)
 		return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 	Json rs = conn->execNone(sql, values);
-	if (rs["status"].toInt() != STSUCCESS)
+	if (rs["status"].toInt() != STSUCCESS) {
+		// 写失败自愈: 连接可能已处于坏状态(文件瞬时只读/句柄失效等),
+		// 丢弃池中连接, 下次 acquire 重建, 否则坏连接永远驻留。
+		selfHealConnections();
 		return rs;
+	}
 	const string id = generatedId.empty() ? params["id"].toString() : generatedId;
 	if (!id.empty()) {
 		rs.add("id", id);
@@ -64,8 +68,12 @@ Json SqlBackendBase::update(const string& tablename, const Json& params) {
 	if (conn == nullptr)
 		return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 	Json rs = conn->execNone(sql, values);
-	if (rs["status"].toInt() != STSUCCESS)
+	if (rs["status"].toInt() != STSUCCESS) {
+		// 写失败自愈: 连接可能已处于坏状态(文件瞬时只读/句柄失效等),
+		// 丢弃池中连接, 下次 acquire 重建, 否则坏连接永远驻留。
+		selfHealConnections();
 		return rs;
+	}
 	if (!rs["affected"].isError())
 		rs.add("affectedRows", rs["affected"].toInt());
 	else
@@ -86,8 +94,12 @@ Json SqlBackendBase::remove(const string& tablename, const Json& params) {
 	if (conn == nullptr)
 		return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
 	Json rs = conn->execNone(sql, values);
-	if (rs["status"].toInt() != STSUCCESS)
+	if (rs["status"].toInt() != STSUCCESS) {
+		// 写失败自愈: 连接可能已处于坏状态(文件瞬时只读/句柄失效等),
+		// 丢弃池中连接, 下次 acquire 重建, 否则坏连接永远驻留。
+		selfHealConnections();
 		return rs;
+	}
 	if (!rs["affected"].isError())
 		rs.add("affectedRows", rs["affected"].toInt());
 	else
@@ -141,7 +153,10 @@ Json SqlBackendBase::execSql(const string& sqlstr, Json params, Json values) {
 	IDbConnection* conn = lease.get();
 	if (conn == nullptr)
 		return DbUtils::MakeJsonObject(STDBCONNECTERR, err);
-	return conn->execNone(sql, values);
+	Json result = conn->execNone(sql, values);
+	if (result["status"].toInt() != STSUCCESS)
+		selfHealConnections();
+	return result;
 }
 
 Json SqlBackendBase::insertBatch(const string& tablename, const Json& elements, string constraint) {
@@ -200,6 +215,8 @@ Json SqlBackendBase::insertBatch(const string& tablename, const Json& elements, 
 	Json rs = conn->execNone(sql, values);
 	if (rs["status"].toInt() == STSUCCESS)
 		rs.add("affectedRows", elements.size());
+	else
+		selfHealConnections();
 	return rs;
 }
 
