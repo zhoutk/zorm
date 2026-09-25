@@ -2,6 +2,7 @@
 Release/
 build/
 build-*/
+demo/zorm-mcp/
 bin/
 .vs/
 ipch/
