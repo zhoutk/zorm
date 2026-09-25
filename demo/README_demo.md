@@ -1,5 +1,7 @@
 # Zorm Analytics MCP — 演示操作指南
 
+> **正式版已落地**：本演示验证的架构已产品化为仓库根目录的 [`zorm-mcp/`](../zorm-mcp/README.md)（13 工具全 Idb 覆盖 + catalog 级表结构元数据 + 事务/只读 SQL 闸门）。接入配置见 [`zorm-mcp/INTEGRATION.md`](../zorm-mcp/INTEGRATION.md)。本文档保留为演示剧本与 Windows 完整性级别 FAQ 的权威说明。
+
 **一句话**：让 AI 用自然语言同时操作多种异构数据库（sqlite / jsonfile 开箱即用，mysql / postgres / dm8 加配置即用），全程不懂任何 SQL 方言——这正是 zorm（统一 ORM 语义层）+ mcp-cpp（官方缺位的 C++ MCP SDK）的组合价值。
 
 演示默认只用 **sqlite + jsonfile** 两个零依赖后端（远程数据库服务不需要）。

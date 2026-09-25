@@ -246,3 +246,10 @@ add_subdirectory(./thirds/mcp-cpp)
 if(TARGET mcp)
   add_subdirectory(./demo)
 endif()
+
+##--------------------- zorm-mcp (the production MCP server) ----------------##
+# Formal product derived from the demo: full Idb surface + schema/SQL/transaction
+# tools behind one MCP server, MRTR write confirmation, resources, completion.
+if(TARGET mcp)
+  add_subdirectory(./zorm-mcp)
+endif()

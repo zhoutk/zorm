@@ -1,0 +1,9 @@
+{
+  "databases": {
+    "sqlite3":  { "type": "sqlite3",  "options": { "connString": "zorm-mcp.db" } },
+    "jsonfile": { "type": "jsonfile", "options": { "connString": "zorm-mcp.json" } },
+    "mysql":    { "type": "mysql",    "options": { "db_host": "127.0.0.1", "db_user": "root", "db_pass": "secret", "db_name": "app", "db_port": 3306 } },
+    "postgres": { "type": "postgres", "options": { "db_host": "127.0.0.1", "db_user": "postgres", "db_pass": "secret", "db_name": "app", "db_port": 5432 } },
+    "dm8":      { "type": "dm8",      "options": { "db_host": "127.0.0.1", "db_user": "SYSDBA", "db_pass": "secret" } }
+  }
+}
