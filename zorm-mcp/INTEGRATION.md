@@ -12,20 +12,26 @@
 ### 0.1 构建（一次性）
 
 ```bash
-cmake --preset clang-dbg && cmake --build build --target zorm_mcp_server
+cmake --preset clang-rlz && cmake --build build --target zorm_mcp_server
 # 产物: build/zorm-mcp/zorm_mcp_server.exe（运行 DLL 已自动复制到同目录）
 ```
 
-### 0.2 接入命令用哪个：**统一用 `start.cmd` / `start.sh` 包装脚本（推荐）**
+### 0.2 接入命令用哪个：**统一用 `start.sh` 包装脚本（推荐，MSYS2 标准示范）**
 
-AI 客户端各自决定子进程的工作目录（cwd），而 zorm-mcp 的默认数据库文件（`zorm-mcp.db` / `zorm-mcp.json`）落在**进程 cwd**。注册**包装脚本**可把 cwd 钉死到 `zorm-mcp/` 目录，文件位置可预期：
+AI 客户端各自决定子进程的工作目录（cwd），**MCP 协议对此没有任何约定**——同一个注册配置，Claude Code、Claude Desktop、Cursor 各自 spawn 出来的 cwd 都不一样。zorm-mcp 不带 `--config` 时，默认数据库文件（`zorm-mcp.db` / `zorm-mcp.json`）落在**进程 cwd**，所以"库到底在哪"会随客户端漂移。包装脚本把 cwd 钉死到 `zorm-mcp/` 目录，文件位置从此可预期：
 
 | 形式 | 命令 | 适用 |
 | --- | --- | --- |
-| **包装脚本（推荐）** | `D:/codes/zorm/zorm-mcp/start.cmd`（Windows）<br>`D:/codes/zorm/zorm-mcp/start.sh`（MSYS2/Git Bash） | 免配 cwd，数据库落在 `zorm-mcp/` 目录 |
+| **包装脚本（推荐，标准示范）** | `D:/codes/zorm/zorm-mcp/start.sh`（MSYS2/Git Bash） | 免配 cwd，默认库落在 `zorm-mcp/` 目录 |
+| 备选 | `D:/codes/zorm/zorm-mcp/start.cmd`（cmd 批处理，行为等价） | 客户端无法直接执行 .sh 时 |
 | 直接指 exe | `D:/codes/zorm/build/zorm-mcp/zorm_mcp_server.exe` | 客户端支持配 cwd，或你用 `--config` 给绝对路径 |
 
-传参直接跟在后面，例如 `start.cmd --allow-sql`。
+传参直接跟在后面，例如 `start.sh --allow-sql --config D:/data/zorm.json`。
+
+**常见疑问：为什么 demo 时库在项目目录，接 MCP 后就不在了？**
+demo 是在项目目录里手工启动 server 的，库文件自然落在当时的 cwd；接 MCP 后 cwd 由客户端决定（且被 start.sh 钉到 `zorm-mcp/`），这是**设计行为，不是 bug**。依赖客户端 cwd 本身就不可靠，通行做法是**不依赖 cwd，用 `--config <绝对路径>` 显式指定数据库**——库的位置、命名、后端全部由你决定，与哪个客户端接入无关。
+
+**注意相对路径的解析基准**：`--config` 里的相对 `connString` 是相对**服务器进程 cwd**（被 start.sh 钉到 `zorm-mcp/`）解析的，不是相对你运行 AI 客户端的项目目录。要让库落在某个项目里，`connString` 写**绝对路径**指向它。
 
 ### 0.3 多后端（mysql / postgres / dm8）
 
@@ -58,14 +64,23 @@ AI 客户端各自决定子进程的工作目录（cwd），而 zorm-mcp 的默�
 ## 1. Claude Code（已验证 ✅）
 
 ```bash
-claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.cmd
+# 最简接入：内置 sqlite3 + jsonfile，默认库文件落在 zorm-mcp/ 目录
+claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.sh
+
+# 推荐：加 --config 显式指定数据库——位置/后端由配置决定，不随 cwd 漂移
+claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.sh --config D:/codes/zorm/zorm-mcp/zorm-mcp.json
 ```
 
 项目级共享配置（签入仓库，团队共用）——在仓库根建 `.mcp.json`：
 
 ```json
-{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.cmd" } } }
+{ "mcpServers": { "zorm-mcp": {
+    "command": "D:/codes/zorm/zorm-mcp/start.sh",
+    "args": ["--config", "D:/codes/zorm/zorm-mcp/zorm-mcp.json"]
+} } }
 ```
+
+> **建议始终带 `--config`**：一是数据库位置显式可查（出问题第一眼就知道在操作哪个库文件）；二是同一个 server 可以按项目换不同的配置文件（各项目的 `.mcp.json` 指向各自的 config 即可）。模板见 [`zorm-mcp.json`](zorm-mcp.json)，`connString` 一律写绝对路径（见 §0.2 的相对路径说明）。
 
 要点：
 - 服务器的 `instructions` 决策表会注入模型上下文，工具选择无需人工提示；
@@ -77,7 +92,7 @@ claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.cmd
 `claude_desktop_config.json`（设置 → Developer → Edit Config）：
 
 ```json
-{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.cmd" } } }
+{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.sh" } } }
 ```
 
 ## 3. DeepSeek Harness（dsh，已验证 ✅ 严格客户端）
@@ -94,7 +109,7 @@ DSH 使用 MCP SDK 2.0（协议 2026-07-28），对 `tools/list` 等结果的 `t
       config:
         serverName: zorm-mcp
         transport: stdio
-        command: D:/codes/zorm/zorm-mcp/start.cmd
+        command: D:/codes/zorm/zorm-mcp/start.sh
         cwd: D:/codes/zorm/zorm-mcp
 ```
 
@@ -107,7 +122,7 @@ VS Code 1.99+ 原生 MCP，Copilot Chat 的 agent 模式直接消费同一配置
 **项目级** `.vscode/mcp.json`（推荐，可签入）：
 
 ```json
-{ "servers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.cmd" } } }
+{ "servers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.sh" } } }
 ```
 
 **用户级**：`settings.json` 里同结构的 `"mcp": { "servers": { ... } }`。保存后 Copilot/Agent 模式的工具列表出现 `db_*` 即成功。JetBrains 全家桶（IDEA/PyCharm 2025.2+）在 Settings → Tools → MCP 里加 stdio server，command 同上。
@@ -117,7 +132,7 @@ VS Code 1.99+ 原生 MCP，Copilot Chat 的 agent 模式直接消费同一配置
 `~/.cursor/mcp.json`（全局）或项目根 `.cursor/mcp.json`：
 
 ```json
-{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.cmd" } } }
+{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.sh" } } }
 ```
 
 保存后 Cursor Settings → MCP 显示绿点即成功。
@@ -127,7 +142,7 @@ VS Code 1.99+ 原生 MCP，Copilot Chat 的 agent 模式直接消费同一配置
 `~/.codeium/windsurf/mcp_config.json`：
 
 ```json
-{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.cmd" } } }
+{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.sh" } } }
 ```
 
 ## 7. Cline / Roo Code（VS Code 插件）
@@ -136,7 +151,7 @@ Cline：侧栏 MCP Servers 图标 → Configure → `cline_mcp_settings.json`（
 
 ```json
 { "mcpServers": { "zorm-mcp": {
-    "command": "D:/codes/zorm/zorm-mcp/start.cmd",
+    "command": "D:/codes/zorm/zorm-mcp/start.sh",
     "args": [],
     "disabled": false,
     "autoApprove": ["db_list_tables", "db_describe_table", "db_indexes", "db_info",
@@ -152,7 +167,7 @@ Cline：侧栏 MCP Servers 图标 → Configure → `cline_mcp_settings.json`（
 
 ```toml
 [mcp_servers.zorm-mcp]
-command = "D:/codes/zorm/zorm-mcp/start.cmd"
+command = "D:/codes/zorm/zorm-mcp/start.sh"
 args = []
 ```
 
@@ -163,7 +178,7 @@ Codex 会话内工具以 `zorm-mcp.db_query` 形态暴露。
 `~/.gemini/settings.json`：
 
 ```json
-{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.cmd", "args": [] } } }
+{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.sh", "args": [] } } }
 ```
 
 ## 10. MCP Inspector（协议调试，已验证 ✅）

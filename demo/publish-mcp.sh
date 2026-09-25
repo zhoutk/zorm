@@ -71,7 +71,7 @@ echo "   server : $EXE"
 echo "   发布到 : $OUT_DIR"
 
 # ---- 前置检查 -------------------------------------------------------------
-[ -f "$EXE" ] || { echo "[publish] 找不到 server: $EXE （先构建: cmake --preset clang-dbg && cmake --build build --target zorm_analytics_server）" >&2; exit 1; }
+[ -f "$EXE" ] || { echo "[publish] 找不到 server: $EXE （先构建: cmake --preset clang-rlz && cmake --build build --target zorm_analytics_server）" >&2; exit 1; }
 command -v ldd >/dev/null 2>&1 || { echo "[publish] 需要 MSYS2 的 ldd 做依赖收集（本机 MSYS2 自带）" >&2; exit 1; }
 file "$EXE" | grep -qi "PE32+.*x86-64" || { echo "[publish] 只支持 64 位 Windows 发布（PE32+ x86-64）" >&2; exit 1; }
 

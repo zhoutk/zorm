@@ -14,7 +14,7 @@
 ## 构建
 
 ```bash
-cmake --preset clang-dbg && cmake --build build --target zorm_mcp_server
+cmake --preset clang-rlz && cmake --build build --target zorm_mcp_server
 # exe 与运行 DLL 自动落在 build/zorm-mcp/（或 build/bin/，随构建树）
 ```
 
@@ -24,19 +24,23 @@ cmake --preset clang-dbg && cmake --build build --target zorm_mcp_server
 
 **👉 全客户端配置手册见 [INTEGRATION.md](INTEGRATION.md)**——覆盖 Claude Code / Claude Desktop / DeepSeek Harness / VS Code & Copilot / Cursor / Windsurf / Cline & Roo Code / Codex CLI / Gemini CLI / MCP Inspector / 通用 HTTP，含占位待验证客户端清单。
 
-快速接入（统一走 start 脚本，把数据库文件钉在本目录）：
+快速接入（统一走 start 脚本，把数据库文件钉在本目录；**推荐带 `--config` 显式指定数据库**，见 [INTEGRATION.md §0.2](INTEGRATION.md) 的原因说明）：
 
 ```bash
-# Claude Code
-claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.cmd
+# Claude Code（最简：内置 sqlite3 + jsonfile，默认库文件落在本目录）
+claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.sh
+
+# 推荐：--config 显式指定数据库（模板见 zorm-mcp.json，connString 写绝对路径）
+claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.sh --config D:/codes/zorm/zorm-mcp/zorm-mcp.json
 ```
 
 ```jsonc
 // 其他客户端通用形态（各客户端配置文件位置见 INTEGRATION.md）
-{ "mcpServers": { "zorm-mcp": { "command": "D:/codes/zorm/zorm-mcp/start.cmd" } } }
+{ "mcpServers": { "zorm-mcp": {
+    "command": "D:/codes/zorm/zorm-mcp/start.sh",
+    "args": ["--config", "D:/codes/zorm/zorm-mcp/zorm-mcp.json"]
+} } }
 ```
-
-多后端：写一个配置（模板见 `zorm-mcp.json`），start 脚本参数加 `--config <绝对路径>`。
 
 ## 工具一览（全部带 `db` 路由参数 = 后端注册名）
 

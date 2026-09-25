@@ -58,7 +58,7 @@ demo\run-demo.cmd
 先构建并初始化（一次性）：
 
 ```cmd
-cmake --preset clang-dbg && cmake --build build --target zorm_analytics_server
+cmake --preset clang-rlz && cmake --build build --target zorm_analytics_server
 build\demo\zorm_analytics_server.exe --setup
 ```
 

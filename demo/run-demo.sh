@@ -13,7 +13,7 @@ EXE="$ROOT/build/demo/zorm_analytics_server.exe"
 
 if [ ! -x "$EXE" ]; then
   echo "[demo] zorm_analytics_server not found - build first:"
-  echo "  cmake --preset clang-dbg && cmake --build build --target zorm_analytics_server"
+  echo "  cmake --preset clang-rlz && cmake --build build --target zorm_analytics_server"
   exit 1
 fi
 

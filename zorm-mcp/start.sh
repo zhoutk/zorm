@@ -11,7 +11,7 @@ if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || -f "${EXE}.exe" ]]; t
 fi
 if [[ ! -x "$EXE" && ! -f "$EXE" ]]; then
   echo "[zorm-mcp] server not found: $EXE" >&2
-  echo "[zorm-mcp] build it first: cmake --preset clang-dbg && cmake --build build --target zorm_mcp_server" >&2
+  echo "[zorm-mcp] build it first: cmake --preset clang-rlz && cmake --build build --target zorm_mcp_server" >&2
   exit 1
 fi
 exec "$EXE" "$@"

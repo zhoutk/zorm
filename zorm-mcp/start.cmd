@@ -9,7 +9,7 @@ cd /d "%~dp0"
 set EXE=%~dp0..\build\zorm-mcp\zorm_mcp_server.exe
 if not exist "%EXE%" (
   echo [zorm-mcp] server not found: %EXE% 1>&2
-  echo [zorm-mcp] build it first: cmake --preset clang-dbg ^&^& cmake --build build --target zorm_mcp_server 1>&2
+  echo [zorm-mcp] build it first: cmake --preset clang-rlz ^&^& cmake --build build --target zorm_mcp_server 1>&2
   exit /b 1
 )
 "%EXE%" %*

@@ -159,7 +159,7 @@ error, `701` db operation failed, `700` connection failed.
 ### Run
 
 ```bash
-cmake --preset clang-dbg              # configure (Ninja + clang64)
+cmake --preset clang-rlz              # configure (Ninja + clang64)
 cmake --build build -j 8              # build (zormlib + exes + tests)
 ./run-test                            # sqlitemem + jsonfile hardening + dbutils + pool
 ./run-test local                      # all no-server backends + unit tests

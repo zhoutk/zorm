@@ -279,7 +279,7 @@ inputResponses.approved != true → 返回 complete + content 说明"已取消"�
 
 ```bash
 # ① 构建（一次性）
-cmake --preset clang-dbg && cmake --build build --target zorm_analytics_server
+cmake --preset clang-rlz && cmake --build build --target zorm_analytics_server
 
 # ② 30 秒自演示（无需任何 AI 客户端）——自动建库 + 跨库查询 + 写确认全流程
 build/bin/zorm_analytics_server.exe --demo

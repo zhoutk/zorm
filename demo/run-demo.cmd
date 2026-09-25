@@ -12,7 +12,7 @@ set PATH=%ROOT%\thirds\bin\win10;%PATH%
 
 if not exist "%SCRIPT_DIR%..\build\demo\zorm_analytics_server.exe" (
   echo [demo] zorm_analytics_server.exe not found - build first:
-  echo   cmake --preset clang-dbg ^&^& cmake --build build --target zorm_analytics_server
+  echo   cmake --preset clang-rlz ^&^& cmake --build build --target zorm_analytics_server
   exit /b 1
 )
 
