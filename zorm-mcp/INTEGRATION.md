@@ -16,6 +16,8 @@ cmake --preset clang-rlz && cmake --build build --target zorm_mcp_server
 # 产物: build/zorm-mcp/zorm_mcp_server.exe（运行 DLL 已自动复制到同目录）
 ```
 
+构建时 POST_BUILD 会解析 exe 的**完整依赖闭包**并复制到同目录：不只 `sqlite3.dll`/`libpq.dll`/`dmdpi.dll` 这些后端 DLL，还有 `libc++.dll`、`libmariadb.dll` 及它们的传递依赖（来自 `D:/msys64/clang64/bin`）。AI 客户端用**自己的环境**孵化 server（没有 MSYS2 PATH），所以这一步是"免配 PATH 直接接"的前提——否则子进程加载期即退出，客户端只看到 `Process exited with code 3221225781`（0xC0000135 `STATUS_DLL_NOT_FOUND`）。
+
 ### 0.2 接入命令用哪个：**统一用 `start.sh` 包装脚本（推荐，MSYS2 标准示范）**
 
 AI 客户端各自决定子进程的工作目录（cwd），**MCP 协议对此没有任何约定**——同一个注册配置，Claude Code、Claude Desktop、Cursor 各自 spawn 出来的 cwd 都不一样。zorm-mcp 不带 `--config` 时，默认数据库文件（`zorm-mcp.db` / `zorm-mcp.json`）落在**进程 cwd**，所以"库到底在哪"会随客户端漂移。包装脚本把 cwd 钉死到 `zorm-mcp/` 目录，文件位置从此可预期：
@@ -85,7 +87,7 @@ claude mcp add zorm-mcp -- D:/codes/zorm/zorm-mcp/start.sh --config D:/codes/zor
 要点：
 - 服务器的 `instructions` 决策表会注入模型上下文，工具选择无需人工提示；
 - 写操作确认以 `input_required` 形式回到会话，Claude Code 转述给用户；
-- 若提示缺 DLL：确认 exe 同目录有 `sqlite3.dll` 等（构建时自动复制）。
+- 若提示缺 DLL：确认 exe 同目录有 `sqlite3.dll` **以及 `libc++.dll`/`libmariadb.dll`**（构建时按依赖闭包自动复制；只重建 `zorm_mcp_server` 目标即可补齐）。
 
 ## 2. Claude Desktop（配置方式标准，同族通用）
 
@@ -232,5 +234,6 @@ Open WebUI 等只认 OpenAPI 的平台，可用社区 [mcpo](https://github.com/
 - **`SQLITE_READONLY`，读正常写失败**：Windows 完整性级别问题（Claude Code 等以低完整性孵化 MCP 子进程），非 server bug。修复方法（icacls 降级目录与文件标签）见 `demo/README_demo.md` 第六节。**最省事**：像本指南一样用 start 脚本把数据库固定在仓库目录内（通常已是低完整性可写）。
 - **AI 乱选工具 / 写错 `db` 参数**：报错自带可用后端清单和替代工具建议（自纠错设计）；服务器 `instructions` 已含完整决策表。仍不理想时，把 `db://guide` 资源或 `db-playbook` prompt 喂给会话。
 - **`db_exec_sql` 看不到**：默认不注册，`--allow-sql` 才暴露——这是刻意设计（结构化写工具已覆盖绝大多数场景）。
+- **客户端日志显示 `Process exited with code 3221225781`（0xC0000135 `STATUS_DLL_NOT_FOUND`）**：exe 同目录缺运行期 DLL——客户端（VS Code、从资源管理器启动的终端等）没有 MSYS2 的 PATH，`libc++.dll`/`libmariadb.dll` 等解析不到。重新构建对应目标，POST_BUILD 会按依赖闭包把 DLL 复制到 exe 目录（正常应看到 `zorm: bundled N resolved runtime DLL(s)`）；不要把 `D:/msys64/clang64/bin` 塞进客户端配置来绕过。
 - **协议兼容性**：stdio 模式兼容 2024-11-05 → 2026-07-28 全系版本（legacy initialize + 新版 server/discover 双握手）；严格客户端（DSH）验证过 CacheableResult 字段。
 - **要长期接生产库**：建议 `--config` 用绝对路径 + 专用的低权限数据库账号（只授业务库权限），不要复用管理员账号。

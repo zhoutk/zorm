@@ -23,12 +23,7 @@ target_include_directories(zorm_mcp_server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/s
 # Runtime DLLs (libpq/sqlite3/dmdpi/...) must resolve when an AI client spawns
 # the server - Claude Code does NOT have run-test's PATH setup. Copy them next
 # to the executable (Windows searches the exe dir first).
-if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/thirds/bin/win10")
-  file(GLOB ZORM_RUNTIME_DLLS "${CMAKE_SOURCE_DIR}/thirds/bin/win10/*.dll")
-  add_custom_command(TARGET zorm_mcp_server POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ZORM_RUNTIME_DLLS}
-              $<TARGET_FILE_DIR:zorm_mcp_server>)
-endif()
+zorm_bundle_runtime_deps(zorm_mcp_server)
 
 # ---- e2e test ---------------------------------------------------------------
 

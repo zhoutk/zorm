@@ -16,6 +16,7 @@
 ```bash
 cmake --preset clang-rlz && cmake --build build --target zorm_mcp_server
 # exe 与运行 DLL 自动落在 build/zorm-mcp/（或 build/bin/，随构建树）
+# DLL 按依赖闭包解析（后端 DLL + libc++/libmariadb 及其传递依赖），客户端无需 MSYS2 PATH
 ```
 
 零依赖开箱即用：不配置时内置 `sqlite3`（当前目录 `zorm-mcp.db`）与 `jsonfile`（`zorm-mcp.json`）两个后端。

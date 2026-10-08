@@ -239,6 +239,29 @@ endif()
 # CTest-registered as mcp_test_version / mcp_test_error.
 add_subdirectory(./thirds/mcp-cpp)
 
+##--------------------- runtime DLL bundling --------------------------------##
+# MCP servers are spawned by an AI client, not by run-test: the child gets the
+# client's environment, which has no MSYS2 clang64 PATH. Resolve each server's
+# dependency closure (the MSYS2 runtime such as libc++.dll plus the backend
+# DLLs and their transitive deps) and copy it next to the executable, so the
+# exe starts from Explorer or VS Code too. Without it the client reports
+#   Process exited with code 3221225781 (0xC0000135 STATUS_DLL_NOT_FOUND).
+# See cmake/zorm_bundle_runtime_deps.cmake.
+function(zorm_bundle_runtime_deps target)
+  if(NOT WIN32)
+    return()
+  endif()
+  get_filename_component(_compiler_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}"
+              "-DZORM_TARGET_EXE=$<TARGET_FILE:${target}>"
+              "-DZORM_THIRDS_DLL_DIR=${CMAKE_SOURCE_DIR}/thirds/bin/win10"
+              "-DZORM_COMPILER_BIN=${_compiler_bin}"
+              -P "${CMAKE_SOURCE_DIR}/cmake/zorm_bundle_runtime_deps.cmake"
+      COMMENT "Bundling runtime DLLs next to $<TARGET_FILE_NAME:${target}>"
+      VERBATIM)
+endfunction()
+
 ##--------------------- zorm analytics demo (demo/) ------------------------##
 # The zorm showcase: zorm is the protagonist, mcp-cpp is the third-party MCP
 # protocol library it links. Builds zorm_analytics_server (multi-backend MCP

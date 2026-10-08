@@ -17,6 +17,8 @@ cmake --build build               # outputs to bin/
 
 Tests are config-driven (gels-style): one contract suite (`tests/ContractSuite.h`), backend selected by `--dialect` / `tests/dbconfig.json`. Run through `./run-test`, which sets up DLL paths (`thirds/bin/win10`) and maps short names to CTest registrations (13 total). The MCP layer has its own e2e tests (`mcp_test_zorm_analytics`, `mcp_test_zorm_mcp`) that spawn real server children — they run with plain `ctest -R mcp` (DLLs are copied next to the exes at build time; `run-test` is not involved).
 
+The three MCP server exes (`zorm_mcp_server`, `zorm_analytics_server`, `zorm_server`) get their **full runtime DLL closure** copied next to them by a POST_BUILD step (`cmake/zorm_bundle_runtime_deps.cmake`, driven by `zorm_bundle_runtime_deps()` in the root CMakeLists). An AI client spawns the server with the client's own environment — no MSYS2 PATH — so without this the child dies at load with `Process exited with code 3221225781` (0xC0000135 `STATUS_DLL_NOT_FOUND`): the backend DLLs alone are not enough, `libc++.dll` / `libmariadb.dll` and their transitive deps come from `D:/msys64/clang64/bin`. Never "fix" a start failure by adding the toolchain bin to a client config — fix the bundling.
+
 ```bash
 ./run-test                # default: sqlitemem + jsonfile hardening + dbutils + pool
 ./run-test local          # sqlitemem + sqlite3(file) + json(file) + dbutils + pool
@@ -46,6 +48,8 @@ src/base/           # private shared algorithm layer:
                     #   DbPool.h (template → header-only by necessity)
 src/backends/       # private per-backend .h/.cpp pairs + FileLock.h/.cpp,
                     #   JsonFileDb.h/.cpp, pg_type_d.h (libpq oid table)
+cmake/              # build helpers (private): zorm_bundle_runtime_deps.cmake
+                    #   copies each MCP server's runtime DLL closure next to it
 demo/               # validation/demo: zorm_analytics_server (multi-backend MCP
                     #   demo), demo_data seeding, run-demo scripts, publish pack
 zorm-mcp/           # ★ the production MCP server (zorm_mcp_server): all Idb
