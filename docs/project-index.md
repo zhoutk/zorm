@@ -80,19 +80,11 @@ zorm/
 ├── docs/
 │   ├── project-index.md      # ★ this index
 │   ├── jsonfile-design.md    # ★ JsonFileDb design & hardening-test details
-│   ├── mcp/                  # MCP protocol text (2026-07-28), demo design,
-│   │                         #   migration plan, mcp-cpp review
 │   └── code-review-contract-suite.md  # ★ review findings, O-1..O-11 fixes,
 │                              #   the shared-layer refactor and the test
 │                              #   hardening + mutation-verification record
 ├── thirds/                   # bundled deps: googletest, sqlite3, mysql, pq,
-│   │                         #   dm8, zjson, httplib
-│   └── mcp-cpp/              # ★ our own C++ MCP SDK (protocol-faithful,
-│                             #   do not bend it for app needs)
-├── demo/                     # MCP showcase (validation): zorm_analytics_server,
-│                             #   demo_data seeding, run-demo scripts, publish
-│                             #   pack (demo/zorm-mcp/), README_demo.md
-├── zorm-mcp/                 # ★ PRODUCTION MCP server (see section 8)
+│                             #   dm8, zjson, httplib
 └── refer/                    # reference projects (NOT part of this project)
     ├── gels/                 # TypeScript project - best-in-class DAO layer
     └── orm/                  # C++ orm with JsonFileDb reference impl
@@ -192,43 +184,18 @@ CTest registrations: `test_contract_sqlite3_mem`, `test_contract_sqlite3`,
 
 ---
 
-## 5. zorm-mcp — the production MCP server (`zorm-mcp/`)
+## 5. MCP components (moved out of this repo)
 
-The product layer built on the frozen `Idb` surface + `thirds/mcp-cpp`
-(branch `mcp`; the validation showcase lives in `demo/`).
+The MCP layer was split into standalone sibling projects (full git history
+preserved via `git filter-repo`):
 
-- **Binary**: `zorm_mcp_server` (stdio by default, `--http N` for Streamable
-  HTTP, `--config F` for backends, `--yes` / `--allow-sql` switches).
-- **13 tools, all taking a `db` routing param**: metadata (`db_list_tables`,
-  `db_describe_table`, `db_indexes`, `db_info`), query (`db_query` smart
-  query, `db_count`, `db_query_sql` read-only gated), writes (`db_insert`,
-  `db_insert_batch`, `db_update`, `db_delete`, `db_trans` — ALL behind the
-  MRTR `input_required`/`requestState` confirmation), `db_exec_sql`
-  (hidden unless `--allow-sql`).
-- **Full Idb coverage**: select→db_query, create→db_insert,
-  insertBatch→db_insert_batch, update/remove→db_update/db_delete,
-  querySql→db_query_sql, execSql→db_exec_sql, transGo→db_trans.
-- **Schema metadata** (`db_describe_table`, the "get table fields even when
-  EMPTY" capability) comes from per-dialect catalogs: sqlite pragma **TVFs**
-  (bare `pragma` breaks the backend's ` limit 1` column probe; `notnull` is
-  a reserved word — quote aliases), information_schema (mysql/postgres),
-  user_tab_columns (dm8), the jsonfile columns array + row-key fallback.
-- **Extras**: `db://schema` + `db://guide` resources, `db-playbook` prompt,
-  completion (db/table/fields), self-correcting error messages, the
-  four-layer AI-comprehension design (instructions → tool descriptions →
-  error teaching → pull channels).
-- **Code map**: `src/app.*` (state + catalog routing), `src/guide.*`
-  (AI-comprehension texts), `src/meta_tools.cpp` / `src/data_tools.cpp` /
-  `src/sql_tools.cpp` (tools + MRTR machinery), `src/resources.cpp`,
-  `src/main.cpp`.
-- **Tests**: `test_zorm_mcp.cpp` e2e (real stdio child) — 7 cases covering
-  metadata-on-empty-table, the full data plane, jsonfile parity, MRTR
-  approve/reject/flat-echo/stale-state, trans + exec_sql confirmation,
-  graceful shutdown. CTest: `mcp_test_zorm_mcp`.
-- **Docs**: `zorm-mcp/README.md` (product overview) ·
-  `zorm-mcp/INTEGRATION.md` (per-client setup: Claude Code/Desktop, dsh,
-  VS Code/Copilot, Cursor, Windsurf, Cline/Roo, Codex, Gemini CLI,
-  Inspector, generic HTTP; placeholders for pi/Reasonix/Grok build).
+- `../mcp-cpp` — the C++ MCP SDK (was `thirds/mcp-cpp`) + the MCP protocol
+  text (was `docs/mcp`). Self-contained: zjson/httplib/googletest bundled
+  under its own `thirds/`.
+- `../zorm-mcp` — the production multi-backend database MCP server (was
+  `zorm-mcp/`), including the validation showcase (was `demo/`). It builds
+  against the sibling `../zorm` and `../mcp-cpp` checkouts; see its
+  README.md / INTEGRATION.md.
 
 ---
 

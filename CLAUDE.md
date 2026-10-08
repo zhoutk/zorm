@@ -15,9 +15,9 @@ cmake --preset clang-dbg          # or clang-rlz (RelWithDebInfo); Ninja + clang
 cmake --build build               # outputs to bin/
 ```
 
-Tests are config-driven (gels-style): one contract suite (`tests/ContractSuite.h`), backend selected by `--dialect` / `tests/dbconfig.json`. Run through `./run-test`, which sets up DLL paths (`thirds/bin/win10`) and maps short names to CTest registrations (13 total). The MCP layer has its own e2e tests (`mcp_test_zorm_analytics`, `mcp_test_zorm_mcp`) that spawn real server children — they run with plain `ctest -R mcp` (DLLs are copied next to the exes at build time; `run-test` is not involved).
+Tests are config-driven (gels-style): one contract suite (`tests/ContractSuite.h`), backend selected by `--dialect` / `tests/dbconfig.json`. Run through `./run-test`, which sets up DLL paths (`thirds/bin/win10`) and maps short names to CTest registrations (13 total).
 
-The three MCP server exes (`zorm_mcp_server`, `zorm_analytics_server`, `zorm_server`) get their **full runtime DLL closure** copied next to them by a POST_BUILD step (`cmake/zorm_bundle_runtime_deps.cmake`, driven by `zorm_bundle_runtime_deps()` in the root CMakeLists). An AI client spawns the server with the client's own environment — no MSYS2 PATH — so without this the child dies at load with `Process exited with code 3221225781` (0xC0000135 `STATUS_DLL_NOT_FOUND`): the backend DLLs alone are not enough, `libc++.dll` / `libmariadb.dll` and their transitive deps come from `D:/msys64/clang64/bin`. Never "fix" a start failure by adding the toolchain bin to a client config — fix the bundling.
+The MCP layer has been split out into the standalone sibling projects `../mcp-cpp` (C++ MCP SDK + protocol docs) and `../zorm-mcp` (production database MCP server, including the former `demo/` showcase). zorm-mcp builds against these sibling checkouts; its runtime-DLL bundling still uses `cmake/zorm_bundle_runtime_deps.cmake` from this repo.
 
 The two Python MCP servers in the VS Code `.vscode/mcp.json` (`serena`, `code-review-graph` — tools living outside this repo) run from uv-created venvs that deliberately keep **no state on `C:`** (only `D:` survives an OS reinstall): `uv.exe` is `D:\_sys_\uv\uv.exe`, the managed CPython is `D:\_sys_\uv\python\cpython-3.13.16-windows-x86_64-none` (no minor-version alias junction), and the venvs are `D:\_sys_\serena` / `D:\_sys_\code-review-graph`. Persisted user env: `UV_PYTHON_INSTALL_DIR=D:\_sys_\uv\python`, `UV_CACHE_DIR=D:\_sys_\uv\cache`. The venv launchers resolve the interpreter through `pyvenv.cfg`, so re-pointing a venv after a Python change is `uv venv --allow-existing --python 3.13.16 <venv>` (console scripts embed `<venv>\Scripts\python.exe`, so they survive as-is).
 
@@ -54,14 +54,8 @@ src/base/           # private shared algorithm layer:
                     #   DbPool.h (template → header-only by necessity)
 src/backends/       # private per-backend .h/.cpp pairs + FileLock.h/.cpp,
                     #   JsonFileDb.h/.cpp, pg_type_d.h (libpq oid table)
-cmake/              # build helpers (private): zorm_bundle_runtime_deps.cmake
-                    #   copies each MCP server's runtime DLL closure next to it
-demo/               # validation/demo: zorm_analytics_server (multi-backend MCP
-                    #   demo), demo_data seeding, run-demo scripts, publish pack
-zorm-mcp/           # ★ the production MCP server (zorm_mcp_server): all Idb
-                    #   methods + schema/SQL/transaction tools, MRTR confirm,
-                    #   resources/prompts/completion; see zorm-mcp/README.md
-                    #   and zorm-mcp/INTEGRATION.md (per-client setup)
+cmake/              # build helpers: zorm_bundle_runtime_deps.cmake (used by
+                    #   the sibling zorm-mcp project for DLL bundling)
 ```
 
 ## Architecture
@@ -69,7 +63,7 @@ zorm-mcp/           # ★ the production MCP server (zorm_mcp_server): all Idb
 - **`SqlBackendBase`** (`src/base/SqlBackendBase.h/.cpp`) is an abstract base (no CRTP anymore) holding the 8 `Idb` method skeletons, SQL builders, `genSql` smart-query assembly (reserved words: page/size/sort/fuzzy/lks/ins/ors/count/sum/group), pagination counters, and the transaction loop — compiled once in `SqlBackendBase.cpp`. Backends drive the driver through the **`IDbConnection`** interface (`src/base/DbConnection.h`): each backend defines a small `Connection` class wrapping its native handle, pooled via `DbPool::HandlePool<IDbConnection*>` with RAII `Lease` (blocking wait, `invalidate` self-heal). On a driver-level **write failure** the base calls the `selfHealConnections()` hook (virtual, default no-op; `Sqlit3Db` overrides it to `pool.invalidate()`) so a wedged handle (e.g. a database file that was transiently read-only) is dropped and rebuilt on the next acquire instead of failing forever.
 - **Dialect = virtual hook overrides.** Base defaults cover the plain-SQL majority (`?` placeholders, identity quoting, `limit o,n`, comma-join projections, `ON CONFLICT ... excluded` upsert, quote-doubling escaping). Similar backends share defaults naturally — sqlite needs ZERO overrides; postgres overrides 5 (placeholders `$n`, `numberedPlaceholders`, LIKE CAST, limit syntax, `$` sniffing); mysql overrides upsert + escaping; dm8 carries the quoted-lowercase identifier group plus read-then-write upsert overrides of `create`/`insertBatch`. Adding a backend = writing a `Connection` + overriding only the hooks that differ.
 - **jsonfile backend** (`JsonFileDb.h/.cpp` + `FileLock.h/.cpp`, ~2.5k lines) is independent of the SQL stack: single JSON-file storage with cross-process file lock, atomic writes, corrupt-file backup, O(1) per-table id index. The `JsonFile::detail` helpers stay header-only (inline) because `tests/test_jsonfile.cpp` uses them directly.
-- **MCP servers** live on top of the frozen `Idb` surface: `zorm-mcp/` (production `zorm_mcp_server`: 13 tools covering all 8 Idb methods + catalog-backed schema metadata + read-only SQL gate + transactions, every write behind an MRTR `input_required`/`requestState` confirmation) and `demo/` (validation showcase). Both link `thirds/mcp-cpp`, which is protocol-faithful — do NOT modify it for app needs (protocol text: `docs/mcp/`). Schema metadata comes from per-dialect catalogs (sqlite pragma TVFs — bare `pragma` breaks the backend's ` limit 1` column probe — / information_schema / user_tab_columns / the jsonfile columns array), never by querying rows. Multi-backend routing: every tool takes a `db` param naming a `DbBase` instance from `--config` (built-in: sqlite3 + jsonfile).
+- **MCP servers** live in the sibling `../zorm-mcp` project on top of the frozen `Idb` surface (its validation showcase is `../zorm-mcp/demo/`). They link `../mcp-cpp`, which is protocol-faithful — do NOT modify it for app needs (protocol text: `../mcp-cpp/docs/`). Schema metadata there comes from per-dialect catalogs (sqlite pragma TVFs — bare `pragma` breaks the backend's ` limit 1` column probe — / information_schema / user_tab_columns / the jsonfile columns array), never by querying rows. Multi-backend routing: every tool takes a `db` param naming a `DbBase` instance from `--config` (built-in: sqlite3 + jsonfile).
 - **Compiler flags matter**: `-fsigned-char` is set project-wide for GCC/Clang (ARM `char` is unsigned by default) — keep it.
 - `refer/` (gels, orm) are read-only reference projects used as design precedents, not part of the build.
 
