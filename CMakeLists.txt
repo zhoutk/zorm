@@ -140,17 +140,39 @@ elseif(UNIX)
     target_link_libraries(zormlib PUBLIC ${pthread} ${MysqlDll} ${pqName} ${sqliteName} ${dm8Name} dl)
 endif()
 
-##--------------------- demo executable ------------------------------------##
-add_executable(${PROJECT_NAME} src/main.cpp)
-target_link_libraries(${PROJECT_NAME} zormlib)
-set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
+##--------------------- runtime DLL bundling (this project's exes only) -----##
+# Copies the dependency closure of a target next to it so it runs without an
+# MSYS2 clang64 PATH. This serves THIS project's own executables and tests -
+# the MCP servers are separate projects and carry their own bundling helper.
+# Paths resolve against this directory (CMAKE_CURRENT_SOURCE_DIR), so the
+# function also works when zorm is consumed as a third-party subdirectory.
+function(zorm_bundle_runtime_deps target)
+  if(NOT WIN32)
+    return()
+  endif()
+  get_filename_component(_compiler_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}"
+              "-DZORM_TARGET_EXE=$<TARGET_FILE:${target}>"
+              "-DZORM_THIRDS_DLL_DIR=${CMAKE_CURRENT_SOURCE_DIR}/thirds/bin/win10"
+              "-DZORM_COMPILER_BIN=${_compiler_bin}"
+              -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/zorm_bundle_runtime_deps.cmake"
+      COMMENT "Bundling runtime DLLs next to $<TARGET_FILE_NAME:${target}>"
+      VERBATIM)
+endfunction()
 
-# Output all generated binaries to ${CMAKE_SOURCE_DIR}/bin
-set_target_properties(${PROJECT_NAME} zormlib PROPERTIES
-    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
-)
+##--------------------- demo executable ------------------------------------##
+# Convention: build/ holds intermediate artifacts, bin/ holds the final
+# executables. zormlib is an intermediate - it stays in the build tree.
+option(ZORM_BUILD_DEMO "Build the zorm CLI demo executable (src/main.cpp)" ON)
+if(ZORM_BUILD_DEMO)
+    add_executable(${PROJECT_NAME} src/main.cpp)
+    target_link_libraries(${PROJECT_NAME} zormlib)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        LINKER_LANGUAGE CXX
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+    zorm_bundle_runtime_deps(${PROJECT_NAME})
+endif()
 
 ##--------------------- Build unit tests -----------------------------------##
 option(CMAKE_ZJSON_ENABLE_TEST "Whether to enable unit tests" ON)
@@ -191,6 +213,10 @@ if (CMAKE_ZJSON_ENABLE_TEST)
     set_target_properties(test_contract test_jsonfile test_dbutils test_pool PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
     )
+    # Make the test exes self-contained (no MSYS2 PATH needed to run them).
+    foreach(t test_contract test_jsonfile test_dbutils test_pool)
+        zorm_bundle_runtime_deps(${t})
+    endforeach()
 
     # dbconfig.json must live next to the test executable at runtime.
     add_custom_command(TARGET test_contract POST_BUILD
