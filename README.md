@@ -64,7 +64,7 @@ sqlite3 is pure driver code — that is the calibration point for the dedup. Add
 
 ```
 zorm/
-├── CMakeLists.txt            # zormlib static lib + demo exe + test targets
+├── CMakeLists.txt            # zormlib static lib + demo exe (ZORM_BUILD_DEMO) + test targets
 ├── CMakePresets.json         # clang-dbg / clang-rlz (Ninja + MSYS2 clang64)
 ├── run-test                  # test runner (see "Unit test")
 ├── src/
@@ -90,7 +90,7 @@ zorm/
 │       ├── FileLock.h/.cpp   # cross-process lock used by JsonFileDb
 │       └── pg_type_d.h       # libpq OID table (private)
 ├── tests/                    # see "Unit test"
-├── docs/                     # project-index, jsonfile-design, code-review record
+├── docs/                     # project-index, jsonfile-design
 └── thirds/                   # bundled deps: googletest, sqlite3, mysql, pq, dm8, zjson
 ```
 

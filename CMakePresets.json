@@ -32,7 +32,7 @@
         {
             "name": "clang-rlz",
             "displayName": "clang Release",
-            "description": "使用 msys2-clang64 开发环境定向到 Windows (64 位)。(RelWithDebInfo)",
+            "description": "使用 msys2-clang64 开发环境定向到 Windows (64 位)。(Release)",
             "inherits": "msys2-base",
             "architecture": {
                 "value": "x64",

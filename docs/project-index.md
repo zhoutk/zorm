@@ -40,7 +40,7 @@ runs them all.
 
 ```
 zorm/
-├── CMakeLists.txt            # zormlib static lib + demo exe + test targets
+├── CMakeLists.txt            # zormlib static lib + demo exe (ZORM_BUILD_DEMO) + test targets
 ├── CMakePresets.json
 ├── version                   # VERSION_MAJOR/MINOR/PATCH
 ├── run-test                  # test runner: sqlitemem|sqlite|json|mysql|pg|dm|
@@ -79,13 +79,10 @@ zorm/
 │   └── test_pool.cpp         # HandlePool lease/blocking/invalidate tests (offline)
 ├── docs/
 │   ├── project-index.md      # ★ this index
-│   ├── jsonfile-design.md    # ★ JsonFileDb design & hardening-test details
-│   └── code-review-contract-suite.md  # ★ review findings, O-1..O-11 fixes,
-│                              #   the shared-layer refactor and the test
-│                              #   hardening + mutation-verification record
+│   └── jsonfile-design.md    # ★ JsonFileDb design & hardening-test details
 ├── thirds/                   # bundled deps: googletest, sqlite3, mysql, pq,
-│                             #   dm8, zjson, httplib
-└── refer/                    # reference projects (NOT part of this project)
+│                             #   dm8, zjson
+└── refer/                    # reference projects (local-only, not committed)
     ├── gels/                 # TypeScript project - best-in-class DAO layer
     └── orm/                  # C++ orm with JsonFileDb reference impl
 ```
@@ -184,18 +181,23 @@ CTest registrations: `test_contract_sqlite3_mem`, `test_contract_sqlite3`,
 
 ---
 
-## 5. MCP components (moved out of this repo)
+## 5. MCP components (separate repositories)
 
-The MCP layer was split into standalone sibling projects (full git history
-preserved via `git filter-repo`):
+The MCP layer is out of tree. `zorm-mcp` and `mcp-cpp` are separate
+repositories (their histories were split out with `git filter-repo`):
 
-- `../mcp-cpp` — the C++ MCP SDK (was `thirds/mcp-cpp`) + the MCP protocol
-  text (was `docs/mcp`). Self-contained: zjson/httplib/googletest bundled
-  under its own `thirds/`.
-- `../zorm-mcp` — the production multi-backend database MCP server (was
-  `zorm-mcp/`), including the validation showcase (was `demo/`). It builds
-  against the sibling `../zorm` and `../mcp-cpp` checkouts; see its
-  README.md / INTEGRATION.md.
+- `zorm-mcp` — the production multi-backend database MCP server (including
+  the former `demo/` showcase). It consumes zorm as a git submodule at
+  `thirds/zorm` and the C++ MCP SDK (mcp-cpp) as its submodule
+  `thirds/mcp-cpp`; see its README.md / INTEGRATION.md.
+- `mcp-cpp` — the C++ MCP SDK (was `thirds/mcp-cpp`) + the MCP protocol text
+  (was `docs/mcp`). Self-contained: zjson/httplib/googletest bundled under
+  its own `thirds/`.
+
+zorm's own build builds only `zormlib`, the CLI demo and the tests; it has no
+`docs/mcp/`, no `demo/` and no `zorm-mcp/` directory. `zorm-mcp` carries its
+own DLL-bundling helper (`cmake/zorm_mcp_bundle_runtime_deps.cmake`) and does
+not use zorm's `cmake/zorm_bundle_runtime_deps.cmake`.
 
 ---
 

@@ -68,7 +68,7 @@ sqlite3 只剩纯驱动代码——这就是去重程度的标尺。新增一个
 
 ```
 zorm/
-├── CMakeLists.txt            # zormlib 静态库 + 演示 exe + 测试目标
+├── CMakeLists.txt            # zormlib 静态库 + 演示 exe（ZORM_BUILD_DEMO）+ 测试目标
 ├── CMakePresets.json         # clang-dbg / clang-rlz（Ninja + MSYS2 clang64）
 ├── run-test                  # 测试运行器（见"单元测试"）
 ├── src/
@@ -94,7 +94,7 @@ zorm/
 │       ├── FileLock.h/.cpp   # JsonFileDb 使用的跨进程锁
 │       └── pg_type_d.h       # libpq OID 表（私有）
 ├── tests/                    # 见"单元测试"
-├── docs/                     # project-index、jsonfile-design、代码评审记录
+├── docs/                     # project-index、jsonfile-design
 └── thirds/                   # 捆绑依赖：googletest、sqlite3、mysql、pq、dm8、zjson
 ```
 
@@ -403,8 +403,7 @@ zorm/
 `./run-test json` 会把它与共享契约套件一起运行。与后端无关的单元
 （DbUtils 辅助函数、DbBase 门面校验、连接池）有自己的离线单元测试——
 全程不涉及数据库。
-> 详见 [docs/jsonfile-design.md](docs/jsonfile-design.md)：设计思想与测试详解；
-> 契约测试与解码守门详见 [docs/code-review-contract-suite.md](docs/code-review-contract-suite.md)。
+> 详见 [docs/jsonfile-design.md](docs/jsonfile-design.md)：设计思想与测试详解。
 > 测试用例运行结果样例
 ![输入图片说明](tests/uniTest.PNG)
 

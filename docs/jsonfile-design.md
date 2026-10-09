@@ -105,7 +105,8 @@ JsonFileDb 实现完整的 `Idb.h` 接口，并在能力上与 SQL 后端对齐�
 
 ### 4.1 共享契约套件（和其他后端相同）
 文件末尾 `ZORM_CONTRACT_TESTS()` 实例化 `ContractSuite.h` 的通用套件
-（Read / Write / Query / Dao / EdgeCases / MetadataCatalog / PlaceholderSql），
+（Read / Write / Query / Dao / EdgeCases / MetadataCatalog / PlaceholderSql /
+TypeFidelity / EscapingFidelity），
 通过 `DbBase("jsonfile", ...)` 走统一接口 —— 证明 jsonfile 满足 `Idb.h` 契约。
 测试环境用 `JsonFileContractEnv` 重写了几个方言钩子：
 `nullRendering="json-null"`、`supportsWherePlaceholders=false`、`autoCreateTables=true`。
@@ -145,7 +146,7 @@ JsonFileDb 实现完整的 `Idb.h` 接口，并在能力上与 SQL 后端对齐�
 ./run-test json     # 契约套件 + 加固测试（两者都跑）
 # 等价于 ctest -R "test_contract_jsonfile|test_jsonfile"
 ./run-test local    # sqlitemem + sqlite + json 契约 + json 加固
-./run-test all      # 全部 7 个 ctest 注册项
+./run-test all      # 全部 13 个 ctest 注册项
 ```
 
 > 注意：`json` 参数会同时运行 `test_contract_jsonfile`（通用契约）和
@@ -179,4 +180,4 @@ ZJSON 的 `Json(text)` / `add(key, raw_text)` 对以 `{` 或 `[` 开头的文本
 - 裸字符串写法（`Json("[1,2]")`、`Json{{"k","[1,2]"}}`）**保持既有嗅探语义**不变。
 
 回归测试：共享契约的 `EscapingFidelity`（含 `[1,2] {"a":1}` 与合法 JSON 文本 `[1,2]`
-的往返与条件查询）在全部 11 个注册上执行。
+的往返与条件查询）在全部 10 个契约注册上执行。

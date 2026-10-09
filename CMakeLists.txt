@@ -259,13 +259,14 @@ if (CMAKE_ZJSON_ENABLE_TEST)
         WORKING_DIRECTORY $<TARGET_FILE_DIR:test_pool>)
 endif()
 
-##--------------------- mcp protocol library (thirds/mcp-cpp) --------------##
-# mcp-cpp has been split out of this repo: it now lives as the standalone
-# project next to this checkout (D:/codes/mcp/mcp-cpp), together with the
-# MCP protocol text that used to be under docs/mcp.
+##--------------------- MCP layer (out of tree) ----------------------------##
+# The MCP layer is not built here: it lives in the separate zorm-mcp
+# repository, which consumes zorm as a git submodule at thirds/zorm and the
+# C++ MCP SDK (mcp-cpp) as its own submodule thirds/mcp-cpp.
 
 ##--------------------- runtime DLL bundling ----------------------------------
-# cmake/zorm_bundle_runtime_deps.cmake is kept for downstream consumers:
-# the MCP servers that used to live in this repo (now the standalone
-# zorm-mcp project next to it) resolve their runtime dependency closure
-# with it. zorm itself no longer builds anything that needs it.
+# cmake/zorm_bundle_runtime_deps.cmake bundles the runtime dependency closure
+# next to THIS project's own executables: the zorm CLI demo (see
+# zorm_bundle_runtime_deps() above) and the four test binaries
+# (test_contract, test_jsonfile, test_dbutils, test_pool). Separate projects
+# such as zorm-mcp carry their own bundling helper.
