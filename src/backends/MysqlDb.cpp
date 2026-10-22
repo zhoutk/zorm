@@ -487,7 +487,8 @@ namespace ZORM {
 			if (mysql_real_connect(mysql, dbhost.c_str(), dbuser.c_str(), dbpwd.c_str(), dbname.c_str(), dbport, nullptr, 0))
 				return new Connection(mysql, queryByParameter, DbLogClose);
 			err = (char*)mysql_error(mysql);
-			std::cout << "Error message : " << err;
+			// stderr only: MCP stdio carries JSON-RPC on stdout.
+			if (!DbLogClose) std::cerr << "Error message : " << err;
 			mysql_close(mysql);
 			return nullptr;
 		}

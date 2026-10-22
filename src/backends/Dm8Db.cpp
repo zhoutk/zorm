@@ -83,15 +83,50 @@ namespace ZORM {
 			}
 
 		private:
+			// Formats every diagnostic record of the failed statement into ONE
+			// line. DM8 reports the real cause in record 1 and the detail in
+			// later records; the old code printed record 1 to stdout (corrupting
+			// a stdio MCP channel) and truncated the text at the first NUL.
+			// Nothing may ever go to stdout here: MCP stdio carries JSON-RPC
+			// only. Debug output belongs on stderr and only when logs are open.
 			void dpiErr(dhstmt hstmt, string& err) {
-				sdint4 err_code;
-				sdint2 msg_len;
-				sdbyte err_msg[SDBYTE_MAX];
-				char buf[SDBYTE_MAX];
-				dpi_get_diag_rec(DSQL_HANDLE_STMT, hstmt, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
-				printf("err_msg = %s, err_code = %d\n", err_msg, err_code);
-				snprintf(buf, sizeof(buf), "err_msg = %s, err_code = %d\n", err_msg, err_code);
-				err = string(buf);
+				err.clear();
+				sdint4 first_code = 0;
+				for (sdint2 rec = 1; rec <= 8; ++rec) {
+					sdint4 err_code = 0;
+					sdint2 msg_len = 0;
+					sdbyte err_msg[SDBYTE_MAX];
+					std::memset(err_msg, 0, sizeof(err_msg));
+					const DPIRETURN drt = dpi_get_diag_rec(
+						DSQL_HANDLE_STMT, hstmt, rec, &err_code, err_msg,
+						static_cast<sdint2>(sizeof(err_msg)), &msg_len);
+					if (!DSQL_SUCCEEDED(drt)) break;
+					if (rec == 1) first_code = err_code;
+					// msg_len is authoritative (binary-safe); the buffer is
+					// NUL-terminated at worst, so stop at the first NUL too.
+					size_t len = static_cast<size_t>(
+						msg_len > 0 ? msg_len : static_cast<sdint2>(sizeof(err_msg)));
+					if (len > sizeof(err_msg)) len = sizeof(err_msg);
+					size_t nul = 0;
+					while (nul < len && err_msg[nul] != 0) ++nul;
+					len = nul;
+					while (len > 0 && (err_msg[len - 1] == ' ' || err_msg[len - 1] == '\t'))
+						--len;
+					if (len == 0) continue;
+					string msg(reinterpret_cast<const char*>(err_msg), len);
+					// One line: the message travels inside a JSON string, and
+					// line breaks made earlier consumers drop the detail.
+					for (char& ch : msg)
+						if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
+					if (!err.empty()) err += "; ";
+					err += msg;
+				}
+				if (err.empty())
+					err = "dm8 error (no diagnostic record)";
+				else
+					err += " (err_code = " + DbUtils::IntTransToString(first_code) + ")";
+				if (!logClose_)
+					std::cerr << "[dm8] " << err << std::endl;
 			}
 
 			// Values bind as NCHAR strings; numbers bind as DOUBLE / INT
@@ -215,9 +250,41 @@ namespace ZORM {
 					}
 				}
 
+				// Every exit below releases the statement and the column
+				// buffers exactly once.
+				auto releaseColumns = [&]() {
+					dpi_free_stmt(hstmt);
+					for (auto el : dataOuts)
+						delete[] el;
+					for (auto el : fieldNames)
+						delete[] el;
+					if (dataInputs)
+						for (auto el : *dataInputs)
+							delete[] el;
+				};
+
 				Json arr(JsonType::Array);
 				ulength row_num;
-				while (dpi_fetch(hstmt, &row_num) != DSQL_NO_DATA) {
+				// DPI returns an ERROR code (not DSQL_NO_DATA) when a statement
+				// has no result set or fetching fails - e.g. "WITH ... DELETE"
+				// after execution. The old loop treated every non-NO_DATA code
+				// as "another row" and pushed empty objects forever (35 GB RSS).
+				// Only DSQL_SUCCEEDED means a row was fetched; anything else
+				// ends the loop and is reported. kMaxRows additionally bounds
+				// allocation for genuinely huge result sets.
+				DPIRETURN frt = DSQL_NO_DATA;
+				int fetched = 0;
+				constexpr int kMaxRows = 100000;
+				while (DSQL_SUCCEEDED(frt = dpi_fetch(hstmt, &row_num))) {
+					if (++fetched > kMaxRows) {
+						err = "dm8 result set exceeds " +
+							  DbUtils::IntTransToString(kMaxRows) +
+							  " rows - narrow the query (where / limit) or "
+							  "paginate";
+						rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+						releaseColumns();
+						return Json();
+					}
 					Json al;
 					for (int i = 0; i < num_fields; ++i) {
 						// NULL-aware decoding: a negative indicator length
@@ -237,17 +304,19 @@ namespace ZORM {
 					}
 					arr.push_back(al);
 				}
+				// Any non-success, non-NO_DATA code means fetching FAILED (a
+				// statement without a result set, a broken row, ...). Report it
+				// instead of returning a half-decoded array.
+				if (frt != DSQL_NO_DATA) {
+					dpiErr(hstmt, err);
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
+					releaseColumns();
+					return Json();
+				}
 				if (arr.isEmpty())
 					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
 				rs.add("data", arr);
-				dpi_free_stmt(hstmt);
-				for (auto el : dataOuts)
-					delete[] el;
-				for (auto el : fieldNames)
-					delete[] el;
-				if (dataInputs)
-					for (auto el : *dataInputs)
-						delete[] el;
+				releaseColumns();
 				return arr;
 			}
 
@@ -516,7 +585,8 @@ namespace ZORM {
 				dpi_get_diag_rec(DSQL_HANDLE_DBC, dmCon->hcon, 1, &err_code, err_msg, sizeof(err_msg), &msg_len);
 				snprintf(buf, sizeof(buf), "err_msg = %s, err_code = %d\n", err_msg, err_code);
 				err = string(buf);
-				std::cout << "Error message : " << err;
+				// stderr only: MCP stdio carries JSON-RPC on stdout.
+				if (!DbLogClose) std::cerr << "Error message : " << err;
 				dpi_free_con(dmCon->hcon);
 				dpi_free_env(dmCon->henv);
 				delete dmCon;

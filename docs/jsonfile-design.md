@@ -77,6 +77,7 @@ JsonFileDb 实现完整的 `Idb.h` 接口，并在能力上与 SQL 后端对齐�
 - `'...'` 字面量（`''` 转义）、`null` / `true` / `false`、数字字面量
 - `CREATE TABLE` / `DROP TABLE` / `INSERT INTO` / `UPDATE` / `DELETE FROM` / `BEGIN|COMMIT|ROLLBACK`（后三者为 no-op shim）
 - `sqlite_master` / `information_schema.tables` 元数据查询 shim（回答"表是否存在"）
+- `querySql` 的读子集只有 **`select … from <table>`（不带 WHERE）**，条件通过 `params` 传入（与 `select()` 一致）。带 WHERE / JOIN / 聚合 / ORDER BY / LIMIT 的语句返回 `301`，不存在的表返回 `701`——**绝不返回"202 空结果"**，否则调用方会把"不支持"误读成"没有数据"。
 
 ---
 

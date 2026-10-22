@@ -106,9 +106,13 @@ using std::vector;
 		rs.add("status", (int)code);
 		string text(info);
 		if (!text.empty()) {
-			auto index = text.find_first_of("\n");
-			if (index != text.npos)
-				text = text.substr(0, index);
+			// Keep the WHOLE reason. Truncating at the first newline dropped
+			// the actual cause of multi-line driver errors (dm8 reports the
+			// message on one line and the real detail - "invalid table ..." -
+			// on the next). Newlines collapse to spaces so the text stays one
+			// readable line inside the JSON string.
+			for (char& ch : text)
+				if (ch == '\n' || ch == '\r' || ch == '\t') ch = ' ';
 			text.insert(0, " details, ");
 		}
 		text.insert(0, StatusMessages().at((int)code));

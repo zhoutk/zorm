@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -2462,19 +2463,68 @@ Json JsonFileDb::querySql(const string& sql,
 	}
 
 	// Plain "select ... from <table>" without a literal WHERE clause: the
-	// conditions come from `params`, exactly like select().
-	if (startsWith(lowered, "select") && findWordLower(lowered, "where") == std::string::npos) {
-		const std::string tableName = resolveTableNameFromSql(sql);
-		const int tableIndex = tableName.empty() ? -1 : findTableIndex(store_, tableName);
-		if (tableIndex < 0) {
-			return makeQueryResult(Json(JsonType::Array), 0, 0, 20, STQUERYEMPTY);
+	// conditions come from `params`, exactly like select(). This - and only
+	// this - is the file backend's SQL subset; see docs/jsonfile-design.md §4
+	// and docs/dialects.md §7.
+	//
+	// Everything outside that subset used to return "status 202 / []", which an
+	// AI reads as "there is no such row" - the worst possible failure mode
+	// (silent false negatives, plus a bogus result for count(*)/unknown
+	// tables). It now returns an explicit ERROR naming the supported form.
+	// A statement the backend cannot evaluate must never look like an empty
+	// table. (db_query with lks/ins/ors covers conditions; db_exec_sql covers
+	// writes.)
+	if (startsWith(lowered, "select")) {
+		auto hasAggregate = [&lowered]() {
+			static const char* kFns[] = {"count", "sum", "avg", "min", "max"};
+			for (const char* fn : kFns) {
+				std::string::size_type pos = lowered.find(fn);
+				while (pos != std::string::npos) {
+					const std::string::size_type end = pos + std::strlen(fn);
+					std::string::size_type p = end;
+					while (p < lowered.size() &&
+						   std::isspace(static_cast<unsigned char>(lowered[p])))
+						++p;
+					const bool leftOk = pos == 0 ||
+						(!std::isalnum(static_cast<unsigned char>(lowered[pos - 1])) &&
+						 lowered[pos - 1] != '_');
+					if (leftOk && p < lowered.size() && lowered[p] == '(') return true;
+					pos = lowered.find(fn, pos + 1);
+				}
+			}
+			return false;
+		};
+		const bool unsupported =
+			findWordLower(lowered, "where") != std::string::npos ||
+			findWordLower(lowered, "join") != std::string::npos ||
+			findWordLower(lowered, "group") != std::string::npos ||
+			findWordLower(lowered, "order") != std::string::npos ||
+			findWordLower(lowered, "limit") != std::string::npos ||
+			findWordLower(lowered, "union") != std::string::npos ||
+			findWordLower(lowered, "distinct") != std::string::npos ||
+			hasAggregate();
+		if (!unsupported) {
+			const std::string tableName = resolveTableNameFromSql(sql);
+			const int tableIndex =
+				tableName.empty() ? -1 : findTableIndex(store_, tableName);
+			if (tableIndex < 0) {
+				return makeResponse(
+					STDBOPERATEERR,
+					"unknown table: " + (tableName.empty() ? sql : tableName) +
+						" - call db_list_tables to see the available tables");
+			}
+			return queryTableRows(asObject(store_[tableIndex]), Json(params),
+								  std::move(fields));
 		}
-		return queryTableRows(asObject(store_[tableIndex]), Json(params), std::move(fields));
 	}
 
-	// Anything else (SELECT with a WHERE clause, JOINs, ...) is not the file
-	// backend's business - report an empty result set instead of guessing.
-	return makeQueryResult(Json(JsonType::Array), 0, 0, 20, STQUERYEMPTY);
+	// Not "select ... from <table>": say so instead of faking an empty result.
+	return makeResponse(
+		STPARAMERR,
+		"jsonfile db_query_sql supports only \"select ... from <table>\" (no "
+		"WHERE / JOIN / aggregate / ORDER BY / LIMIT). Use db_query with "
+		"lks/ins/ors/fields/group/sum/count plus page/size for conditions and "
+		"pagination, or db_exec_sql for writes");
 }
 
 Json JsonFileDb::execSql(const string& sql, Json params, Json values) {

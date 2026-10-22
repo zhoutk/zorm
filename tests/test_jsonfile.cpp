@@ -17,6 +17,7 @@
 
 #include "ContractSuite.h"
 #include "FileLock.h"
+#include "GlobalConstants.h"
 #include "JsonFileDb.h"
 #include "DbBase.h"
 
@@ -319,12 +320,23 @@ TEST_F(JsonFileDbTest, QuerySqlContract) {
 	ASSERT_EQ(result["status"].toInt(), 200);
 	EXPECT_EQ(result["data"].size(), 6);
 
+	// A missing table is an ERROR, never an empty result set: "202 / []"
+	// makes an AI conclude the table/data does not exist.
 	result = idb.querySql("select * from missing_table");
-	EXPECT_EQ(result["status"].toInt(), 202);
+	EXPECT_EQ(result["status"].toInt(), STDBOPERATEERR);
+	EXPECT_NE(result["message"].toString().find("unknown table"), std::string::npos);
 
-	// SELECT with a literal WHERE clause is not supported -> empty result
+	// SELECT with a literal WHERE clause is outside the supported subset ->
+	// explicit error with the supported form and the alternative tool.
 	result = idb.querySql("select * from table_for_test where age = 18");
-	EXPECT_EQ(result["status"].toInt(), 202);
+	EXPECT_EQ(result["status"].toInt(), STPARAMERR);
+	EXPECT_NE(result["message"].toString().find("supports only"),
+			  std::string::npos);
+
+	// Aggregates are not evaluated by the file backend either (they used to
+	// return the raw rows, which is a wrong answer rather than a missing one).
+	result = idb.querySql("select count(*) as n from table_for_test");
+	EXPECT_EQ(result["status"].toInt(), STPARAMERR);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

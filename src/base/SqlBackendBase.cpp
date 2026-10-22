@@ -678,21 +678,25 @@ Json SqlBackendBase::genSql(string& querySql, Json& values, const Json& ps,
 		}
 	}
 
-	string extra;
+	// Each aggregate is its own projection: collect the fragments and join
+	// them with "," (sum + count, or several sums/counts in one call used to
+	// produce "... as total count(*) as n" - a syntax error on every backend).
+	vector<string> aggs;
 	if (!sum.empty()) {
 		vector<string> ele = DbUtils::MakeVector(sum);
 		if (ele.empty() || ele.size() % 2 == 1)
 			return DbUtils::MakeJsonObject(STPARAMERR, "sum is wrong.");
 		for (size_t i = 0; i < ele.size(); i += 2)
-			extra.append("sum(").append(aggColumn(ele.at(i))).append(") as ").append(aggAlias(ele.at(i + 1))).append(" ");
+			aggs.push_back("sum(" + aggColumn(ele.at(i)) + ") as " + aggAlias(ele.at(i + 1)));
 	}
 	if (!count.empty()) {
 		vector<string> ele = DbUtils::MakeVector(count);
 		if (ele.empty() || ele.size() % 2 == 1)
 			return DbUtils::MakeJsonObject(STPARAMERR, "count is wrong.");
 		for (size_t i = 0; i < ele.size(); i += 2)
-			extra.append("count(").append(aggColumn(ele.at(i))).append(") as ").append(aggAlias(ele.at(i + 1))).append(" ");
+			aggs.push_back("count(" + aggColumn(ele.at(i)) + ") as " + aggAlias(ele.at(i + 1)));
 	}
+	const string extra = DbUtils::GetVectorJoinStr(aggs);
 
 	if (queryType == 1) {
 		const bool hasAgg = !extra.empty();

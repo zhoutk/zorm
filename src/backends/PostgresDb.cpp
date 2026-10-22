@@ -125,7 +125,7 @@ namespace ZORM {
 					std::cout << "SQL: " << aQuery << std::endl;
 				if (PQresultStatus(res) != PGRES_COMMAND_OK) {
 					const string err = PQerrorMessage(h_);
-					std::cout << err << std::endl;
+					if (!logClose_) std::cerr << err << std::endl;
 					if (out)
 						*out = err;
 					PQclear(res);
@@ -203,7 +203,8 @@ namespace ZORM {
 			if (PQstatus(pqsql) == CONNECTION_OK)
 				return new Connection(pqsql, DbLogClose);
 			err = string(PQerrorMessage(pqsql));
-			std::cout << "Error message : " << err;
+			// stderr only: MCP stdio carries JSON-RPC on stdout.
+			if (!DbLogClose) std::cerr << "Error message : " << err;
 			PQfinish(pqsql);
 			return nullptr;
 		}
