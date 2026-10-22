@@ -212,20 +212,27 @@ namespace ZORM {
 					mysql_stmt_close(stmt);
 					return rs;
 				}
-				MYSQL_RES* meta = mysql_stmt_result_metadata(stmt);
-				if (meta == nullptr) {
+				int ret = 1;
+				mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void*)&ret);
+				// Execute BEFORE asking for result metadata: with MariaDB's
+				// connector, statements such as EXPLAIN return no metadata
+				// until they have run (the old order answered
+				// "details, . error code: 0").
+				if (mysql_stmt_execute(stmt)) {
 					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errorText()));
 					freeBind(bind, dataInputs);
 					mysql_stmt_close(stmt);
 					return rs;
 				}
-				int ret = 1;
-				mysql_stmt_attr_set(stmt, STMT_ATTR_UPDATE_MAX_LENGTH, (void*)&ret);
-				if (mysql_stmt_execute(stmt)) {
-					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, errorText()));
-					mysql_free_result(meta);
+				MYSQL_RES* meta = mysql_stmt_result_metadata(stmt);
+				if (meta == nullptr) {
+					// No result set (a non-query statement sent through
+					// querySql): report an empty result rather than a bogus
+					// error with no diagnostics.
 					freeBind(bind, dataInputs);
 					mysql_stmt_close(stmt);
+					rs.extend(DbUtils::MakeJsonObject(STQUERYEMPTY));
+					rs.add("data", Json(JsonType::Array));
 					return rs;
 				}
 				ret = mysql_stmt_store_result(stmt);
