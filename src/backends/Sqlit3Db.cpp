@@ -53,6 +53,17 @@ namespace ZORM {
 				if (pErr != NULL)
 					sqlite3_free(pErr);
 				sqlite3_free_table(pRes);
+				// The probe can fail where the statement itself works: appending
+				// " limit 1" to a PRAGMA ("pragma table_info(t)") is a syntax
+				// error, so nCol/cols stay empty and every row was rendered as
+				// "{}". The prepared statement always knows its own columns.
+				if (cols.empty()) {
+					nCol = sqlite3_column_count(stmt);
+					for (int j = 0; j < nCol; j++) {
+						const char* name = sqlite3_column_name(stmt, j);
+						cols.push_back(name != NULL ? name : "");
+					}
+				}
 
 				for (int i = 0; i < values.size(); i++) {
 					string ele = values[i].toString();
@@ -107,9 +118,21 @@ namespace ZORM {
 				stepRet = sqlite3_step(stmt);
 				if (stepRet == SQLITE_DONE)
 					rs.add("affected", static_cast<long long>(sqlite3_changes64(h_)));
+				// Capture the driver text BEFORE finalize: "Error Code : 20"
+				// alone (SQLITE_MISMATCH) is not self-correctable, while
+				// "datatype mismatch" tells the caller which column type is
+				// wrong.
+				const std::string stepErr =
+					stepRet != SQLITE_DONE && sqlite3_errmsg(h_) != NULL
+						? sqlite3_errmsg(h_)
+						: std::string();
 				sqlite3_finalize(stmt);
-				if (stepRet != SQLITE_DONE)
-					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, "Error Code : " + DbUtils::IntTransToString(stepRet)));
+				if (stepRet != SQLITE_DONE) {
+					std::string detail = "Error Code : " + DbUtils::IntTransToString(stepRet);
+					if (!stepErr.empty() && stepErr != "not an error")
+						detail += " (" + stepErr + ")";
+					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, detail));
+				}
 				if (!logClose_)
 					std::cout << "SQL: " << aQuery << std::endl;
 				return rs;

@@ -355,6 +355,9 @@ namespace ZORM {
 					std::cout << "SQL: " << aQuery << std::endl;
 				if (!DSQL_SUCCEEDED(rt)) {
 					dpiErr(h_->hstmt, err);
+					// execTx forwards this string into "Running transaction
+					// error: ..." - without it the message was empty.
+					if (out != nullptr) *out += err;
 					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
 					dpi_free_stmt(h_->hstmt);
 					return rs;
@@ -367,6 +370,7 @@ namespace ZORM {
 				rt = dpi_exec(h_->hstmt);
 				if (!DSQL_SUCCEEDED(rt)) {
 					dpiErr(h_->hstmt, err);
+					if (out != nullptr) *out += err;
 					rs.extend(DbUtils::MakeJsonObject(STDBOPERATEERR, err));
 					dpi_free_stmt(h_->hstmt);
 					for (auto el : dataInputs)
